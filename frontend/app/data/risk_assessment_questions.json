@@ -1,0 +1,57 @@
+{
+  "version": "v2",
+  "likelihood": [
+    {
+      "key": "L1",
+      "question": "Has this risk occurred before?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "L2",
+      "question": "Is the threat currently active?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "L3",
+      "question": "Is the process manual rather than automated?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "L4",
+      "question": "Are existing controls insufficient or ineffective?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "L5",
+      "question": "Is there an external dependency involved?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    }
+  ],
+  "impact": [
+    {
+      "key": "I1",
+      "question": "Would this risk result in financial loss?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "I2",
+      "question": "Could this risk lead to legal or regulatory penalties?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "I3",
+      "question": "Would this risk cause operational disruption?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "I4",
+      "question": "Could this risk lead to reputational damage?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    },
+    {
+      "key": "I5",
+      "question": "Would this risk result in a compliance or regulatory violation?",
+      "answers": { "No": 0, "Partial": 2, "Yes": 4 }
+    }
+  ]
+}

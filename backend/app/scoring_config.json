@@ -1,0 +1,8 @@
+{
+  "thresholds": {
+    "Low": { "min": 1, "max": 4 },
+    "Medium": { "min": 5, "max": 9 },
+    "High": { "min": 10, "max": 16 },
+    "Critical": { "min": 17, "max": 25 }
+  }
+}
