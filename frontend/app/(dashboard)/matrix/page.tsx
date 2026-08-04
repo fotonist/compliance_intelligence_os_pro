@@ -15,13 +15,14 @@ type StandardOption = {
 
 type MatrixKpi = {
   compliance_percentage?: number;
- evidence?: {
-  total?: number;
-  approved?: number;
-  pending?: number;
-  rejected?: number;
-  linked?: number;
-};
+evidence?: {
+    total?: number;
+    approved?: number;
+    pending?: number;
+    uploaded?: number;
+    rejected?: number;
+    linked?: number;
+}
   risk?: {
     total?: number;
     critical?: number;
