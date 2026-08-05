@@ -11,7 +11,7 @@ def get_related_evidences(
     risk_id: int,
     db: Session = Depends(get_db),
 ):
-    # 1️⃣ Risk var mı? (control / clause için de lazım)
+   
     current = db.execute(
         text(
             """
