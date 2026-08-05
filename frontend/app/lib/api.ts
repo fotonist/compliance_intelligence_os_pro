@@ -3,9 +3,10 @@ import { mockApiFetch } from "./mock-api";
 
 
 const API_BASE =
-  typeof window === "undefined"
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window === "undefined"
     ? "http://backend:8000"
-    : "http://localhost:8000";
+    : "http://localhost:8000");
 
 
 export async function apiFetch(
