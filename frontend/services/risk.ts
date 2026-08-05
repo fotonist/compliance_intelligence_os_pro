@@ -37,16 +37,15 @@ export type RiskDetail = {
   score: number;
   risk_level: string;
 
+  control_id?: number | null;
+  clause_id?: number | null;
+  requirement_id?: number | null;
+  standard_id?: number | null;
+
   treatment?: string | null;
   status?: string | null;
   action?: string | null;
-
   owner?: string | null;
-
-  standard_id?: number | null;
-  requirement_id?: number | null;
-  clause_id?: number | null;
-  control_id?: number | null;
 
   evidence_count?: number | null;
 
