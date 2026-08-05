@@ -4,6 +4,7 @@ type Props = {
   title: string;
   message: string;
   onConfirm: () => void;
+  onClose: () => void;
   confirmText?: string;
 };
 
@@ -11,7 +12,8 @@ export default function DeleteConfirmModal({
   title,
   message,
   onConfirm,
-  confirmText = "OK",
+  onClose,
+  confirmText = "Delete",
 }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -20,14 +22,21 @@ export default function DeleteConfirmModal({
 
         <div className="mt-3 text-sm text-slate-300">{message}</div>
 
-        <div className="mt-5 flex justify-end">
-          <button
-            onClick={onConfirm}
-            className="rounded-md bg-slate-700 px-4 py-2 text-sm text-white hover:bg-slate-600"
-          >
-            {confirmText}
-          </button>
-        </div>
+      <div className="mt-5 flex justify-end gap-2">
+  <button
+    onClick={onClose}
+    className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+  >
+    Cancel
+  </button>
+
+  <button
+    onClick={onConfirm}
+    className="rounded-md bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700"
+  >
+    {confirmText}
+  </button>
+</div>
       </div>
     </div>
   );
