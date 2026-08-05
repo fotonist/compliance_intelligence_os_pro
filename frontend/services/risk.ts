@@ -26,6 +26,32 @@ export type RiskItem = {
   created_at?: string | null;
   updated_at?: string | null;
 };
+export type RiskDetail = {
+  id: number;
+  title: string;
+  description?: string | null;
+
+  likelihood: number;
+  impact: number;
+  score: number;
+  risk_level: string;
+
+  treatment?: string | null;
+  status?: string | null;
+  action?: string | null;
+
+  owner?: string | null;
+
+  standard_id?: number | null;
+  requirement_id?: number | null;
+  clause_id?: number | null;
+  control_id?: number | null;
+
+  evidence_count?: number | null;
+
+  created_at?: string | null;
+  updated_at?: string | null;
+};
 
 export type RisksListResponse = {
   items: RiskItem[];
@@ -34,6 +60,7 @@ export type RisksListResponse = {
   page_size: number;
   total_pages: number;
 };
+
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -105,7 +132,7 @@ export async function fetchRisks(
 
 /* ================= GET BY ID ================= */
 
-export async function fetchRiskById(id: number): Promise<RiskItem> {
+export async function fetchRiskById(id: number): Promise<RiskDetail> {
   const res = await fetch(`${API_URL}/risks/${id}`, {
     method: "GET",
     headers: authHeaders(),
@@ -116,7 +143,15 @@ export async function fetchRiskById(id: number): Promise<RiskItem> {
     throw new Error(`Failed to fetch risk: ${text}`);
   }
 
-  return res.json();
+  const json = await res.json();
+
+  return {
+    ...json,
+    likelihood: json.likelihood ?? 0,
+    impact: json.impact ?? 0,
+    score: json.score ?? 0,
+    risk_level: json.risk_level ?? "LOW",
+  };
 }
 
 /* ================= CREATE / UPDATE / DELETE ================= */
@@ -158,7 +193,7 @@ export type RiskUpdatePayload = Partial<RiskCreatePayload>;
 
 export async function updateRisk(id: number, payload: RiskUpdatePayload) {
   const res = await fetch(`${API_URL}/risks/${id}`, {
-    method: "PUT",
+    method: "PUT",RiskItem
     headers: authHeaders(),
     body: JSON.stringify(payload),
   });
