@@ -7,22 +7,7 @@ import RiskTable from "@/components/RiskTable";
 import ViewRiskModal from "./ViewRiskModal";
 import UpdateRiskModal from "./UpdateRiskModal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
-import { fetchRisks } from "../../../services/risk";
-
-/* ================= TYPES ================= */
-
-export type Risk = {
-  id: number;
-  title: string;
-  description?: string;
-  impact: number;
-  likelihood: number;
-  score: number;
-  risk_level: string;
-  treatment?: string;
-  coverage?: string;
-  evidence_count?: number;
-};
+import { fetchRisks, type RiskItem } from "../../../services/risk";
 
 const PAGE_SIZE = 10;
 
@@ -31,15 +16,15 @@ const PAGE_SIZE = 10;
 export default function RisksPage() {
   const router = useRouter();
 
-  const [risks, setRisks] = useState<Risk[]>([]);
+  const [risks, setRisks] = useState<RiskItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
 
-  const [viewRisk, setViewRisk] = useState<Risk | null>(null);
-  const [editRisk, setEditRisk] = useState<Risk | null>(null);
+ const [viewRisk, setViewRisk] = useState<RiskItem | null>(null);
+ const [editRisk, setEditRisk] = useState<RiskItem | null>(null);
 
   const [deletePopup, setDeletePopup] = useState<{
     open: boolean;
