@@ -1,6 +1,12 @@
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 function authHeaders() {
+  if (typeof window === "undefined") {
+    return {
+      "Content-Type": "application/json",
+    };
+  }
+
   const token =
     localStorage.getItem("access_token") ??
     sessionStorage.getItem("access_token");
