@@ -1,4 +1,5 @@
-const API_BASE = "http://localhost:8000";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 let redirecting = false;
 
@@ -6,7 +7,10 @@ export async function apiFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const token = localStorage.getItem("access_token");
+  const token =
+    typeof window !== "undefined"
+      ? localStorage.getItem("access_token")
+      : null;
 
   const headers: HeadersInit = {
     "Content-Type": "application/json",
@@ -19,20 +23,18 @@ export async function apiFetch(
     headers,
   });
 
-  // Session expired / invalid token
   if (res.status === 401) {
-    // Remove local tokens
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
 
-    // Remove cookie if one exists
-    document.cookie =
-      "access_token=; Max-Age=0; path=/; SameSite=Lax";
+      document.cookie =
+        "access_token=; Max-Age=0; path=/; SameSite=Lax";
 
-    // Prevent multiple redirects
-    if (!redirecting) {
-      redirecting = true;
-      window.location.replace("/login");
+      if (!redirecting) {
+        redirecting = true;
+        window.location.replace("/login");
+      }
     }
 
     throw new Error("Session expired");
