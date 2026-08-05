@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-import { fetchRiskById } from "../../../../services/risk";
+import { fetchRiskById, RiskDetail } from "../../../../services/risk";
 import RelatedEvidenceTab from "../RelatedEvidenceTab";
 import RelatedRisksTab from "../RelatedRisksTab";
 import RiskHistoryTab from "../history/RiskHistoryTab";
@@ -15,18 +15,6 @@ import DeleteConfirmModal from "../DeleteConfirmModal";
 
 /* ================= TYPES ================= */
 
-type RiskDetail = {
-  id: number;
-  title: string;
-  description?: string | null;
-  likelihood: number;
-  impact: number;
-  score: number;
-  risk_level: string;
-  treatment?: string | null;
-  status?: string | null;
-  action?: string | null;
-};
 
 type PrevSnapshot = {
   score?: number | null;
