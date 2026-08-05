@@ -146,13 +146,7 @@ export async function fetchRiskById(id: number): Promise<RiskDetail> {
 
   const json = await res.json();
 
-  return {
-    ...json,
-    likelihood: json.likelihood ?? 0,
-    impact: json.impact ?? 0,
-    score: json.score ?? 0,
-    risk_level: json.risk_level ?? "LOW",
-  };
+  return json as RiskDetail;
 }
 
 /* ================= CREATE / UPDATE / DELETE ================= */
