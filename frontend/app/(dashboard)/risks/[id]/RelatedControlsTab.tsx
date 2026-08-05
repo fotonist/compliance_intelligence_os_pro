@@ -1,6 +1,3 @@
-# -------------------------------------------------
-# Related Evidences for Risk (FINAL)
-# -------------------------------------------------
 
 from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session
@@ -31,9 +28,6 @@ def get_related_evidences(
 
     results = {}
 
-    # -------------------------------------------------
-    # 2️⃣ MANUEL İLİŞKİLER (risk_evidence_links)
-    # -------------------------------------------------
     manual_rows = db.execute(
         text(
             """
@@ -59,9 +53,7 @@ def get_related_evidences(
             "relation_source": "manual",
         }
 
-    # -------------------------------------------------
-    # 3️⃣ OTOMATİK – AYNI CONTROL
-    # -------------------------------------------------
+ 
     if current.control_id is not None:
         auto_control = db.execute(
             text(
@@ -84,9 +76,7 @@ def get_related_evidences(
                     "relation_source": "control_id",
                 }
 
-    # -------------------------------------------------
-    # 4️⃣ OTOMATİK – AYNI CLAUSE
-    # -------------------------------------------------
+   
     if current.clause_id is not None:
         auto_clause = db.execute(
             text(
@@ -109,7 +99,5 @@ def get_related_evidences(
                     "relation_source": "clause_id",
                 }
 
-    # -------------------------------------------------
-    # 5️⃣ RESPONSE
-    # -------------------------------------------------
+   
     return list(results.values())
