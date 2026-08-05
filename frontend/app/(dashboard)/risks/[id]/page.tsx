@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-
 import { fetchRiskById, RiskDetail } from "../../../../services/risk";
 import RelatedEvidenceTab from "../RelatedEvidenceTab";
 import RelatedRisksTab from "../RelatedRisksTab";
