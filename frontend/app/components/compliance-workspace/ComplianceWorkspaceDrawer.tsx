@@ -151,7 +151,9 @@ export default function ComplianceWorkspaceDrawer({
   const endpoint = useMemo(() => {
     if (!controlId) return null;
 
-    return `http://localhost:8000/company/compliance-object/${controlId}`;
+   const API = process.env.NEXT_PUBLIC_API_URL;
+
+return `${API}/company/compliance-object/${controlId}`;
   }, [controlId]);
 
   
