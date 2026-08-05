@@ -2,9 +2,8 @@
 from fastapi import HTTPException, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-
 from app.db.session import get_db
-
+from fastapi import APIRouter, HTTPException, Depends
 
 @router.get("/{risk_id}/related-evidences")
 def get_related_evidences(
