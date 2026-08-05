@@ -121,7 +121,9 @@ return;
 } catch {}
 
   try {
-    const token = sessionStorage.getItem("access_token");
+    const token =
+  localStorage.getItem("access_token") ||
+  sessionStorage.getItem("access_token");
     const payload = safeParseJwt(token);
 
     if (payload) {
@@ -389,8 +391,12 @@ Governance & Intelligence Engine </div> </div>
 
     <button
       onClick={() => {
-        sessionStorage.removeItem("access_token");
-        router.push("/login");
+        localStorage.removeItem("access_token");
+		localStorage.removeItem("token");
+		sessionStorage.removeItem("access_token");
+		sessionStorage.removeItem("token");
+
+		router.replace("/login");
       }}
       className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300"
     >
