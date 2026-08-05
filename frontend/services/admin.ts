@@ -1,8 +1,5 @@
 const BACKEND_URL =
-  typeof window === "undefined"
-    ? "http://backend:8000"
-    : "http://localhost:8000";
-
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 function authHeaders() {
   const token =
     localStorage.getItem("access_token") ??
