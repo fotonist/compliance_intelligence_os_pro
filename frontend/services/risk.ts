@@ -193,7 +193,7 @@ export type RiskUpdatePayload = Partial<RiskCreatePayload>;
 
 export async function updateRisk(id: number, payload: RiskUpdatePayload) {
   const res = await fetch(`${API_URL}/risks/${id}`, {
-    method: "PUT",RiskItem
+    method: "PUT",
     headers: authHeaders(),
     body: JSON.stringify(payload),
   });
