@@ -1,19 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-
-type Risk = {
-  id: number;
-  title: string;
-  score: number;
-  risk_level?: string;
-  treatment?: string | null;
-  coverage?: string | null;
-  evidence_count?: number;
-};
+import type { RiskItem } from "../services/risk";
 
 type Props = {
-  risks: Risk[];
+  risks: RiskItem[];
   loading: boolean;
   onDeleteRisk: (riskId: number) => void;
 };
@@ -55,9 +46,9 @@ export default function RiskTable({
             const severityTone = getSeverityTone(risk.risk_level);
             const coverageTone = getCoverageTone(risk.coverage);
             const governanceSignal = getGovernanceSignal(
-              risk.score,
-              risk.evidence_count
-            );
+            risk.score ?? 0,
+            risk.evidence_count
+                    )
 
             return (
               <tr
@@ -93,7 +84,7 @@ export default function RiskTable({
                 {/* SCORE */}
                 <td className="px-6 py-4">
                   <span className="text-lg font-semibold text-white">
-                    {risk.score}
+                    {risk.score ?? 0}
                   </span>
                 </td>
 
