@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import type { RiskItem } from "../../services/risk";
-type __Coverage = RiskItem["coverage"];
 
 type Props = {
   risks: RiskItem[];
