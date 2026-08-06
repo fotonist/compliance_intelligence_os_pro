@@ -153,20 +153,6 @@ export default function RiskTable({
     </div>
   );
 }
-/* ===== TYPE DEBUG ===== */
-
-type __Coverage = RiskItem["coverage"];
-type __Treatment = RiskItem["treatment"];
-
-const __riskDebug: RiskItem = {
-  id: 1,
-  title: "debug",
-  coverage: "covered",
-  treatment: "accept",
-};
-
-__riskDebug.coverage;
-__riskDebug.treatment;
 
 /* ================= TONE SYSTEM ================= */
 
