@@ -42,3 +42,12 @@ export async function apiFetch(
 
   return res;
 }
+export async function getComplianceMatrix() {
+  const res = await apiFetch("/matrix");
+
+  if (!res.ok) {
+    throw new Error("Failed to load compliance matrix");
+  }
+
+  return res.json();
+}
