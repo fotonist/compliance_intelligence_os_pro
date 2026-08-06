@@ -8,6 +8,11 @@ export interface MatrixRow {
   standard_id?: number;
   standard_code?: string;
 
+  /* ===== NAVIGATION ===== */
+  session_id?: number;
+  practice_id?: number;
+  control_id?: number;
+
   /* ===== MATURITY ===== */
   process_area_code?: string;
   process_area_title?: string;
