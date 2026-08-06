@@ -1,5 +1,5 @@
 ﻿"use client";
-
+import { Suspense } from "react";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -19,7 +19,7 @@ interface ControlAssessment {
   created_at: string;
 }
 
-export default function ControlAssessmentsPage() {
+function ControlAssessmentsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const controlIdFromMatrix = searchParams.get("control_id");
@@ -262,3 +262,17 @@ export default function ControlAssessmentsPage() {
     </div>
   );
 }
+export default function ControlAssessmentsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-6xl p-6 text-slate-400">
+          Loading...
+        </div>
+      }
+    >
+      <ControlAssessmentsContent />
+    </Suspense>
+  );
+}
+
