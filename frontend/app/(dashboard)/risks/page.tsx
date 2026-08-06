@@ -22,10 +22,7 @@ export default function RisksPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
-
- const [viewRisk, setViewRisk] = useState<RiskItem | null>(null);
- const [editRisk, setEditRisk] = useState<RiskItem | null>(null);
-
+  const [editRisk, setEditRisk] = useState<RiskItem | null>(null);
   const [deletePopup, setDeletePopup] = useState<{
     open: boolean;
     message: string;
@@ -219,16 +216,12 @@ export default function RisksPage() {
 
       {/* ================= MODALS ================= */}
 
-      {viewRisk && (
-        <ViewRiskModal
-          risk={viewRisk}
-          onClose={() => setViewRisk(null)}
-          onEdit={() => {
-            setEditRisk(viewRisk);
-            setViewRisk(null);
-          }}
-        />
-      )}
+     {viewRisk && (
+  <ViewRiskModal
+    riskId={viewRisk.id}
+    onClose={() => setViewRisk(null)}
+  />
+)}
 
       {editRisk && (
         <UpdateRiskModal
