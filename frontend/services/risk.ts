@@ -1,7 +1,5 @@
 // C:\Projects\compliance_app\frontend\services\risk.ts
 
-/* ================= RISK SERVICE ================= */
-import type { RiskItem } from "../../services/risk";
 // Backend localhost kuralı
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -22,12 +20,14 @@ export type RiskItem = {
   status?: string | null;
   owner?: string | null;
 
-  standard_id?: number | null;
-  requirement_id?: number | null;
-  clause_id?: number | null;
-  control_id?: number | null;
+ standard_id?: number | null;
+ requirement_id?: number | null;
+ clause_id?: number | null;
+ control_id?: number | null;
 
   evidence_count?: number | null;
+  coverage?: string | null;
+  treatment?: string | null;
 
   created_at?: string | null;
   updated_at?: string | null;
