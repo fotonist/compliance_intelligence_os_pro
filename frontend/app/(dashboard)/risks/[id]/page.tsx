@@ -97,8 +97,8 @@ export default function RiskDetailPage() {
   }, [risk?.status, risk?.risk_level]);
 
   const scoreDelta = useMemo(() => {
-    const cur = typeof risk?.score === "number" ? risk.score : null;
-    const prevScore = typeof prev?.score === "number" ? prev.score : null;
+    const cur = typeof risk?.score === "number" ? risk.score: null;
+    const prevScore = typeof prev?.score === "number" ? prev.score: null;
     if (cur === null || prevScore === null) return null;
     return cur - prevScore;
   }, [risk?.score, prev?.score]);
