@@ -2,9 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-
 import RiskTable from "@/components/RiskTable";
-import ViewRiskModal from "./ViewRiskModal";
 import UpdateRiskModal from "./UpdateRiskModal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
 import { fetchRisks, type RiskItem } from "../../../services/risk";
@@ -216,13 +214,7 @@ export default function RisksPage() {
 
       {/* ================= MODALS ================= */}
 
-     {viewRisk && (
-  <ViewRiskModal
-    riskId={viewRisk.id}
-    onClose={() => setViewRisk(null)}
-  />
-)}
-
+    
       {editRisk && (
         <UpdateRiskModal
           risk={editRisk}
