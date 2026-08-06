@@ -46,7 +46,7 @@ export default function RiskTable({
         <tbody>
           {risks.map((risk) => {
             const severityTone = getSeverityTone(risk.risk_level);
-            const coverageTone = getCoverageTone(risk.coverage);
+            const coverageTone = getCoverageTone();
             const governanceSignal = getGovernanceSignal(
             risk.score ?? 0,
             risk.evidence_count
@@ -100,7 +100,7 @@ export default function RiskTable({
                   <span
                     className={`px-3 py-1 rounded-md text-xs border ${coverageTone}`}
                   >
-                    {risk.coverage || "not_achieved"}
+                    {"not_achieved"}
                   </span>
                 </td>
 
