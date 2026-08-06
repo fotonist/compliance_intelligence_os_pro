@@ -1,9 +1,11 @@
 type Props = {
   status?: string | null;
+  size?: "sm" | "md";
 };
 
 export default function EvidenceStatusBadge({
   status,
+  size = "md",
 }: Props) {
   const map: Record<
     string,
@@ -27,12 +29,16 @@ export default function EvidenceStatusBadge({
     },
   };
 
-  const cfg =
-    (status && map[status]) || map["draft"];
+  const cfg = (status && map[status]) || map["draft"];
+
+  const sizeClass =
+    size === "sm"
+      ? "text-[10px] px-2 py-0.5"
+      : "text-xs px-2.5 py-1";
 
   return (
     <span
-      className={`inline-flex items-center text-[10px] font-medium px-2 py-0.5 rounded text-white ${cfg.className}`}
+      className={`inline-flex items-center rounded font-medium text-white ${sizeClass} ${cfg.className}`}
     >
       {cfg.label}
     </span>
