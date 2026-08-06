@@ -7,12 +7,14 @@ type Props = {
   risks: RiskItem[];
   loading: boolean;
   onDeleteRisk: (riskId: number) => void;
+  onCompleteRisk: (riskId: number) => void;
 };
 
 export default function RiskTable({
   risks,
   loading,
   onDeleteRisk,
+  onCompleteRisk,
 }: Props) {
   const router = useRouter();
 
