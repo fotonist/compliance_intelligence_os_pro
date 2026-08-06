@@ -1,5 +1,5 @@
 "use client";
-
+import type { RiskItem } from "../../../services/risk";
 type Risk = {
   id: number;
   title: string;
@@ -9,7 +9,7 @@ type Risk = {
 };
 
 type Props = {
-  risk: Risk;
+  risk: RiskItem;
   onClose: () => void;
   onUpdated: () => void;
 };
@@ -66,14 +66,14 @@ export default function UpdateRiskModal({
           <div className="text-xs text-slate-500 mt-2">
             Current Risk Score:
             {" "}
-            {risk.score ?? risk.likelihood * risk.impact}
+            {risk.score ?? ((risk.likelihood ?? 0) * (risk.impact ?? 0))}
           </div>
 
 
           <div className="text-xs text-slate-500 mt-1">
-            Likelihood: {risk.likelihood}
+            Likelihood: {risk.likelihood ?? "-"}
             {" · "}
-            Impact: {risk.impact}
+            Impact: {risk.impact ?? "-"}
           </div>
 
         </div>
