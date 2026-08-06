@@ -83,12 +83,12 @@ export default function ComplianceMatrixTable({ rows }: { rows: MatrixRow[] }) {
 
               {/* 🔥 BURASI ARTIK BACKEND'DEN GELEN DOĞRU LEVEL'İ GÖSTERECEK */}
               <td className="border p-2 text-center">
-                {row.risk_level ? (
-                  <RiskLevelBadge level={row.risk_level} />
+                {typeof row.score === "number" ? (
+              <RiskLevelBadge score={row.score} />
                 ) : (
-                  "-"
-                )}
-              </td>
+                      "-"
+                    )}
+            </td>
             </tr>
           ))}
         </tbody>
