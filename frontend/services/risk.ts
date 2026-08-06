@@ -1,9 +1,7 @@
-// C:\Projects\compliance_app\frontend\services\risk.ts
 
 // Backend localhost kuralı
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
 export type RiskItem = {
   id: number;
   title: string;
