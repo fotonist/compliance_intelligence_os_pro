@@ -168,15 +168,18 @@ export default function RiskAssessmentWizardModal({
         </div>
 
         {/* FOOTER */}
-        <AssessmentFooter
-          likelihood={likelihood}
-          impact={impact}
-          disabled={!isComplete || saving}
-          loading={saving}
-          error={error}
-          onCancel={onClose}
-          onComplete={handleComplete}
-        />
+       <AssessmentFooter
+  saving={saving}
+  canComplete={isComplete}
+  onClose={onClose}
+  onComplete={handleComplete}
+  errorText={error}
+  statusText={
+    isComplete
+      ? `Likelihood ${likelihood} • Impact ${impact}`
+      : "Complete all Likelihood and Impact questions"
+  }
+/>
       </div>
     </div>
   );
