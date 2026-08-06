@@ -1,7 +1,5 @@
-import { Risk } from "@/app/risks/page";
-
+import type { RiskItem as Risk } from "@/services/risk";
 export type Severity = "Low" | "Medium" | "High" | "Critical";
-
 export type HeatmapCell = {
   impact: number;
   likelihood: number;
