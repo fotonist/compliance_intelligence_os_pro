@@ -245,6 +245,9 @@ export default function RisksPage() {
   }
 />
 )}
+          </div>
+  );
+}
 
 /* ================= METRIC CARD ================= */
 
