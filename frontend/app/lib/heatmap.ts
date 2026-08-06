@@ -19,13 +19,16 @@ export function buildHeatmap(risks: Risk[]): HeatmapCell[] {
   const map = new Map<string, HeatmapCell>();
 
   for (const r of risks) {
-    const key = `${r.impact}-${r.likelihood}`;
-    const score = r.impact * r.likelihood;
+    const impact = r.impact ?? 0;
+    const likelihood = r.likelihood ?? 0;
+
+    const key = `${impact}-${likelihood}`;
+    const score = impact * likelihood;
 
     if (!map.has(key)) {
       map.set(key, {
-        impact: r.impact,
-        likelihood: r.likelihood,
+        impact,
+        likelihood,
         count: 0,
         score,
         severity: scoreToSeverity(score),
