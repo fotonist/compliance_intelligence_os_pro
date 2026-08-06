@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 
@@ -17,7 +17,7 @@ type MatrixInstance = {
   created_at: string;
 };
 
-export default function MatrixInstancesPage() {
+function MatrixInstancesPage() {
   const router = useRouter();
   const params = useSearchParams();
   const standardId = params.get("standard_id");
@@ -163,5 +163,12 @@ export default function MatrixInstancesPage() {
         </div>
       )}
     </div>
+  );
+}
+export default function MatrixInstancesPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-slate-400">Loading...</div>}>
+      <MatrixInstancesContent />
+    </Suspense>
   );
 }
