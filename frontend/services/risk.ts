@@ -10,10 +10,15 @@ export type RiskItem = {
   id: number;
   title: string;
   description?: string | null;
+
   likelihood?: number | null;
   impact?: number | null;
   score?: number | null;
   risk_level?: string | null;
+
+  coverage?: string | null;
+  treatment?: string | null;
+
   status?: string | null;
   owner?: string | null;
 
