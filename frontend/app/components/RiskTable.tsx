@@ -153,8 +153,6 @@ export default function RiskTable({
     </div>
   );
 }
-import type { RiskItem } from "../../services/risk";
-
 /* ===== TYPE DEBUG ===== */
 
 type __Coverage = RiskItem["coverage"];
@@ -170,7 +168,6 @@ const __riskDebug: RiskItem = {
 __riskDebug.coverage;
 __riskDebug.treatment;
 
-/* ====================== */
 /* ================= TONE SYSTEM ================= */
 
 function getSeverityTone(level?: string) {
