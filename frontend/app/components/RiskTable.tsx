@@ -44,7 +44,7 @@ export default function RiskTable({
         </thead>
 
         <tbody>
-          {risks.map((risk) => {
+          {risks.map((risk: RiskItem) => {
             const severityTone = getSeverityTone(risk.risk_level);
             const coverageTone = getCoverageTone();
             const governanceSignal = getGovernanceSignal(
