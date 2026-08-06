@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import type { RiskItem } from "../../services/risk";
+import { RiskItem } from "../../services/risk";
 
 type Props = {
   risks: RiskItem[];
