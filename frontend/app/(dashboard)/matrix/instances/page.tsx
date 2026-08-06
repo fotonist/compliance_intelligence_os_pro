@@ -17,7 +17,7 @@ type MatrixInstance = {
   created_at: string;
 };
 
-function MatrixInstancesPage() {
+function MatrixInstancesContent() {
   const router = useRouter();
   const params = useSearchParams();
   const standardId = params.get("standard_id");
