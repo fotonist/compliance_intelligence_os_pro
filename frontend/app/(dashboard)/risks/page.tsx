@@ -227,23 +227,23 @@ export default function RisksPage() {
       )}
 
      {deletePopup.open && (
-  <DeleteConfirmModal
-    title="Cannot Delete Risk"
-    message={deletePopup.message}
-    confirmText="OK"
-    onConfirm={() =>
-      setDeletePopup({
-        open: false,
-        message: "",
-      })
-    }
-    onClose={() =>
-      setDeletePopup({
-        open: false,
-        message: "",
-      })
-    }
-  />
+ <DeleteConfirmModal
+  title="Cannot Delete Risk"
+  message={deletePopup.message}
+  confirmText="OK"
+  onConfirm={() =>
+    setDeletePopup({
+      open: false,
+      message: "",
+    })
+  }
+  onClose={() =>
+    setDeletePopup({
+      open: false,
+      message: "",
+    })
+  }
+/>
 )}
 
 /* ================= METRIC CARD ================= */
