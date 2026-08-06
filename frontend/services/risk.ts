@@ -1,7 +1,7 @@
 // C:\Projects\compliance_app\frontend\services\risk.ts
 
 /* ================= RISK SERVICE ================= */
-
+import type { RiskItem } from "../../services/risk";
 // Backend localhost kuralı
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
