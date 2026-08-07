@@ -1,6 +1,6 @@
 "use client";
 
-import RiskLevelBadge from "@/components/RiskLevelBadge";
+import RiskLevelBadge from "@/app/components/RiskLevelBadge";
 
 interface MatrixRow {
   standard_code: string | null;

@@ -2,7 +2,7 @@
 
 import EvidenceDetailDrawer from "./components/EvidenceDetailDrawer";
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch } from "@/app/lib/api";
 
 type PendingEvidence = {
   id?: number;

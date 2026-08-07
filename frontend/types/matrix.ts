@@ -1,45 +1,23 @@
-"use client";
+export interface ComplianceMatrix {
+  standard_id: number;
+  standard_code: string;
 
-import { useEffect, useState } from "react";
-import { getComplianceMatrix } from "@/services/api";
-import MatrixTable from "@/components/MatrixTable";
-import ComplianceMatrix from "@/types/matrix";
+  clause_id: number;
+  clause_code: string;
+  clause_title: string;
 
-export default function CompliancePage() {
-  const [data, setData] = useState<ComplianceMatrix[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  requirement_id: number;
+  requirement_code: string;
+  requirement_text: string;
 
-  useEffect(() => {
-    async function loadMatrix() {
-      try {
-        const res = await getComplianceMatrix();
-        setData(Array.isArray(res) ? res : []);
-      } catch {
-        setError("Compliance matrix could not be loaded.");
-        setData([]);
-      } finally {
-        setLoading(false);
-      }
-    }
+  control_id: number | null;
+  control_code: string | null;
+  control_name: string | null;
 
-    loadMatrix();
-  }, []);
+  risk_count: number;
+  evidence_count: number;
 
-  if (loading) {
-    return <div className="p-6 text-gray-400">Loading compliance matrix…</div>;
-  }
-
-  if (error) {
-    return <div className="p-6 text-red-400">{error}</div>;
-  }
-
-  return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold text-white mb-6">
-        Compliance Matrix
-      </h1>
-      <MatrixTable data={data} />
-    </div>
-  );
+  coverage_status: string;
 }
+
+export default ComplianceMatrix;

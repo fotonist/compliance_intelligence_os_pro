@@ -14,7 +14,7 @@ function getToken(): string | null {
   );
 }
 
-export default function CreateTaskPage() {
+function CreateTaskContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -179,5 +179,19 @@ export default function CreateTaskPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function CreateTaskPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-slate-400">
+          Loading...
+        </div>
+      }
+    >
+      <CreateTaskContent />
+    </Suspense>
   );
 }

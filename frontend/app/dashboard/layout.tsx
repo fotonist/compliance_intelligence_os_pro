@@ -1,5 +1,5 @@
 ﻿import "../globals.css";
-import Sidebar from "@/components/Sidebar";
+import Sidebar from "@/app/components/Sidebar";
 
 export default function DashboardLayout({
   children,

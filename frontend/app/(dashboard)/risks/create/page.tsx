@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import ChecklistQuestion from "@/components/assessment/ChecklistQuestion";
-import AssessmentFooter from "@/components/assessment/AssessmentFooter";
+import ChecklistQuestion from "@/app/components/assessment/ChecklistQuestion";
+import AssessmentFooter from "@/app/components/assessment/AssessmentFooter";
 
 type Dimension = "likelihood" | "impact";
 type SourceType = "STANDARD" | "REQUIREMENT" | "CONTROL";

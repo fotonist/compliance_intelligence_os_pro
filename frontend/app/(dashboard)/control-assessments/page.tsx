@@ -1,8 +1,9 @@
 ﻿"use client";
-import { Suspense } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 interface ControlStandard {
   id: number;
@@ -18,7 +19,7 @@ interface ControlAssessment {
   created_at: string;
 }
 
-function ControlAssessmentsPage() {
+function ControlAssessmentsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const controlIdFromMatrix = searchParams.get("control_id");

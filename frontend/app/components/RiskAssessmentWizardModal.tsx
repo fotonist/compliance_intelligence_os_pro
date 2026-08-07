@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 
 // ✅ DOĞRU PATH
-import ChecklistQuestion from "@/components/assessment/ChecklistQuestion";
-import AssessmentFooter from "@/components/assessment/AssessmentFooter";
+import ChecklistQuestion from "@/app/components/assessment/ChecklistQuestion";
+import AssessmentFooter from "@/app/components/assessment/AssessmentFooter";
 
 /* ================= TYPES ================= */
 

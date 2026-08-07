@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import EvidenceStatusBadge from "@/components/EvidenceStatusBadge";
+import EvidenceStatusBadge from "@/app/components/EvidenceStatusBadge";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";

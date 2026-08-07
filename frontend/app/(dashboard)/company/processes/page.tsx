@@ -3,10 +3,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
-import { TABLE } from "@/components/ui/tableTokens";
-import SeverityBadge from "@/components/ui/SeverityBadge";
-import IconButton from "@/components/ui/IconButton";
+import { apiFetch } from "@/app/lib/api";
+import { TABLE } from "@/app/components/ui/tableTokens";
+import SeverityBadge from "@/app/components/ui/SeverityBadge";
+import IconButton from "@/app/components/ui/IconButton";
 
 type ProcessType = "core" | "support" | "management";
 type ProcessStatus = "draft" | "active" | "archived";

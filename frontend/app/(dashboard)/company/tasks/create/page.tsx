@@ -1,8 +1,8 @@
 ﻿"use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch } from "@/app/lib/api";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -32,7 +32,7 @@ const PRIORITIES = [
   { label: "Critical", value: 100 },
 ];
 
-export default function CreateTaskPage() {
+function CreateCompanyTaskContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -329,5 +329,18 @@ export default function CreateTaskPage() {
 
       </form>
     </div>
+  );
+}
+export default function CreateCompanyTaskPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-slate-400">
+          Loading...
+        </div>
+      }
+    >
+      <CreateCompanyTaskContent />
+    </Suspense>
   );
 }

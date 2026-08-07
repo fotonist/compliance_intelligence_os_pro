@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import RiskTable from "@/components/RiskTable";
+import RiskTable from "@/app/components/RiskTable";
 import UpdateRiskModal from "./UpdateRiskModal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
 import { fetchRisks, type RiskItem } from "../../../services/risk";

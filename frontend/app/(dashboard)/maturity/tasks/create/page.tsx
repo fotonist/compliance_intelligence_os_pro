@@ -1,8 +1,10 @@
 "use client";
+export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch } from "@/app/lib/api";
 
 type Practice = {
   id: number;
@@ -37,7 +39,7 @@ const PRIORITIES = [
   },
 ];
 
-export default function CreateMaturityTaskPage() {
+function CreateMaturityTaskContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -616,5 +618,18 @@ export default function CreateMaturityTaskPage() {
         </div>
       </div>
     </div>
+  );
+}
+export default function CreateMaturityTaskPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-6 text-slate-400">
+          Loading...
+        </div>
+      }
+    >
+      <CreateMaturityTaskContent />
+    </Suspense>
   );
 }

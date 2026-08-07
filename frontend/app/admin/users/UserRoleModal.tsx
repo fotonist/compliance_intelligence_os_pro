@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { authFetch, logout } from "@/lib/auth";
+import { authFetch, logout } from "@/app/lib/auth";
 
 type Role = { id: number; name: string };
 type User = {
