@@ -38,8 +38,7 @@ export default function MatrixInstancesClient() {
 
   useEffect(() => {
     if (!token) return;
-
-    loadInstances();
+    void loadInstances();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, standardId]);
 
