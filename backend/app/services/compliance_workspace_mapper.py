@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 
 from app.schemas.compliance_workspace_schema import (
     AnalyticsDto,
@@ -21,12 +21,110 @@ from app.schemas.compliance_workspace_schema import (
 
 class ComplianceWorkspaceMapper:
 
+    # ============================================================
+    # EVIDENCE FILE APPROVAL STATE
+    # ============================================================
+
+    @staticmethod
+    def _get_latest_evidence_file(evidence):
+        files = list(
+            getattr(
+                evidence,
+                "files",
+                [],
+            )
+            or []
+        )
+
+        if not files:
+            return None
+
+        return max(
+            files,
+            key=lambda file: (
+                getattr(file, "version", 0) or 0,
+                getattr(file, "uploaded_at", None)
+                or datetime.min,
+                getattr(file, "id", 0) or 0,
+            ),
+        )
+
+    @staticmethod
+    def _get_evidence_approval_status(evidence):
+        """
+        Evidence approval state is derived from the latest
+        EvidenceFile version.
+
+        Production DB source of truth:
+            evidence_files.status
+
+        Normalized result:
+            APPROVED
+            REJECTED
+            PENDING
+        """
+
+        latest_file = (
+            ComplianceWorkspaceMapper._get_latest_evidence_file(
+                evidence
+            )
+        )
+
+        if latest_file is None:
+            return "PENDING"
+
+        status = (
+            getattr(
+                latest_file,
+                "status",
+                None,
+            )
+            or ""
+        ).strip().upper()
+
+        normalized = (
+            status.replace("-", "_")
+            .replace(" ", "_")
+        )
+
+        if normalized in (
+            "APPROVED",
+            "ACCEPTED",
+        ):
+            return "APPROVED"
+
+        if normalized in (
+            "REJECTED",
+            "DECLINED",
+        ):
+            return "REJECTED"
+
+        return "PENDING"
+
+    # ============================================================
+    # STANDARD
+    # ============================================================
+
     @staticmethod
     def map_standard(control):
 
-        requirement = getattr(control, "requirement", None)
-        clause = getattr(requirement, "clause", None)
-        standard = getattr(clause, "standard", None)
+        requirement = getattr(
+            control,
+            "requirement",
+            None,
+        )
+
+        clause = getattr(
+            requirement,
+            "clause",
+            None,
+        )
+
+        standard = getattr(
+            clause,
+            "standard",
+            None,
+        )
 
         if standard is None:
             return StandardDto()
@@ -35,14 +133,31 @@ class ComplianceWorkspaceMapper:
             id=standard.id,
             code=standard.code,
             title=standard.title,
-            type=getattr(standard, "type", None),
+            type=getattr(
+                standard,
+                "type",
+                None,
+            ),
         )
+
+    # ============================================================
+    # CLAUSE
+    # ============================================================
 
     @staticmethod
     def map_clause(control):
 
-        requirement = getattr(control, "requirement", None)
-        clause = getattr(requirement, "clause", None)
+        requirement = getattr(
+            control,
+            "requirement",
+            None,
+        )
+
+        clause = getattr(
+            requirement,
+            "clause",
+            None,
+        )
 
         if clause is None:
             return ClauseDto()
@@ -58,10 +173,18 @@ class ComplianceWorkspaceMapper:
             ),
         )
 
+    # ============================================================
+    # REQUIREMENT
+    # ============================================================
+
     @staticmethod
     def map_requirement(control):
 
-        requirement = getattr(control, "requirement", None)
+        requirement = getattr(
+            control,
+            "requirement",
+            None,
+        )
 
         if requirement is None:
             return RequirementDto()
@@ -71,6 +194,10 @@ class ComplianceWorkspaceMapper:
             code=requirement.code,
             title=requirement.title,
         )
+
+    # ============================================================
+    # CONTROL
+    # ============================================================
 
     @staticmethod
     def map_control(control):
@@ -91,6 +218,10 @@ class ComplianceWorkspaceMapper:
             ),
         )
 
+    # ============================================================
+    # EVIDENCES
+    # ============================================================
+
     @staticmethod
     def map_evidences(control):
 
@@ -101,6 +232,13 @@ class ComplianceWorkspaceMapper:
             "evidences",
             [],
         ):
+
+            approval_status = (
+                ComplianceWorkspaceMapper
+                ._get_evidence_approval_status(
+                    evidence
+                )
+            )
 
             evidences.append(
                 EvidenceDto(
@@ -116,11 +254,7 @@ class ComplianceWorkspaceMapper:
                         "status",
                         None,
                     ),
-                    approval_status=getattr(
-                        evidence,
-                        "approval_status",
-                        None,
-                    ),
+                    approval_status=approval_status,
                     assessment_type=getattr(
                         evidence,
                         "assessment_type",
@@ -162,11 +296,16 @@ class ComplianceWorkspaceMapper:
                             "files",
                             [],
                         )
+                        or []
                     ),
                 )
             )
 
         return evidences
+
+    # ============================================================
+    # COVERAGE
+    # ============================================================
 
     @staticmethod
     def map_coverage(control):
@@ -186,13 +325,11 @@ class ComplianceWorkspaceMapper:
         for evidence in evidences:
 
             approval_status = (
-                getattr(
-                    evidence,
-                    "approval_status",
-                    "",
+                ComplianceWorkspaceMapper
+                ._get_evidence_approval_status(
+                    evidence
                 )
-                or ""
-            ).upper()
+            )
 
             if approval_status == "APPROVED":
                 approved += 1
@@ -239,6 +376,10 @@ class ComplianceWorkspaceMapper:
             pending_evidence=pending,
             rejected_evidence=rejected,
         )
+
+    # ============================================================
+    # RISKS
+    # ============================================================
 
     @staticmethod
     def map_risks(control):
@@ -315,6 +456,10 @@ class ComplianceWorkspaceMapper:
 
         return risks
 
+    # ============================================================
+    # RISK SUMMARY
+    # ============================================================
+
     @staticmethod
     def map_risk_summary(control):
 
@@ -383,6 +528,10 @@ class ComplianceWorkspaceMapper:
             average_score=average_score,
         )
 
+    # ============================================================
+    # TASKS
+    # ============================================================
+
     @staticmethod
     def map_tasks(control):
 
@@ -395,22 +544,66 @@ class ComplianceWorkspaceMapper:
         ):
 
             tasks.append(
-TaskDto(
-    id=task.id,
-    title=getattr(task, "title", None),
-    description=getattr(task, "description", None),
-    status=getattr(task, "status", None),
-    priority_score=getattr(task, "priority_score", None),
-    owner_role=getattr(task, "owner_role", None),
-    source_type=getattr(task, "source_type", None),
-    source_id=getattr(task, "source_id", None),
-    due_date=getattr(task, "due_date", None),
-    created_at=getattr(task, "created_at", None),
-    updated_at=getattr(task, "updated_at", None),
-)
+                TaskDto(
+                    id=task.id,
+                    title=getattr(
+                        task,
+                        "title",
+                        None,
+                    ),
+                    description=getattr(
+                        task,
+                        "description",
+                        None,
+                    ),
+                    status=getattr(
+                        task,
+                        "status",
+                        None,
+                    ),
+                    priority_score=getattr(
+                        task,
+                        "priority_score",
+                        None,
+                    ),
+                    owner_role=getattr(
+                        task,
+                        "owner_role",
+                        None,
+                    ),
+                    source_type=getattr(
+                        task,
+                        "source_type",
+                        None,
+                    ),
+                    source_id=getattr(
+                        task,
+                        "source_id",
+                        None,
+                    ),
+                    due_date=getattr(
+                        task,
+                        "due_date",
+                        None,
+                    ),
+                    created_at=getattr(
+                        task,
+                        "created_at",
+                        None,
+                    ),
+                    updated_at=getattr(
+                        task,
+                        "updated_at",
+                        None,
+                    ),
+                )
             )
 
         return tasks
+
+    # ============================================================
+    # TASK SUMMARY
+    # ============================================================
 
     @staticmethod
     def map_task_summary(control):
@@ -482,6 +675,10 @@ TaskDto(
             overdue=overdue_tasks,
         )
 
+    # ============================================================
+    # TIMELINE
+    # ============================================================
+
     @staticmethod
     def map_timeline(control):
 
@@ -491,10 +688,23 @@ TaskDto(
         # Evidences
         # =========================
 
-        for evidence in getattr(control, "evidences", []):
+        for evidence in getattr(
+            control,
+            "evidences",
+            [],
+        ):
 
-            created_at = getattr(evidence, "created_at", None)
-            reviewed_at = getattr(evidence, "reviewed_at", None)
+            created_at = getattr(
+                evidence,
+                "created_at",
+                None,
+            )
+
+            reviewed_at = getattr(
+                evidence,
+                "reviewed_at",
+                None,
+            )
 
             if created_at:
                 timeline.append(
@@ -520,10 +730,23 @@ TaskDto(
         # Risks
         # =========================
 
-        for risk in getattr(control, "risks", []):
+        for risk in getattr(
+            control,
+            "risks",
+            [],
+        ):
 
-            created_at = getattr(risk, "created_at", None)
-            updated_at = getattr(risk, "updated_at", None)
+            created_at = getattr(
+                risk,
+                "created_at",
+                None,
+            )
+
+            updated_at = getattr(
+                risk,
+                "updated_at",
+                None,
+            )
 
             if created_at:
                 timeline.append(
@@ -549,17 +772,34 @@ TaskDto(
         # Tasks
         # =========================
 
-        for task in getattr(control, "tasks", []):
+        for task in getattr(
+            control,
+            "tasks",
+            [],
+        ):
 
-            created_at = getattr(task, "created_at", None)
-            updated_at = getattr(task, "updated_at", None)
+            created_at = getattr(
+                task,
+                "created_at",
+                None,
+            )
+
+            updated_at = getattr(
+                task,
+                "updated_at",
+                None,
+            )
 
             if created_at:
                 timeline.append(
                     TimelineDto(
                         type="task",
                         action="CREATED",
-                        title=getattr(task, "title", ""),
+                        title=getattr(
+                            task,
+                            "title",
+                            "",
+                        ),
                         date=created_at,
                     )
                 )
@@ -569,7 +809,11 @@ TaskDto(
                     TimelineDto(
                         type="task",
                         action="UPDATED",
-                        title=getattr(task, "title", ""),
+                        title=getattr(
+                            task,
+                            "title",
+                            "",
+                        ),
                         date=updated_at,
                     )
                 )
@@ -587,12 +831,30 @@ TaskDto(
 
         return timeline
 
+    # ============================================================
+    # ANALYTICS
+    # ============================================================
+
     @staticmethod
     def map_analytics(control):
 
-        coverage = ComplianceWorkspaceMapper.map_coverage(control)
-        risks = ComplianceWorkspaceMapper.map_risk_summary(control)
-        tasks = ComplianceWorkspaceMapper.map_task_summary(control)
+        coverage = (
+            ComplianceWorkspaceMapper.map_coverage(
+                control
+            )
+        )
+
+        risks = (
+            ComplianceWorkspaceMapper.map_risk_summary(
+                control
+            )
+        )
+
+        tasks = (
+            ComplianceWorkspaceMapper.map_task_summary(
+                control
+            )
+        )
 
         risk_score = min(
             risks.total_score,
@@ -627,56 +889,94 @@ TaskDto(
             overdue_tasks=tasks.overdue,
         )
 
-   
+    # ============================================================
+    # AI FINDINGS
+    # ============================================================
 
     @staticmethod
     def map_ai_findings(control):
 
-        coverage = ComplianceWorkspaceMapper.map_coverage(control)
-        risks = ComplianceWorkspaceMapper.map_risk_summary(control)
-        tasks = ComplianceWorkspaceMapper.map_task_summary(control)
+        coverage = (
+            ComplianceWorkspaceMapper.map_coverage(
+                control
+            )
+        )
+
+        risks = (
+            ComplianceWorkspaceMapper.map_risk_summary(
+                control
+            )
+        )
+
+        tasks = (
+            ComplianceWorkspaceMapper.map_task_summary(
+                control
+            )
+        )
 
         findings = []
 
         if coverage.percentage < 100:
+
             findings.append(
                 {
                     "category": "EVIDENCE",
-                    "severity": "HIGH" if coverage.percentage == 0 else "MEDIUM",
-                    "message": "Evidence coverage is insufficient."
-                    if coverage.percentage < 50
-                    else "Evidence coverage is partially complete.",
+                    "severity": (
+                        "HIGH"
+                        if coverage.percentage == 0
+                        else "MEDIUM"
+                    ),
+                    "message": (
+                        "Evidence coverage is insufficient."
+                        if coverage.percentage < 50
+                        else "Evidence coverage is partially complete."
+                    ),
                 }
             )
 
         if risks.critical > 0:
+
             findings.append(
                 {
                     "category": "RISK",
                     "severity": "CRITICAL",
-                    "message": f"{risks.critical} critical risk(s) require immediate attention.",
+                    "message": (
+                        f"{risks.critical} critical risk(s) "
+                        "require immediate attention."
+                    ),
                 }
             )
+
         elif risks.high > 0:
+
             findings.append(
                 {
                     "category": "RISK",
                     "severity": "HIGH",
-                    "message": f"{risks.high} high risk(s) should be addressed.",
+                    "message": (
+                        f"{risks.high} high risk(s) "
+                        "should be addressed."
+                    ),
                 }
             )
 
         if tasks.overdue > 0:
+
             findings.append(
                 {
                     "category": "TASK",
                     "severity": "HIGH",
-                    "message": f"{tasks.overdue} overdue task(s) detected.",
+                    "message": (
+                        f"{tasks.overdue} overdue task(s) detected."
+                    ),
                 }
             )
 
         return findings
 
+    # ============================================================
+    # AI ENGINE
+    # ============================================================
 
     @staticmethod
     def map_ai_engine(control):
@@ -686,13 +986,16 @@ TaskDto(
             "source": "Compliance Intelligence Engine",
         }
 
+    # ============================================================
+    # WORKSPACE
+    # ============================================================
 
     @staticmethod
     def map_workspace(
-    control,
-    ai_summary=None,
-    ai_executive_summary=None,
-):
+        control,
+        ai_summary=None,
+        ai_executive_summary=None,
+    ):
 
         return ComplianceWorkspaceResponse(
 
