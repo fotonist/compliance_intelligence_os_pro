@@ -147,18 +147,17 @@ export default function ComplianceWorkspaceDrawer({
 
   const [workspace, setWorkspace] =
     useState<WorkspaceResponse | null>(null);
-
-  const endpoint = useMemo(() => {
-    if (!controlId) return null;
+const endpoint = useMemo(() => {
+  if (!controlId) return null;
 
   const API =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "https://compliance-intelligence-os-pro-2.onrender.com";
+    process.env.NEXT_PUBLIC_API_URL ||
+    "https://compliance-intelligence-os-pro-2.onrender.com";
 
-return `${API}/company/compliance-object/${controlId}`;
+  return `${API}/company/compliance-object/${controlId}`;
+}, [controlId]);
 
-  
-   const fetchWorkspace = useCallback(async () => {
+const fetchWorkspace = useCallback(async () => {
   if (!endpoint) return;
 
   try {
@@ -229,8 +228,6 @@ console.log({
       document.body.style.overflow = original;
     };
   }, [open]);
-
-  if (!open) return null;
 
   if (!open) return null;
 
