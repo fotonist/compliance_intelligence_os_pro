@@ -1,13 +1,11 @@
-﻿import { DEMO_MODE } from "./demo";
+import { DEMO_MODE } from "./demo";
 import { mockApiFetch } from "./mock-api";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  (typeof window === "undefined"
-    ? "http://backend:8000"
-    : "http://localhost:8000");
-
+if (!API_BASE) {
+  throw new Error("NEXT_PUBLIC_API_URL is not configured");
+}
 
 export async function apiFetch(
   path: string,
@@ -28,37 +26,30 @@ export async function apiFetch(
 
   }
 
-
   const token =
     typeof window !== "undefined"
       ? localStorage.getItem("access_token") ||
         localStorage.getItem("token")
       : null;
 
-
   const safePath = path.startsWith("/")
     ? path
     : `/${path}`;
 
-
   const headers: HeadersInit = {};
-
 
   if (!(options.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }
-
 
   if (token) {
     headers["Authorization"] =
       `Bearer ${token}`;
   }
 
-
   if (options.headers) {
     Object.assign(headers, options.headers);
   }
-
 
   const res = await fetch(
     `${API_BASE}${safePath}`,
@@ -68,16 +59,13 @@ export async function apiFetch(
     }
   );
 
-
   if (!res.ok) {
-
 
     if (res.status === 401) {
 
       console.warn(
         "Session expired — redirecting to login"
       );
-
 
       if (typeof window !== "undefined") {
 
@@ -92,13 +80,10 @@ export async function apiFetch(
         window.location.href = "/login";
       }
 
-
       throw new Error(
         "Session expired"
       );
     }
-
-
 
     if (res.status === 404) {
 
@@ -110,10 +95,7 @@ export async function apiFetch(
 
     }
 
-
-
     const text = await res.text();
-
 
     throw new Error(
       `API ERROR ${res.status}: ${text}`
@@ -121,7 +103,5 @@ export async function apiFetch(
 
   }
 
-
   return res;
-
 }
