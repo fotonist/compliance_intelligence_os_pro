@@ -91,7 +91,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://compliance-intelligence-os-pro-m65n-4073kninw.vercel.app",
+        "https://compliance-intelligence-os-pro-u6yj-r5twwl9gv.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
