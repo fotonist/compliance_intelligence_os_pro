@@ -43,28 +43,7 @@ type TabKey =
   | "timeline"
   | "ai";
 
-interface WorkspaceResponse {
-  standard: any;
-  clause: any;
-  requirement: any;
-  control: any;
 
-  coverage: any;
-
-  evidences: any[];
-
-  risks: any[];
-  risk_summary: any;
-
-  tasks: any[];
-  task_summary: any;
-
-  analytics: any;
-
-  timeline: any[];
-
-  ai_summary: string[];
-}
 interface WorkspaceResponse {
   standard: any;
   clause: any;
