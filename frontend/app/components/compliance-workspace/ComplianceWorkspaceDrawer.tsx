@@ -151,10 +151,11 @@ export default function ComplianceWorkspaceDrawer({
   const endpoint = useMemo(() => {
     if (!controlId) return null;
 
-   const API = process.env.NEXT_PUBLIC_API_URL;
+  const API =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://compliance-intelligence-os-pro-2.onrender.com";
 
 return `${API}/company/compliance-object/${controlId}`;
-  }, [controlId]);
 
   
    const fetchWorkspace = useCallback(async () => {
