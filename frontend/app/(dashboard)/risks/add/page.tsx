@@ -21,7 +21,7 @@ export default function AddRiskPage() {
     const token = localStorage.getItem("access_token");
     if (!token) return;
 
-    fetch("http://127.0.0.1:8000/controls/", {
+    fetch("https://compliance-intelligence-os-pro-2.onrender.com/controls/", {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => res.json())
@@ -43,7 +43,7 @@ export default function AddRiskPage() {
       return;
     }
 
-    const res = await fetch("http://127.0.0.1:8000/risks/", {
+    const res = await fetch("https://compliance-intelligence-os-pro-2.onrender.com/risks/", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

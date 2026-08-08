@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import EvidenceStatusBadge from "@/app/components/EvidenceStatusBadge";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL || "https://compliance-intelligence-os-pro-2.onrender.com";
 
 /* ================= TYPES ================= */
 

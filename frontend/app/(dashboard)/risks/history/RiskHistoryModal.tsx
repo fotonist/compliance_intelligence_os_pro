@@ -19,7 +19,7 @@ export default function RiskHistoryModal({
   const [rows, setRows] = useState<Item[]>([]);
 
   useEffect(() => {
-    fetch(`http://localhost:8000/risks/${riskId}/history`, {
+    fetch(`https://compliance-intelligence-os-pro-2.onrender.com/risks/${riskId}/history`, {
       credentials: "include",
     })
       .then((r) => r.json())

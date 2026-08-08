@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 type Props = {
   practiceEvaluationId: number;

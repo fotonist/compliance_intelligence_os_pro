@@ -37,7 +37,7 @@ export default function CreateRiskPage() {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("Not authenticated");
 
-      const res = await fetch("http://localhost:8000/risks", {
+      const res = await fetch("https://compliance-intelligence-os-pro-2.onrender.com/risks", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

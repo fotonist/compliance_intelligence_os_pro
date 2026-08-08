@@ -14,7 +14,7 @@ export default function RiskHistoryPage() {
   const [activeRiskId, setActiveRiskId] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("http://localhost:8000/risks/history/summary", {
+    fetch("https://compliance-intelligence-os-pro-2.onrender.com/risks/history/summary", {
       credentials: "include",
     })
       .then((r) => r.json())

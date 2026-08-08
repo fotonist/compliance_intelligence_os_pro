@@ -230,7 +230,7 @@ export default function TaskWorkspacePage() {
   formData.append("file", file, file.name);
 
   const res = await fetch(
-    `http://localhost:8000/company/tasks/${taskId}/evidence/upload`,
+    `https://compliance-intelligence-os-pro-2.onrender.com/company/tasks/${taskId}/evidence/upload`,
     {
       method: "POST",
       headers: token

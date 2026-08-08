@@ -14,7 +14,7 @@ export default function ViewRiskModal({ riskId, onClose }: Props) {
 
   useEffect(() => {
     if (tab === "evidence") {
-      fetch(`http://localhost:8000/evidences?risk_id=${riskId}`, {
+      fetch(`https://compliance-intelligence-os-pro-2.onrender.com/evidences?risk_id=${riskId}`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
@@ -24,7 +24,7 @@ export default function ViewRiskModal({ riskId, onClose }: Props) {
     }
 
     if (tab === "history") {
-      fetch(`http://localhost:8000/risks/${riskId}/history`, {
+      fetch(`https://compliance-intelligence-os-pro-2.onrender.com/risks/${riskId}/history`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },

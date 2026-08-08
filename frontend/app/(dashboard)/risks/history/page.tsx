@@ -12,7 +12,7 @@ type SummaryItem = {
   trends?: Trend[]; // 🔴 opsiyonel
 };
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 export default function RiskHistoryPage() {
   const [rows, setRows] = useState<SummaryItem[]>([]);

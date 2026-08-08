@@ -15,7 +15,7 @@ type TrendsResponse = {
   };
 };
 
-const BACKEND_URL = "http://127.0.0.1:8000";
+const BACKEND_URL = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 export default function TrendsPage() {
   const [data, setData] = useState<TrendsResponse | null>(null);

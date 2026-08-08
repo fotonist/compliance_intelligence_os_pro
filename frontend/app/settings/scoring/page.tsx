@@ -11,7 +11,7 @@ type ScoringConfig = {
   mitigate_max: number;
 };
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 export default function ScoringSettingsPage() {
   const router = useRouter();

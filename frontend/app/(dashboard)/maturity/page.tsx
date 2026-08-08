@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 interface MaturitySession {
   id: number;

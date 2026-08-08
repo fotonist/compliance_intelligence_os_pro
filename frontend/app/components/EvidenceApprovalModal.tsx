@@ -8,7 +8,7 @@ type Props = {
   onUpdated?: () => Promise<void> | void;
 };
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 function getToken() {
   if (typeof window === "undefined") return null;

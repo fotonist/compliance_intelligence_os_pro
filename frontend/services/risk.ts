@@ -1,7 +1,7 @@
 
 // Backend localhost kuralı
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL || "https://compliance-intelligence-os-pro-2.onrender.com";
 export type RiskItem = {
   id: number;
   title: string;

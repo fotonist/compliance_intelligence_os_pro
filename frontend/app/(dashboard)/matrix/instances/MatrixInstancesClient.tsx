@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 type MatrixInstance = {
   id: number;

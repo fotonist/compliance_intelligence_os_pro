@@ -35,11 +35,11 @@ export default function ControlDetailPage() {
   useEffect(() => {
     Promise.all([
       fetch(
-        `http://localhost:8000/analytics/control-health/${controlId}`,
+        `https://compliance-intelligence-os-pro-2.onrender.com/analytics/control-health/${controlId}`,
         { credentials: "include" }
       ).then((r) => r.json()),
       fetch(
-        `http://localhost:8000/analytics/control-health/${controlId}/risks`,
+        `https://compliance-intelligence-os-pro-2.onrender.com/analytics/control-health/${controlId}/risks`,
         { credentials: "include" }
       ).then((r) => r.json()),
     ])

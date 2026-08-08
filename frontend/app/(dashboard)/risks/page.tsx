@@ -78,7 +78,7 @@ export default function RisksPage() {
   /* ================= DELETE ================= */
 
   async function onDeleteRiskRequest(riskId: number) {
-    const res = await fetch(`http://localhost:8000/risks/${riskId}`, {
+    const res = await fetch(`https://compliance-intelligence-os-pro-2.onrender.com/risks/${riskId}`, {
       method: "DELETE",
       credentials: "include",
     });

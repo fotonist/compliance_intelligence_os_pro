@@ -92,8 +92,8 @@ export default function EditRiskModal({
       };
 
       const url = isEdit
-        ? `http://localhost:8000/risks/${risk.id}`
-        : "http://localhost:8000/risks/";
+        ? `https://compliance-intelligence-os-pro-2.onrender.com/risks/${risk.id}`
+        : "https://compliance-intelligence-os-pro-2.onrender.com/risks/";
 
       const method = isEdit ? "PUT" : "POST";
 

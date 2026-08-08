@@ -36,7 +36,7 @@ type Props = {
   riskId: number;
 };
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 export default function RiskHistoryTab({ riskId }: Props) {
   const [rows, setRows] = useState<HistoryItem[]>([]);

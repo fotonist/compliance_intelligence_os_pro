@@ -29,7 +29,7 @@ const [message, setMessage] = useState<{
       sessionStorage.getItem("access_token");
 
     const res = await fetch(
-      "http://localhost:8000/risk-appetite/profile",
+      "https://compliance-intelligence-os-pro-2.onrender.com/risk-appetite/profile",
       {
         method: "PUT",
         headers: {

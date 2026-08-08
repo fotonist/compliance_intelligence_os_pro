@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
 
 export default function LogoutButton() {
   const router = useRouter();

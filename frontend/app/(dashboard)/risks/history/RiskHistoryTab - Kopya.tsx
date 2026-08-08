@@ -30,7 +30,7 @@ export default function RiskHistoryTab({ riskId }: Props) {
 
       try {
         const res = await fetch(
-          `http://localhost:8000/risks/${riskId}/history`,
+          `https://compliance-intelligence-os-pro-2.onrender.com/risks/${riskId}/history`,
           {
             headers: {
               Authorization: `Bearer ${localStorage.getItem("token")}`,

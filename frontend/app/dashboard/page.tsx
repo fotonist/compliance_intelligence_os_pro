@@ -127,7 +127,7 @@ function KpiInfo({
    API
 =========================================== */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://compliance-intelligence-os-pro-2.onrender.com";
 
 /* ===========================================
    TOOLTIP (DB + FORMULA)
