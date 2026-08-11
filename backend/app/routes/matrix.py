@@ -28,7 +28,7 @@ from app.models.controls import Control
 from app.models.risks import Risk
 from app.models.evidences import Evidence
 
-# ✅ Intelligence-aware models
+# Intelligence-aware models
 from app.models.gap_items import GapItem
 from app.models.compliance_tasks import ComplianceTask
 
@@ -66,6 +66,7 @@ def resolve_draft_version(db: Session, standard_id: int) -> StandardVersion:
         )
         .first()
     )
+
     if not draft:
         raise HTTPException(
             status_code=409,
@@ -118,6 +119,7 @@ CREATE TABLE IF NOT EXISTS matrix_instances (
 );
 """
 
+
 DDL_MATRIX_ROWS = """
 CREATE TABLE IF NOT EXISTS matrix_rows (
     id SERIAL PRIMARY KEY,
@@ -143,9 +145,12 @@ CREATE TABLE IF NOT EXISTS matrix_rows (
 );
 """
 
+
 DDL_MATRIX_ROWS_INDEX = """
-CREATE INDEX IF NOT EXISTS ix_matrix_rows_instance_id ON matrix_rows(instance_id);
+CREATE INDEX IF NOT EXISTS ix_matrix_rows_instance_id
+ON matrix_rows(instance_id);
 """
+
 
 DDL_MATRIX_INSTANCES_COL_PATCH = """
 ALTER TABLE matrix_instances
@@ -155,6 +160,7 @@ ALTER TABLE matrix_instances
     ADD COLUMN IF NOT EXISTS created_by INTEGER,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;
 """
+
 
 DDL_MATRIX_ROWS_COL_PATCH = """
 ALTER TABLE matrix_rows
@@ -179,12 +185,10 @@ def ensure_matrix_column_configs_table(db: Session):
 
 
 def ensure_matrix_core_tables(db: Session):
-    # create tables if missing
     db.execute(text(DDL_MATRIX_INSTANCES))
     db.execute(text(DDL_MATRIX_ROWS))
     db.execute(text(DDL_MATRIX_ROWS_INDEX))
 
-    # patch columns if old table exists with missing columns
     db.execute(text(DDL_MATRIX_INSTANCES_COL_PATCH))
     db.execute(text(DDL_MATRIX_ROWS_COL_PATCH))
 
@@ -232,10 +236,12 @@ def get_matrix(
     user=Depends(get_current_user),
 ):
     tenant_id = getattr(user, "tenant_id", None)
+
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
 
     if standard_id is None:
+
         # -------------------------------------------------
         # Evidence aggregation (TENANT SAFE)
         # -------------------------------------------------
@@ -247,7 +253,10 @@ def get_matrix(
                 func.coalesce(
                     func.sum(
                         case(
-                            (func.lower(Evidence.status) == "approved", 1),
+                            (
+                                func.lower(Evidence.status) == "approved",
+                                1,
+                            ),
                             else_=0,
                         )
                     ),
@@ -260,7 +269,10 @@ def get_matrix(
                 Evidence.standard_id.isnot(None),
                 Evidence.control_id.isnot(None),
             )
-            .group_by(Evidence.standard_id, Evidence.control_id)
+            .group_by(
+                Evidence.standard_id,
+                Evidence.control_id,
+            )
             .subquery()
         )
 
@@ -286,15 +298,30 @@ def get_matrix(
                 Risk.standard_id.isnot(None),
                 Risk.control_id.isnot(None),
             )
-            .group_by(Risk.standard_id, Risk.control_id)
+            .group_by(
+                Risk.standard_id,
+                Risk.control_id,
+            )
             .subquery()
         )
 
         risk_level_expr = case(
-            (risk_agg_rank.c.risk_rank == 4, literal("CRITICAL")),
-            (risk_agg_rank.c.risk_rank == 3, literal("HIGH")),
-            (risk_agg_rank.c.risk_rank == 2, literal("MEDIUM")),
-            (risk_agg_rank.c.risk_rank == 1, literal("LOW")),
+            (
+                risk_agg_rank.c.risk_rank == 4,
+                literal("CRITICAL"),
+            ),
+            (
+                risk_agg_rank.c.risk_rank == 3,
+                literal("HIGH"),
+            ),
+            (
+                risk_agg_rank.c.risk_rank == 2,
+                literal("MEDIUM"),
+            ),
+            (
+                risk_agg_rank.c.risk_rank == 1,
+                literal("LOW"),
+            ),
             else_=literal(None),
         ).label("risk_level")
 
@@ -323,16 +350,33 @@ def get_matrix(
             .filter(
                 ComplianceTask.tenant_id == tenant_id,
                 ComplianceTask.control_id.isnot(None),
-                ComplianceTask.status.in_(["open", "in_progress"]),
+                ComplianceTask.status.in_(
+                    ["open", "in_progress"]
+                ),
             )
             .group_by(ComplianceTask.control_id)
             .subquery()
         )
 
-        evidence_count_col = func.coalesce(ev_agg.c.evidence_count, 0).label("evidence_count")
-        approved_count_col = func.coalesce(ev_agg.c.approved_evidence_count, 0).label("approved_evidence_count")
-        open_gap_count_col = func.coalesce(gap_agg.c.open_gap_count, 0).label("open_gap_count")
-        open_task_count_col = func.coalesce(task_agg.c.open_task_count, 0).label("open_task_count")
+        evidence_count_col = func.coalesce(
+            ev_agg.c.evidence_count,
+            0,
+        ).label("evidence_count")
+
+        approved_count_col = func.coalesce(
+            ev_agg.c.approved_evidence_count,
+            0,
+        ).label("approved_evidence_count")
+
+        open_gap_count_col = func.coalesce(
+            gap_agg.c.open_gap_count,
+            0,
+        ).label("open_gap_count")
+
+        open_task_count_col = func.coalesce(
+            task_agg.c.open_task_count,
+            0,
+        ).label("open_task_count")
 
         coverage_status_expr = _control_coverage_status_expr_intelligence(
             approved_count_col,
@@ -357,9 +401,18 @@ def get_matrix(
                 risk_level_expr,
             )
             .select_from(Control)
-            .join(Requirement, Control.requirement_id == Requirement.id)
-            .join(Clause, Requirement.clause_id == Clause.id)
-            .join(Standard, Clause.standard_id == Standard.id)
+            .join(
+                Requirement,
+                Control.requirement_id == Requirement.id,
+            )
+            .join(
+                Clause,
+                Requirement.clause_id == Clause.id,
+            )
+            .join(
+                Standard,
+                Clause.standard_id == Standard.id,
+            )
             .outerjoin(
                 ev_agg,
                 (ev_agg.c.standard_id == Standard.id)
@@ -372,55 +425,102 @@ def get_matrix(
             )
             .outerjoin(
                 gap_agg,
-                (gap_agg.c.control_id == Control.id),
+                gap_agg.c.control_id == Control.id,
             )
             .outerjoin(
                 task_agg,
-                (task_agg.c.control_id == Control.id),
+                task_agg.c.control_id == Control.id,
             )
-            .filter(Standard.type == "CONTROL_BASED")
-            .order_by(Standard.code, Clause.code, Requirement.code, Control.code)
+            .filter(
+                Standard.type == "CONTROL_BASED"
+            )
+            .order_by(
+                Standard.code,
+                Clause.code,
+                Requirement.code,
+                Control.code,
+            )
             .all()
         )
-        return {"mode": "control", "rows": _rows_to_dict(rows)}
 
-    standard = db.query(Standard).filter(Standard.id == standard_id).first()
+        return {
+            "mode": "control",
+            "rows": _rows_to_dict(rows),
+        }
+
+    standard = (
+        db.query(Standard)
+        .filter(Standard.id == standard_id)
+        .first()
+    )
+
     if not standard:
-        return {"mode": "control", "rows": []}
+        return {
+            "mode": "control",
+            "rows": [],
+        }
 
-    std_type = _normalize(getattr(standard, "type", None))
+    std_type = _normalize(
+        getattr(standard, "type", None)
+    )
 
     if std_type == "MATURITY_BASED":
+
         rows = db.execute(
             select(
                 Standard.code.label("standard_code"),
-                standard_process_areas.c.id.label("process_area_id"),
-                standard_process_areas.c.code.label("process_area_code"),
-                standard_process_areas.c.name.label("process_area_title"),
-                standard_practices.c.id.label("practice_id"),
-                standard_practices.c.code.label("practice_code"),
-                standard_practices.c.title.label("practice_title"),
-                standard_practices.c.level.label("target_level"),
+                standard_process_areas.c.id.label(
+                    "process_area_id"
+                ),
+                standard_process_areas.c.code.label(
+                    "process_area_code"
+                ),
+                standard_process_areas.c.name.label(
+                    "process_area_title"
+                ),
+                standard_practices.c.id.label(
+                    "practice_id"
+                ),
+                standard_practices.c.code.label(
+                    "practice_code"
+                ),
+                standard_practices.c.title.label(
+                    "practice_title"
+                ),
+                standard_practices.c.level.label(
+                    "target_level"
+                ),
                 literal(0).label("achieved_level"),
                 literal(0).label("evidence_count"),
             )
             .select_from(standard_practices)
             .join(
                 standard_process_areas,
-                standard_practices.c.process_area_id == standard_process_areas.c.id,
+                standard_practices.c.process_area_id
+                == standard_process_areas.c.id,
             )
-            .join(Standard, standard_practices.c.standard_id == Standard.id)
-            .where(Standard.id == standard.id)
+            .join(
+                Standard,
+                standard_practices.c.standard_id
+                == Standard.id,
+            )
+            .where(
+                Standard.id == standard.id
+            )
             .order_by(
                 standard_process_areas.c.code,
                 standard_practices.c.code,
             )
         ).all()
 
-        return {"mode": "maturity", "rows": _rows_to_dict(rows)}
+        return {
+            "mode": "maturity",
+            "rows": _rows_to_dict(rows),
+        }
 
     # -------------------------------------------------
-    # SINGLE STANDARD (CONTROL_BASED) – tenant safe + intelligence aware
+    # SINGLE STANDARD (CONTROL_BASED)
+    # tenant safe + intelligence aware
     # -------------------------------------------------
     ev_agg_one = (
         db.query(
@@ -429,7 +529,11 @@ def get_matrix(
             func.coalesce(
                 func.sum(
                     case(
-                        (func.lower(Evidence.status) == "approved", 1),
+                        (
+                            func.lower(Evidence.status)
+                            == "approved",
+                            1,
+                        ),
                         else_=0,
                     )
                 ),
@@ -447,10 +551,26 @@ def get_matrix(
     )
 
     risk_rank_one = case(
-        (func.upper(Risk.risk_level) == "CRITICAL", 4),
-        (func.upper(Risk.risk_level) == "HIGH", 3),
-        (func.upper(Risk.risk_level) == "MEDIUM", 2),
-        (func.upper(Risk.risk_level) == "LOW", 1),
+        (
+            func.upper(Risk.risk_level)
+            == "CRITICAL",
+            4,
+        ),
+        (
+            func.upper(Risk.risk_level)
+            == "HIGH",
+            3,
+        ),
+        (
+            func.upper(Risk.risk_level)
+            == "MEDIUM",
+            2,
+        ),
+        (
+            func.upper(Risk.risk_level)
+            == "LOW",
+            1,
+        ),
         else_=0,
     )
 
@@ -469,10 +589,22 @@ def get_matrix(
     )
 
     risk_level_expr_one = case(
-        (risk_agg_one.c.risk_rank == 4, literal("CRITICAL")),
-        (risk_agg_one.c.risk_rank == 3, literal("HIGH")),
-        (risk_agg_one.c.risk_rank == 2, literal("MEDIUM")),
-        (risk_agg_one.c.risk_rank == 1, literal("LOW")),
+        (
+            risk_agg_one.c.risk_rank == 4,
+            literal("CRITICAL"),
+        ),
+        (
+            risk_agg_one.c.risk_rank == 3,
+            literal("HIGH"),
+        ),
+        (
+            risk_agg_one.c.risk_rank == 2,
+            literal("MEDIUM"),
+        ),
+        (
+            risk_agg_one.c.risk_rank == 1,
+            literal("LOW"),
+        ),
         else_=literal(None),
     ).label("risk_level")
 
@@ -493,27 +625,49 @@ def get_matrix(
     task_agg_one = (
         db.query(
             ComplianceTask.control_id.label("control_id"),
-            func.count(ComplianceTask.id).label("open_task_count"),
+            func.count(
+                ComplianceTask.id
+            ).label("open_task_count"),
         )
         .filter(
             ComplianceTask.tenant_id == tenant_id,
             ComplianceTask.control_id.isnot(None),
-            ComplianceTask.status.in_(["open", "in_progress"]),
+            ComplianceTask.status.in_(
+                ["open", "in_progress"]
+            ),
         )
         .group_by(ComplianceTask.control_id)
         .subquery()
     )
 
-    evidence_count_col_one = func.coalesce(ev_agg_one.c.evidence_count, 0).label("evidence_count")
-    approved_count_col_one = func.coalesce(ev_agg_one.c.approved_evidence_count, 0).label("approved_evidence_count")
-    open_gap_count_col_one = func.coalesce(gap_agg_one.c.open_gap_count, 0).label("open_gap_count")
-    open_task_count_col_one = func.coalesce(task_agg_one.c.open_task_count, 0).label("open_task_count")
+    evidence_count_col_one = func.coalesce(
+        ev_agg_one.c.evidence_count,
+        0,
+    ).label("evidence_count")
 
-    coverage_status_expr_one = _control_coverage_status_expr_intelligence(
-        approved_count_col_one,
-        open_gap_count_col_one,
-        open_task_count_col_one,
-    ).label("coverage_status")
+    approved_count_col_one = func.coalesce(
+        ev_agg_one.c.approved_evidence_count,
+        0,
+    ).label("approved_evidence_count")
+
+    open_gap_count_col_one = func.coalesce(
+        gap_agg_one.c.open_gap_count,
+        0,
+    ).label("open_gap_count")
+
+    open_task_count_col_one = func.coalesce(
+        task_agg_one.c.open_task_count,
+        0,
+    ).label("open_task_count")
+
+    coverage_status_expr_one = (
+        _control_coverage_status_expr_intelligence(
+            approved_count_col_one,
+            open_gap_count_col_one,
+            open_task_count_col_one,
+        )
+        .label("coverage_status")
+    )
 
     rows = (
         db.query(
@@ -532,22 +686,50 @@ def get_matrix(
             risk_level_expr_one,
         )
         .select_from(Control)
-        .join(Requirement, Control.requirement_id == Requirement.id)
-        .join(Clause, Requirement.clause_id == Clause.id)
-        .join(Standard, Clause.standard_id == Standard.id)
-        .outerjoin(ev_agg_one, ev_agg_one.c.control_id == Control.id)
-        .outerjoin(risk_agg_one, risk_agg_one.c.control_id == Control.id)
-        .outerjoin(gap_agg_one, gap_agg_one.c.control_id == Control.id)
-        .outerjoin(task_agg_one, task_agg_one.c.control_id == Control.id)
+        .join(
+            Requirement,
+            Control.requirement_id == Requirement.id,
+        )
+        .join(
+            Clause,
+            Requirement.clause_id == Clause.id,
+        )
+        .join(
+            Standard,
+            Clause.standard_id == Standard.id,
+        )
+        .outerjoin(
+            ev_agg_one,
+            ev_agg_one.c.control_id == Control.id,
+        )
+        .outerjoin(
+            risk_agg_one,
+            risk_agg_one.c.control_id == Control.id,
+        )
+        .outerjoin(
+            gap_agg_one,
+            gap_agg_one.c.control_id == Control.id,
+        )
+        .outerjoin(
+            task_agg_one,
+            task_agg_one.c.control_id == Control.id,
+        )
         .filter(
             Standard.id == standard.id,
             Standard.type == "CONTROL_BASED",
         )
-        .order_by(Clause.code, Requirement.code, Control.code)
+        .order_by(
+            Clause.code,
+            Requirement.code,
+            Control.code,
+        )
         .all()
     )
 
-    return {"mode": "control", "rows": _rows_to_dict(rows)}
+    return {
+        "mode": "control",
+        "rows": _rows_to_dict(rows),
+    }
 
 
 # =================================================
@@ -572,14 +754,38 @@ def get_matrix_columns(
         .all()
     )
 
-    # 🔥 DEFAULT FALLBACK
     if not rows:
         return [
-            {"key": "clause_code", "label": "Clause", "visible": True, "position": 1},
-            {"key": "requirement_code", "label": "Requirement", "visible": True, "position": 2},
-            {"key": "control_code", "label": "Control", "visible": True, "position": 3},
-            {"key": "risk_level", "label": "Risk Level", "visible": True, "position": 4},
-            {"key": "coverage_status", "label": "Coverage", "visible": True, "position": 5},
+            {
+                "key": "clause_code",
+                "label": "Clause",
+                "visible": True,
+                "position": 1,
+            },
+            {
+                "key": "requirement_code",
+                "label": "Requirement",
+                "visible": True,
+                "position": 2,
+            },
+            {
+                "key": "control_code",
+                "label": "Control",
+                "visible": True,
+                "position": 3,
+            },
+            {
+                "key": "risk_level",
+                "label": "Risk Level",
+                "visible": True,
+                "position": 4,
+            },
+            {
+                "key": "coverage_status",
+                "label": "Coverage",
+                "visible": True,
+                "position": 5,
+            },
         ]
 
     return [
@@ -591,6 +797,7 @@ def get_matrix_columns(
         }
         for r in rows
     ]
+
 
 # =================================================
 # POST /matrix/columns
@@ -620,18 +827,31 @@ def save_matrix_columns(
                 standard_id=standard_id,
                 mode=mode,
                 key=c["key"],
-                label=c.get("label", c["key"]),
-                source_type=c.get("sourceType", "entity_field"),
+                label=c.get(
+                    "label",
+                    c["key"],
+                ),
+                source_type=c.get(
+                    "sourceType",
+                    "entity_field",
+                ),
                 entity=c.get("entity"),
                 field=c.get("field"),
                 fixed_value=c.get("fixedValue"),
-                visible=c.get("visible", True),
+                visible=c.get(
+                    "visible",
+                    True,
+                ),
                 position=idx,
             )
         )
 
     db.commit()
-    return {"status": "ok", "count": len(columns)}
+
+    return {
+        "status": "ok",
+        "count": len(columns),
+    }
 
 
 # =================================================
@@ -644,9 +864,13 @@ def generate_matrix_rows(
     user=Depends(get_current_user),
 ):
     ensure_matrix_column_configs_table(db)
-    
+
     standard_id: int = body["standard_id"]
-    draft_version = resolve_draft_version(db, standard_id)
+
+    draft_version = resolve_draft_version(
+        db,
+        standard_id,
+    )
 
     mode: str = body["mode"]
     rows = body.get("rows")
@@ -657,15 +881,29 @@ def generate_matrix_rows(
             db=db,
             user=user,
         )
-        rows = source.get("rows", [])
+
+        rows = source.get(
+            "rows",
+            [],
+        )
 
     inst = MatrixInstance(
-        tenant_id=getattr(user, "tenant_id", None) or 1,
+        tenant_id=getattr(
+            user,
+            "tenant_id",
+            None,
+        )
+        or 1,
         standard_id=standard_id,
         standard_version_id=draft_version.id,
         status="generated",
-        created_by=getattr(user, "id", None),
+        created_by=getattr(
+            user,
+            "id",
+            None,
+        ),
     )
+
     db.add(inst)
     db.commit()
     db.refresh(inst)
@@ -674,10 +912,15 @@ def generate_matrix_rows(
     skipped = 0
 
     for r in rows:
+
         row_key = (
-            f"{r.get('clause_code')}|{r.get('requirement_code')}|{r.get('control_code')}"
+            f"{r.get('clause_code')}|"
+            f"{r.get('requirement_code')}|"
+            f"{r.get('control_code')}"
             if mode == "control"
-            else f"{r.get('process_area_code')}|{r.get('practice_code')}"
+            else
+            f"{r.get('process_area_code')}|"
+            f"{r.get('practice_code')}"
         )
 
         existing = db.execute(
@@ -693,7 +936,12 @@ def generate_matrix_rows(
 
         db.execute(
             insert(MatrixRow).values(
-                tenant_id=getattr(user, "tenant_id", None) or 1,
+                tenant_id=getattr(
+                    user,
+                    "tenant_id",
+                    None,
+                )
+                or 1,
                 instance_id=inst.id,
                 standard_id=standard_id,
                 mode=mode,
@@ -702,10 +950,15 @@ def generate_matrix_rows(
                 clause_id=r.get("clause_id"),
                 requirement_id=r.get("requirement_id"),
                 control_id=r.get("control_id"),
-                process_area_id=r.get("process_area_id"),
-                practice_id=r.get("practice_id"),
+                process_area_id=r.get(
+                    "process_area_id"
+                ),
+                practice_id=r.get(
+                    "practice_id"
+                ),
             )
         )
+
         created += 1
 
     db.commit()
@@ -722,7 +975,6 @@ def generate_matrix_rows(
 
 # =================================================
 # GET /matrix/instances
-# - frontend {items:[...]} bekliyor
 # =================================================
 @router.get("/instances")
 def list_matrix_instances(
@@ -730,27 +982,42 @@ def list_matrix_instances(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-   
-
     q = (
         db.query(
             MatrixInstance.id,
             MatrixInstance.standard_id,
             Standard.code.label("standard_code"),
             MatrixInstance.standard_version_id,
-            StandardVersion.status.label("standard_version_status"),
+            StandardVersion.status.label(
+                "standard_version_status"
+            ),
             MatrixInstance.status,
             MatrixInstance.created_by,
             MatrixInstance.created_at,
         )
-        .join(Standard, Standard.id == MatrixInstance.standard_id)
-        .join(StandardVersion, StandardVersion.id == MatrixInstance.standard_version_id)
+        .join(
+            Standard,
+            Standard.id == MatrixInstance.standard_id,
+        )
+        .join(
+            StandardVersion,
+            StandardVersion.id
+            == MatrixInstance.standard_version_id,
+        )
     )
 
     if standard_id:
-        q = q.filter(MatrixInstance.standard_id == standard_id)
+        q = q.filter(
+            MatrixInstance.standard_id
+            == standard_id
+        )
 
-    items = q.order_by(MatrixInstance.id.desc()).all()
+    items = (
+        q.order_by(
+            MatrixInstance.id.desc()
+        )
+        .all()
+    )
 
     return {
         "items": [
@@ -778,8 +1045,6 @@ def get_matrix_instance_detail(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    
-
     inst = (
         db.query(
             MatrixInstance.id,
@@ -787,22 +1052,38 @@ def get_matrix_instance_detail(
             MatrixInstance.standard_id,
             Standard.code.label("standard_code"),
             MatrixInstance.standard_version_id,
-            StandardVersion.status.label("standard_version_status"),
+            StandardVersion.status.label(
+                "standard_version_status"
+            ),
             MatrixInstance.created_by,
             MatrixInstance.created_at,
         )
-        .join(Standard, Standard.id == MatrixInstance.standard_id)
-        .join(StandardVersion, StandardVersion.id == MatrixInstance.standard_version_id)
-        .filter(MatrixInstance.id == id)
+        .join(
+            Standard,
+            Standard.id == MatrixInstance.standard_id,
+        )
+        .join(
+            StandardVersion,
+            StandardVersion.id
+            == MatrixInstance.standard_version_id,
+        )
+        .filter(
+            MatrixInstance.id == id
+        )
         .first()
     )
 
     if not inst:
-        raise HTTPException(status_code=404, detail="Matrix instance not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Matrix instance not found",
+        )
 
     row_count = (
         db.query(func.count(MatrixRow.id))
-        .filter(MatrixRow.instance_id == id)
+        .filter(
+            MatrixRow.instance_id == id
+        )
         .scalar()
     ) or 0
 
@@ -831,15 +1112,21 @@ def get_matrix_instance_rows(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    
     q = (
         db.query(MatrixRow)
-        .filter(MatrixRow.instance_id == id)
+        .filter(
+            MatrixRow.instance_id == id
+        )
         .order_by(MatrixRow.id)
     )
 
     total = q.count()
-    rows = q.offset(offset).limit(limit).all()
+
+    rows = (
+        q.offset(offset)
+        .limit(limit)
+        .all()
+    )
 
     return {
         "items": [
@@ -864,25 +1151,31 @@ def preview_matrix(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-   
     rows = (
         db.query(MatrixRow)
-        .filter(MatrixRow.instance_id == instance_id)
+        .filter(
+            MatrixRow.instance_id
+            == instance_id
+        )
         .order_by(MatrixRow.id)
         .all()
     )
 
     return {
         "instance_id": instance_id,
-        "rows": [r.payload for r in rows],
+        "rows": [
+            r.payload
+            for r in rows
+        ],
     }
 
 
 # =================================================
 # PATCH /matrix/instances/{instance_id}/rows/{row_id}
-# - Assessment update (status, note, score, owner vs.)
 # =================================================
-@router.patch("/instances/{instance_id}/rows/{row_id}")
+@router.patch(
+    "/instances/{instance_id}/rows/{row_id}"
+)
 def update_matrix_row_assessment(
     instance_id: int,
     row_id: int,
@@ -890,32 +1183,62 @@ def update_matrix_row_assessment(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    inst = db.query(MatrixInstance).filter(MatrixInstance.id == instance_id).first()
-    if not inst:
-        raise HTTPException(status_code=404, detail="Instance not found")
+    inst = (
+        db.query(MatrixInstance)
+        .filter(
+            MatrixInstance.id
+            == instance_id
+        )
+        .first()
+    )
 
-    if inst.status in ["submitted", "approved", "closed"]:
-        raise HTTPException(status_code=409, detail="Instance is locked")
+    if not inst:
+        raise HTTPException(
+            status_code=404,
+            detail="Instance not found",
+        )
+
+    if inst.status in [
+        "submitted",
+        "approved",
+        "closed",
+    ]:
+        raise HTTPException(
+            status_code=409,
+            detail="Instance is locked",
+        )
 
     row = (
         db.query(MatrixRow)
         .filter(
             MatrixRow.id == row_id,
-            MatrixRow.instance_id == instance_id,
+            MatrixRow.instance_id
+            == instance_id,
         )
         .first()
     )
 
     if not row:
-        raise HTTPException(status_code=404, detail="Row not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Row not found",
+        )
 
     payload = row.payload or {}
-    assessment = payload.get("assessment", {})
+
+    assessment = payload.get(
+        "assessment",
+        {},
+    )
 
     for k, v in body.items():
         assessment[k] = v
 
-    assessment["updated_by"] = getattr(user, "id", None)
+    assessment["updated_by"] = getattr(
+        user,
+        "id",
+        None,
+    )
 
     payload["assessment"] = assessment
     row.payload = payload
@@ -926,141 +1249,182 @@ def update_matrix_row_assessment(
 
     db.commit()
 
-    return {"status": "ok"}
+    return {
+        "status": "ok"
+    }
 
 
-@router.post("/instances/{id}/submit")
+# =================================================
+# POST /matrix/instances/{id}/submit
+# =================================================
+@router.post(
+    "/instances/{id}/submit"
+)
 def submit_instance(
     id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    inst = db.query(MatrixInstance).filter(MatrixInstance.id == id).first()
-    if not inst:
-        raise HTTPException(status_code=404, detail="Instance not found")
+    inst = (
+        db.query(MatrixInstance)
+        .filter(
+            MatrixInstance.id == id
+        )
+        .first()
+    )
 
-    if inst.status not in ["generated", "in_progress"]:
-        raise HTTPException(status_code=409, detail="Invalid state transition")
+    if not inst:
+        raise HTTPException(
+            status_code=404,
+            detail="Matrix instance not found",
+        )
+
+    if inst.status not in [
+        "generated",
+        "in_progress",
+    ]:
+        raise HTTPException(
+            status_code=409,
+            detail="Invalid state transition",
+        )
 
     inst.status = "submitted"
     inst.submitted_at = func.now()
 
     db.commit()
 
-    return {"status": "submitted"}
+    return {
+        "status": "submitted"
+    }
 
 
-@router.post("/instances/{id}/approve")
+# =================================================
+# POST /matrix/instances/{id}/approve
+# =================================================
+@router.post(
+    "/instances/{id}/approve"
+)
 def approve_instance(
     id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    inst = db.query(MatrixInstance).filter(MatrixInstance.id == id).first()
+    inst = (
+        db.query(MatrixInstance)
+        .filter(
+            MatrixInstance.id == id
+        )
+        .first()
+    )
+
     if not inst:
-        raise HTTPException(status_code=404, detail="Instance not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Matrix instance not found",
+        )
 
     if inst.status != "submitted":
-        raise HTTPException(status_code=409, detail="Only submitted instances can be approved")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only submitted instances "
+                "can be approved"
+            ),
+        )
 
     inst.status = "approved"
     inst.approved_at = func.now()
-    inst.approved_by = getattr(user, "id", None)
+    inst.approved_by = getattr(
+        user,
+        "id",
+        None,
+    )
 
     db.commit()
 
-    return {"status": "approved"}
-
-
-@router.get("/instances/{id}/summary")
-def get_instance_summary(
-    id: int,
-    db: Session = Depends(get_db),
-    user=Depends(get_current_user),
-):
-    rows = (
-        db.query(MatrixRow.payload)
-        .filter(MatrixRow.instance_id == id)
-        .all()
-    )
-
-    total = len(rows)
-    compliant = 0
-    non_compliant = 0
-    in_progress = 0
-    not_started = 0
-
-    for r in rows:
-        assessment = (r.payload or {}).get("assessment", {})
-        status = assessment.get("status")
-
-        if status == "compliant":
-            compliant += 1
-        elif status == "non_compliant":
-            non_compliant += 1
-        elif status == "in_progress":
-            in_progress += 1
-        else:
-            not_started += 1
-
-    completion = ((compliant + non_compliant) / total) * 100 if total else 0
-
     return {
-        "total": total,
-        "compliant": compliant,
-        "non_compliant": non_compliant,
-        "in_progress": in_progress,
-        "not_started": not_started,
-        "completion_rate": round(completion, 2),
+        "status": "approved"
     }
-@router.get("/instances/{instance_id}/summary")
+
+
+# =================================================
+# GET /matrix/instances/{instance_id}/summary
+#
+# SINGLE CANONICAL INSTANCE SUMMARY
+# =================================================
+@router.get(
+    "/instances/{instance_id}/summary"
+)
 def get_matrix_instance_summary(
     instance_id: int,
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     summary = db.execute(
-    text(
-        """
-        SELECT
+        text(
+            """
+            SELECT
 
-            COUNT(*) AS total_controls,
+                COUNT(*) AS total_controls,
 
-            COUNT(*) FILTER (
-                WHERE payload->>'coverage_status' = 'COVERED'
-            ) AS covered_controls,
+                COUNT(*) FILTER (
+                    WHERE payload->>'coverage_status'
+                    = 'COVERED'
+                ) AS covered_controls,
 
-            COUNT(*) FILTER (
-                WHERE COALESCE(
-                    (payload->>'evidence_count')::int,
-                    0
-                ) > 0
-            ) AS controls_with_evidence,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(
+                        (payload->>'evidence_count')::int,
+                        0
+                    ) > 0
+                ) AS controls_with_evidence,
 
-            COUNT(*) FILTER (
-                WHERE COALESCE(
-                    (payload->>'open_gap_count')::int,
-                    0
-                ) > 0
-            ) AS open_gaps,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(
+                        (payload->>'open_gap_count')::int,
+                        0
+                    ) > 0
+                ) AS open_gaps,
 
-            COUNT(*) FILTER (
-                WHERE payload->>'risk_level'
-                IN ('HIGH','CRITICAL')
-            ) AS high_risks
+                COUNT(*) FILTER (
+                    WHERE payload->>'risk_level'
+                    IN ('HIGH', 'CRITICAL')
+                ) AS high_risks
 
-        FROM matrix_rows
-        WHERE instance_id = :instance_id
-        """
-    ),
-    {"instance_id": instance_id},
-).fetchone()
+            FROM matrix_rows
+
+            WHERE instance_id = :instance_id
+            """
+        ),
+        {
+            "instance_id": instance_id
+        },
+    ).fetchone()
+
+    if not summary:
+        raise HTTPException(
+            status_code=404,
+            detail="Matrix instance summary not found",
+        )
 
     total = summary.total_controls or 0
-    implemented = summary.implemented_controls or 0
+    covered = summary.covered_controls or 0
     evidenced = summary.controls_with_evidence or 0
 
     compliance = (
-        round((implemented / total) * 100, 1)
+        round(
+            (covered / total) * 100,
+            1,
+        )
+        if total
+        else 0
+    )
+
+    evidence_coverage = (
+        round(
+            (evidenced / total) * 100,
+            1,
+        )
         if total
         else 0
     )
@@ -1068,15 +1432,12 @@ def get_matrix_instance_summary(
     return {
         "compliance_score": compliance,
         "control_coverage": compliance,
-        "evidence_coverage": (
-            round((evidenced / total) * 100, 1)
-            if total
-            else 0
-        ),
+        "evidence_coverage": evidence_coverage,
         "open_gaps": summary.open_gaps or 0,
         "high_risks": summary.high_risks or 0,
         "total_controls": total,
     }
+
 
 # =================================================
 # GET /matrix/kpi
@@ -1094,79 +1455,106 @@ def get_matrix_kpi(
         user=user,
     )
 
-    rows = result.get("rows", [])
+    rows = result.get(
+        "rows",
+        []
+    )
 
     total = len(rows)
 
     covered = sum(
         1
         for r in rows
-        if r.get("coverage_status") == "COVERED"
+        if r.get("coverage_status")
+        == "COVERED"
     )
 
     # -----------------------------
     # Evidence KPI
     # -----------------------------
 
-    # Tenant toplam evidence
     evidence_total = (
-        db.query(func.count(Evidence.id))
+        db.query(
+            func.count(Evidence.id)
+        )
         .filter(
-            Evidence.tenant_id == tenant_id,
+            Evidence.tenant_id
+            == tenant_id,
             Evidence.is_deleted.is_(False),
         )
         .scalar()
     ) or 0
 
-
-    # Matrix üzerinde control'e bağlı evidence
     linked_evidence = sum(
-        int(r.get("evidence_count") or 0)
+        int(
+            r.get(
+                "evidence_count"
+            )
+            or 0
+        )
         for r in rows
     )
 
-
-    # Approved evidence
     approved_evidence = (
-        db.query(func.count(Evidence.id))
+        db.query(
+            func.count(Evidence.id)
+        )
         .filter(
-            Evidence.tenant_id == tenant_id,
+            Evidence.tenant_id
+            == tenant_id,
             Evidence.is_deleted.is_(False),
-            func.lower(Evidence.status) == "approved",
+            func.lower(
+                Evidence.status
+            )
+            == "approved",
         )
         .scalar()
     ) or 0
-    # Pending approval evidence
+
     pending_evidence = (
-        db.query(func.count(Evidence.id))
+        db.query(
+            func.count(Evidence.id)
+        )
         .filter(
-            Evidence.tenant_id == tenant_id,
+            Evidence.tenant_id
+            == tenant_id,
             Evidence.is_deleted.is_(False),
-            func.lower(Evidence.status) == "waiting_approval",
+            func.lower(
+                Evidence.status
+            )
+            == "waiting_approval",
         )
         .scalar()
     ) or 0
 
-
-    # Uploaded evidence
     uploaded_evidence = (
-        db.query(func.count(Evidence.id))
+        db.query(
+            func.count(Evidence.id)
+        )
         .filter(
-            Evidence.tenant_id == tenant_id,
+            Evidence.tenant_id
+            == tenant_id,
             Evidence.is_deleted.is_(False),
-            func.lower(Evidence.status) == "uploaded",
+            func.lower(
+                Evidence.status
+            )
+            == "uploaded",
         )
         .scalar()
     ) or 0
 
-
-    # Rejected evidence
     rejected_evidence = (
-        db.query(func.count(Evidence.id))
+        db.query(
+            func.count(Evidence.id)
+        )
         .filter(
-            Evidence.tenant_id == tenant_id,
+            Evidence.tenant_id
+            == tenant_id,
             Evidence.is_deleted.is_(False),
-            func.lower(Evidence.status) == "rejected",
+            func.lower(
+                Evidence.status
+            )
+            == "rejected",
         )
         .scalar()
     ) or 0
@@ -1176,31 +1564,43 @@ def get_matrix_kpi(
     # -----------------------------
 
     critical_risks = (
-        db.query(func.count(Risk.id))
+        db.query(
+            func.count(Risk.id)
+        )
         .filter(
-            Risk.tenant_id == tenant_id,
-            func.upper(Risk.risk_level) == "CRITICAL",
+            Risk.tenant_id
+            == tenant_id,
+            func.upper(
+                Risk.risk_level
+            )
+            == "CRITICAL",
         )
         .scalar()
     ) or 0
-
 
     high_risks = (
-        db.query(func.count(Risk.id))
+        db.query(
+            func.count(Risk.id)
+        )
         .filter(
-            Risk.tenant_id == tenant_id,
-            func.upper(Risk.risk_level) == "HIGH",
+            Risk.tenant_id
+            == tenant_id,
+            func.upper(
+                Risk.risk_level
+            )
+            == "HIGH",
         )
         .scalar()
     ) or 0
 
-
     compliance = (
-        round((covered / total) * 100, 1)
+        round(
+            (covered / total) * 100,
+            1,
+        )
         if total
         else 0
     )
-
 
     return {
         "compliance_percentage": compliance,
@@ -1212,16 +1612,20 @@ def get_matrix_kpi(
         },
 
         "evidence": {
-    "total": evidence_total,
-    "approved": approved_evidence,
-    "pending": pending_evidence,
-    "uploaded": uploaded_evidence,
-    "rejected": rejected_evidence,
-    "linked": linked_evidence,
-},
+            "total": evidence_total,
+            "approved": approved_evidence,
+            "pending": pending_evidence,
+            "uploaded": uploaded_evidence,
+            "rejected": rejected_evidence,
+            "linked": linked_evidence,
+        },
 
         "risk": {
-            "critical": int(critical_risks),
-            "high": int(high_risks),
+            "critical": int(
+                critical_risks
+            ),
+            "high": int(
+                high_risks
+            ),
         },
     }
