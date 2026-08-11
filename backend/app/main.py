@@ -87,21 +87,10 @@ app = FastAPI()
 # CORS
 # ==============================
 
-# app.add_middleware(
-  #  CORSMiddleware,
-   # allow_origins=[
-    #    "http://localhost:3000",
-     #   "https://compliance-intelligence-os-pro-u6yj-r5twwl9gv.vercel.app",
-    # ],
-    # allow_credentials=True,
-    # allow_methods=["*"],
-    # allow_headers=["*"],
-# )
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://compliance-intelligence-os-m65n.vercel.app",
     ],
     allow_origin_regex=r"^https://compliance-intelligence-os(?:-[a-z0-9]+)*\.vercel\.app$",
     allow_credentials=True,
