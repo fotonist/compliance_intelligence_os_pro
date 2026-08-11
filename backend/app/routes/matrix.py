@@ -1374,7 +1374,7 @@ def get_matrix_instance_summary(
 
                 COUNT(*) FILTER (
                     WHERE COALESCE(
-                        (payload->>'evidence_count')::int,
+                        (payload->>'approved_evidence_count')::int,
                         0
                     ) > 0
                 ) AS controls_with_evidence,
