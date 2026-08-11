@@ -12,7 +12,7 @@ from app.models.risks import Risk
 from app.models.controls import Control
 from app.models.controls_coverage import ControlsCoverage
 from app.models.compliance_tasks import ComplianceTask
-
+from app.models.evidences import Evidence
 
 router = APIRouter(
     prefix="/analytics",
@@ -266,6 +266,10 @@ def create_task_from_control(
 #
 # ==========================================================
 
+# ==========================================================
+# PROCESS READINESS
+# ==========================================================
+
 @router.get("/process_readiness")
 def get_process_readiness(
     standard_id: int | None = Query(default=None),
@@ -275,7 +279,7 @@ def get_process_readiness(
     tenant_id = current_user.tenant_id
 
     # ------------------------------------------------------
-    # 1. Load active tenant processes
+    # 1. ACTIVE PROCESSES
     # ------------------------------------------------------
 
     processes = (
@@ -288,13 +292,16 @@ def get_process_readiness(
         .all()
     )
 
+    results = []
+
     # ------------------------------------------------------
-    # 2. Build standard-scoped control set
+    # 2. STANDARD-SCOPED CONTROLS
     # ------------------------------------------------------
 
     standard_control_ids = None
 
     if standard_id is not None:
+
         rows = db.execute(
             text(
                 """
@@ -318,35 +325,31 @@ def get_process_readiness(
         }
 
     # ------------------------------------------------------
-    # 3. Process readiness
+    # 3. PROCESS LOOP
     # ------------------------------------------------------
-
-    results = []
 
     for process in processes:
 
         # --------------------------------------------------
         # Controls assigned to process
         #
-        # A task carries both:
-        # process_id
-        # control_id
+        # Current architecture:
         #
-        # We use DISTINCT control IDs so multiple tasks
-        # for the same control do not inflate the metrics.
+        # Process
+        #    ↓
+        # compliance_tasks.process_id
+        #    ↓
+        # compliance_tasks.control_id
+        #    ↓
+        # Control
         # --------------------------------------------------
 
         task_rows = (
-            db.query(
-                ComplianceTask.control_id
-            )
+            db.query(ComplianceTask.control_id)
             .filter(
-                ComplianceTask.tenant_id
-                == tenant_id,
-                ComplianceTask.process_id
-                == process.id,
-                ComplianceTask.control_id
-                .isnot(None),
+                ComplianceTask.tenant_id == tenant_id,
+                ComplianceTask.process_id == process.id,
+                ComplianceTask.control_id.isnot(None),
             )
             .distinct()
             .all()
@@ -359,242 +362,16 @@ def get_process_readiness(
         }
 
         # --------------------------------------------------
-        # Apply standard scope
+        # Apply standard filter
         # --------------------------------------------------
 
         if standard_control_ids is not None:
-            process_control_ids = (
-                process_control_ids
-                & standard_control_ids
-            )
+            process_control_ids &= standard_control_ids
 
-        total_controls = len(
-            process_control_ids
-        )
+        total_controls = len(process_control_ids)
 
         # --------------------------------------------------
-        # No controls
-        # --------------------------------------------------
-
-        if total_controls == 0:
-
-            # Risks are still process-level.
-            risk_query = (
-                db.query(Risk)
-                .join(
-                    text(
-                        "process_risk_links"
-                    ),
-                    text(
-                        "process_risk_links.risk_id = risks.id"
-                    ),
-                )
-                .filter(
-                    text(
-                        "process_risk_links.process_id = :process_id"
-                    ),
-                    Risk.tenant_id == tenant_id,
-                )
-            )
-
-            risk_query = risk_query.params(
-                process_id=process.id
-            )
-
-            risks = risk_query.all()
-
-            critical_risks = sum(
-                1
-                for risk in risks
-                if (
-                    str(risk.risk_level)
-                    .upper()
-                    == "CRITICAL"
-                )
-            )
-
-            open_tasks = (
-                db.query(
-                    func.count(
-                        ComplianceTask.id
-                    )
-                )
-                .filter(
-                    ComplianceTask.tenant_id
-                    == tenant_id,
-                    ComplianceTask.process_id
-                    == process.id,
-                    ComplianceTask.status
-                    .notin_(
-                        [
-                            "completed",
-                            "closed",
-                            "done",
-                        ]
-                    ),
-                )
-                .scalar()
-                or 0
-            )
-
-            results.append(
-                {
-                    "process_id": process.id,
-                    "process_code": process.code,
-                    "process_name": process.name,
-                    "readiness_score": 0,
-                    "coverage_percentage": 0,
-                    "critical_risk_count": critical_risks,
-                    "critical_risks": critical_risks,
-                    "escalation_probability": (
-                        100
-                        if critical_risks > 0
-                        else 0
-                    ),
-                    "trend_delta": 0,
-                    "trend_30d": 0,
-                }
-            )
-
-            continue
-
-        # --------------------------------------------------
-        # Coverage
-        # --------------------------------------------------
-
-        coverage_rows = (
-            db.query(ControlsCoverage)
-            .filter(
-                ControlsCoverage.control_id.in_(
-                    process_control_ids
-                )
-            )
-            .all()
-        )
-
-        coverage_map = {
-            "NOT_ACHIEVED": 0,
-            "PARTIALLY_ACHIEVED": 50,
-            "ACHIEVED": 100,
-        }
-
-        coverage_values = []
-
-        for control_id in process_control_ids:
-
-            coverage_row = next(
-                (
-                    row
-                    for row in coverage_rows
-                    if row.control_id
-                    == control_id
-                ),
-                None,
-            )
-
-            coverage_values.append(
-                coverage_map.get(
-                    (
-                        coverage_row.coverage_status
-                        if coverage_row
-                        else "NOT_ACHIEVED"
-                    ),
-                    0,
-                )
-            )
-
-        coverage_percentage = (
-            sum(coverage_values)
-            / len(coverage_values)
-        )
-
-        # --------------------------------------------------
-        # Evidence coverage
-        # --------------------------------------------------
-        #
-        # Evidence is considered available when at least
-        # one evidence record exists for the control.
-        #
-        # Approved evidence is preferred.
-        # --------------------------------------------------
-
-        evidence_rows = db.execute(
-            text(
-                """
-                SELECT
-                    e.control_id,
-                    COUNT(*) AS total,
-                    COUNT(*) FILTER (
-                        WHERE UPPER(
-                            COALESCE(
-                                e.approval_status,
-                                ''
-                            )
-                        ) IN (
-                            'APPROVED',
-                            'APPROVED_REVIEW'
-                        )
-                    ) AS approved
-                FROM evidences e
-                WHERE e.tenant_id = :tenant_id
-                  AND e.control_id = ANY(
-                      :control_ids
-                  )
-                  AND COALESCE(
-                      e.is_deleted,
-                      false
-                  ) = false
-                GROUP BY e.control_id
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "control_ids": list(
-                    process_control_ids
-                ),
-            },
-        ).mappings().all()
-
-        evidence_by_control = {
-            int(row["control_id"]): {
-                "total": int(
-                    row["total"] or 0
-                ),
-                "approved": int(
-                    row["approved"] or 0
-                ),
-            }
-            for row in evidence_rows
-        }
-
-        evidence_scores = []
-
-        for control_id in process_control_ids:
-
-            evidence = (
-                evidence_by_control.get(
-                    control_id,
-                    {
-                        "total": 0,
-                        "approved": 0,
-                    },
-                )
-            )
-
-            if evidence["approved"] > 0:
-                evidence_scores.append(100)
-            elif evidence["total"] > 0:
-                evidence_scores.append(50)
-            else:
-                evidence_scores.append(0)
-
-        evidence_percentage = (
-            sum(evidence_scores)
-            / len(evidence_scores)
-        )
-
-        # --------------------------------------------------
-        # Process risks
+        # PROCESS RISKS
         # --------------------------------------------------
 
         risk_rows = db.execute(
@@ -651,46 +428,221 @@ def get_process_readiness(
         total_risks = len(risk_rows)
 
         # --------------------------------------------------
-        # Risk posture
+        # RISK SCORE
         # --------------------------------------------------
 
         if total_risks == 0:
             risk_score = 100
         else:
             risk_pressure = (
-                (
-                    critical_risks * 1.0
-                    + high_risks * 0.5
-                )
-                / total_risks
-            )
+                critical_risks
+                + (high_risks * 0.5)
+            ) / total_risks
 
             risk_score = max(
                 0,
-                100
-                - (
-                    risk_pressure
-                    * 100
-                ),
+                100 - (risk_pressure * 100),
             )
 
         # --------------------------------------------------
-        # Open task pressure
+        # NO CONTROLS
+        # --------------------------------------------------
+
+        if total_controls == 0:
+
+            open_task_count = (
+                db.query(
+                    func.count(ComplianceTask.id)
+                )
+                .filter(
+                    ComplianceTask.tenant_id == tenant_id,
+                    ComplianceTask.process_id == process.id,
+                    ComplianceTask.status.notin_(
+                        [
+                            "completed",
+                            "closed",
+                            "done",
+                        ]
+                    ),
+                )
+                .scalar()
+                or 0
+            )
+
+            results.append(
+                {
+                    "process_id": process.id,
+                    "process_code": process.code,
+                    "process_name": process.name,
+                    "readiness_score": 0,
+                    "coverage_percentage": 0,
+                    "critical_risk_count": critical_risks,
+                    "critical_risks": critical_risks,
+                    "escalation_probability": min(
+                        100,
+                        (
+                            critical_risks * 60
+                            + high_risks * 20
+                            + (
+                                15
+                                if critical_risks == 0
+                                else 0
+                            )
+                            + (
+                                10
+                                if open_task_count >= 3
+                                else 5
+                                if open_task_count > 0
+                                else 0
+                            )
+                        ),
+                    ),
+                    "trend_delta": 0,
+                    "trend_30d": 0,
+                }
+            )
+
+            continue
+
+        # --------------------------------------------------
+        # COVERAGE
+        # --------------------------------------------------
+
+        coverage_rows = (
+            db.query(ControlsCoverage)
+            .filter(
+                ControlsCoverage.control_id.in_(
+                    process_control_ids
+                )
+            )
+            .all()
+        )
+
+        coverage_by_control = {
+            row.control_id: row.coverage_status
+            for row in coverage_rows
+        }
+
+        coverage_map = {
+            "NOT_ACHIEVED": 0,
+            "PARTIALLY_ACHIEVED": 50,
+            "ACHIEVED": 100,
+        }
+
+        coverage_values = []
+
+        for control_id in process_control_ids:
+
+            status = coverage_by_control.get(
+                control_id,
+                "NOT_ACHIEVED",
+            )
+
+            coverage_values.append(
+                coverage_map.get(
+                    str(status).upper(),
+                    0,
+                )
+            )
+
+        coverage_percentage = (
+            sum(coverage_values)
+            / len(coverage_values)
+        )
+
+        # --------------------------------------------------
+        # EVIDENCE
+        # --------------------------------------------------
+        #
+        # IMPORTANT:
+        # We deliberately do NOT use:
+        #
+        #   ANY(:control_ids)
+        #
+        # because PostgreSQL/SQLAlchemy parameter binding
+        # can fail with that construct.
+        #
+        # Instead we use IN with expanding bind parameters.
+        # --------------------------------------------------
+        # Instead of relying on PostgreSQL array syntax,
+        # build the IN list safely through SQLAlchemy.
+        evidence_rows = (
+            db.query(
+                Evidence.control_id,
+                func.count(Evidence.id).label("total"),
+                func.count(Evidence.id)
+                .filter(
+                    func.upper(
+                        func.coalesce(
+                            Evidence.approval_status,
+                            "",
+                        )
+                    ).in_(
+                        [
+                            "APPROVED",
+                            "APPROVED_REVIEW",
+                        ]
+                    )
+                )
+                .label("approved"),
+            )
+            .filter(
+                Evidence.tenant_id == tenant_id,
+                Evidence.control_id.in_(
+                    process_control_ids
+                ),
+                Evidence.is_deleted.is_(False),
+            )
+            .group_by(Evidence.control_id)
+            .all()
+        )
+
+        evidence_by_control = {
+            row.control_id: {
+                "total": int(row.total or 0),
+                "approved": int(row.approved or 0),
+            }
+            for row in evidence_rows
+        }
+
+        evidence_scores = []
+
+        for control_id in process_control_ids:
+
+            evidence = evidence_by_control.get(
+                control_id,
+                {
+                    "total": 0,
+                    "approved": 0,
+                },
+            )
+
+            if evidence["approved"] > 0:
+                evidence_scores.append(100)
+
+            elif evidence["total"] > 0:
+                evidence_scores.append(50)
+
+            else:
+                evidence_scores.append(0)
+
+        evidence_percentage = (
+            sum(evidence_scores)
+            / len(evidence_scores)
+        )
+
+        # --------------------------------------------------
+        # OPEN TASK PRESSURE
         # --------------------------------------------------
 
         open_task_count = (
             db.query(
-                func.count(
-                    ComplianceTask.id
-                )
+                func.count(ComplianceTask.id)
             )
             .filter(
-                ComplianceTask.tenant_id
-                == tenant_id,
-                ComplianceTask.process_id
-                == process.id,
-                ComplianceTask.status
-                .notin_(
+                ComplianceTask.tenant_id == tenant_id,
+                ComplianceTask.process_id == process.id,
+                ComplianceTask.status.notin_(
                     [
                         "completed",
                         "closed",
@@ -705,26 +657,16 @@ def get_process_readiness(
         if open_task_count == 0:
             task_score = 100
         else:
-            # Controlled pressure curve.
             task_score = max(
                 0,
-                100
-                - min(
+                100 - min(
                     100,
                     open_task_count * 10,
                 ),
             )
 
         # --------------------------------------------------
-        # Readiness score
-        # --------------------------------------------------
-        #
-        # Coverage      40%
-        # Evidence      25%
-        # Risk posture  20%
-        # Task pressure 15%
-        #
-        # Higher = better readiness.
+        # READINESS SCORE
         # --------------------------------------------------
 
         readiness_score = (
@@ -746,7 +688,7 @@ def get_process_readiness(
         )
 
         # --------------------------------------------------
-        # Escalation probability
+        # ESCALATION
         # --------------------------------------------------
 
         escalation_probability = 0
@@ -762,6 +704,7 @@ def get_process_readiness(
 
         if open_task_count >= 3:
             escalation_probability += 10
+
         elif open_task_count > 0:
             escalation_probability += 5
 
@@ -771,15 +714,8 @@ def get_process_readiness(
         )
 
         # --------------------------------------------------
-        # Trend
-        #
-        # No historical process-readiness snapshot exists
-        # in the current schema.
-        #
-        # Therefore we do NOT invent historical data.
+        # RESULT
         # --------------------------------------------------
-
-        trend_delta = 0
 
         results.append(
             {
@@ -794,13 +730,13 @@ def get_process_readiness(
                 "critical_risk_count": critical_risks,
                 "critical_risks": critical_risks,
                 "escalation_probability": escalation_probability,
-                "trend_delta": trend_delta,
-                "trend_30d": trend_delta,
+                "trend_delta": 0,
+                "trend_30d": 0,
             }
         )
 
     # ------------------------------------------------------
-    # Sort by readiness
+    # SORT
     # ------------------------------------------------------
 
     results.sort(
