@@ -215,7 +215,7 @@ def get_risk(
 # Basic CRUD
 # -------------------------------------------------
 
-@router.get("/")
+@router.get("")
 def list_risks(
     page: int = 1,
     page_size: int = 20,
@@ -225,6 +225,15 @@ def list_risks(
     current_user=Depends(get_current_user),
 ):
     tenant_id = current_user.tenant_id
+
+    if page < 1:
+        page = 1
+
+    if page_size < 1:
+        page_size = 20
+
+    if page_size > 100:
+        page_size = 100
 
     offset = (page - 1) * page_size
 
@@ -238,6 +247,9 @@ def list_risks(
         "offset": offset,
     }
 
+    # -------------------------------------------------
+    # STATUS FILTER
+    # -------------------------------------------------
 
     if status and status.lower() != "all":
         where_conditions.append(
@@ -245,21 +257,28 @@ def list_risks(
         )
         params["status"] = status.lower()
 
+    # -------------------------------------------------
+    # SEARCH
+    # -------------------------------------------------
 
-    if search:
+    if search and search.strip():
         where_conditions.append(
             """
             (
-                LOWER(r.title) LIKE :search
-                OR LOWER(COALESCE(r.description,'')) LIKE :search
+                LOWER(COALESCE(r.title, '')) LIKE :search
+                OR LOWER(COALESCE(r.description, '')) LIKE :search
+                OR LOWER(COALESCE(r.risk_level, '')) LIKE :search
             )
             """
         )
-        params["search"] = f"%{search.lower()}%"
 
+        params["search"] = f"%{search.strip().lower()}%"
 
     where_sql = " AND ".join(where_conditions)
 
+    # -------------------------------------------------
+    # TOTAL
+    # -------------------------------------------------
 
     total_query = text(
         f"""
@@ -274,48 +293,106 @@ def list_risks(
         params,
     ).scalar() or 0
 
+    # -------------------------------------------------
+    # DATA
+    # -------------------------------------------------
 
     data_query = text(
         f"""
         SELECT
-            r.*,
-            COUNT(rel.evidence_id) AS evidence_count
+            r.id,
+            r.tenant_id,
+            r.title,
+            r.description,
+            r.impact,
+            r.likelihood,
+            r.score,
+            r.risk_level,
+            r.status,
+            r.treatment,
+            r.action,
+
+            r.control_id,
+            r.standard_id,
+            r.requirement_id,
+
+            r.control_coverage_status,
+
+            r.prev_impact,
+            r.prev_likelihood,
+            r.previous_score,
+            r.prev_risk_level,
+
+            r.appetite_threshold,
+            r.appetite_status,
+            r.appetite_deviation,
+
+            r.created_at,
+            r.updated_at,
+
+            COUNT(rel.evidence_id)::integer AS evidence_count
+
         FROM risks r
+
         LEFT JOIN risk_evidence_links rel
             ON rel.risk_id = r.id
+
         WHERE {where_sql}
-        GROUP BY r.id
-        ORDER BY r.id DESC
+
+        GROUP BY
+            r.id,
+            r.tenant_id,
+            r.title,
+            r.description,
+            r.impact,
+            r.likelihood,
+            r.score,
+            r.risk_level,
+            r.status,
+            r.treatment,
+            r.action,
+            r.control_id,
+            r.standard_id,
+            r.requirement_id,
+            r.control_coverage_status,
+            r.prev_impact,
+            r.prev_likelihood,
+            r.previous_score,
+            r.prev_risk_level,
+            r.appetite_threshold,
+            r.appetite_status,
+            r.appetite_deviation,
+            r.created_at,
+            r.updated_at
+
+        ORDER BY r.score DESC NULLS LAST, r.id DESC
+
         LIMIT :limit
         OFFSET :offset
         """
     )
-
 
     rows = db.execute(
         data_query,
         params,
     ).fetchall()
 
-
     total_pages = (
-        (total + page_size - 1) // page_size
+        (int(total) + page_size - 1) // page_size
         if total
         else 1
     )
 
-
     return {
         "items": [
-            row_to_dict(r)
-            for r in rows
+            row_to_dict(row)
+            for row in rows
         ],
         "total": int(total),
         "page": page,
         "page_size": page_size,
         "total_pages": total_pages,
     }
-
 
 # -------------------------------------------------
 # Risk History (FOR FRONTEND + BACKWARD COMPAT)
