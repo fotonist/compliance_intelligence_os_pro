@@ -1409,7 +1409,7 @@ def get_matrix_instance_summary(
 
     total = summary.total_controls or 0
     covered = summary.covered_controls or 0
-    evidenced = summary.controls_with_evidence or 0
+    evidenced = summary.controls_with_approved_evidence or 0
 
     compliance = (
         round(
