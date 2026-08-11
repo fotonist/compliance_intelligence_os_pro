@@ -334,43 +334,46 @@ def list_risks(
 
         FROM risks r
 
-        LEFT JOIN risk_evidence_links rel
-            ON rel.risk_id = r.id
+    """
+LEFT JOIN risk_versions rv
+    ON rv.risk_id = r.id
 
-        WHERE {where_sql}
+LEFT JOIN risk_evidence_link rel
+    ON rel.risk_version_id = rv.id
 
-        GROUP BY
-            r.id,
-            r.tenant_id,
-            r.title,
-            r.description,
-            r.impact,
-            r.likelihood,
-            r.score,
-            r.risk_level,
-            r.status,
-            r.treatment,
-            r.action,
-            r.control_id,
-            r.standard_id,
-            r.requirement_id,
-            r.control_coverage_status,
-            r.prev_impact,
-            r.prev_likelihood,
-            r.previous_score,
-            r.prev_risk_level,
-            r.appetite_threshold,
-            r.appetite_status,
-            r.appetite_deviation,
-            r.created_at,
-            r.updated_at
+WHERE {where_sql}
 
-        ORDER BY r.score DESC NULLS LAST, r.id DESC
+GROUP BY
+    r.id,
+    r.tenant_id,
+    r.title,
+    r.description,
+    r.impact,
+    r.likelihood,
+    r.score,
+    r.risk_level,
+    r.status,
+    r.treatment,
+    r.action,
+    r.control_id,
+    r.standard_id,
+    r.requirement_id,
+    r.control_coverage_status,
+    r.prev_impact,
+    r.prev_likelihood,
+    r.previous_score,
+    r.prev_risk_level,
+    r.appetite_threshold,
+    r.appetite_status,
+    r.appetite_deviation,
+    r.created_at,
+    r.updated_at
 
-        LIMIT :limit
-        OFFSET :offset
-        """
-    )
+ORDER BY r.score DESC NULLS LAST, r.id DESC
+
+LIMIT :limit
+OFFSET :offset
+"""
 
     rows = db.execute(
         data_query,
