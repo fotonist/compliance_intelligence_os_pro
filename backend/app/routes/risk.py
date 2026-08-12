@@ -373,7 +373,7 @@ ORDER BY r.score DESC NULLS LAST, r.id DESC
 LIMIT :limit
 OFFSET :offset
 """
-
+    )
     rows = db.execute(
         data_query,
         params,
