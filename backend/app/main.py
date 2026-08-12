@@ -77,7 +77,6 @@ from app.seed.risk_assessment_seed import seed_risk_assessment_questions
 from app.seed.iso15504_2006 import seed_iso15504_2006
 
 
-
 # ==============================
 # APP INIT
 # ==============================
@@ -88,23 +87,19 @@ app = FastAPI()
 # CORS
 # ==============================
 
-# app.add_middleware(
-  #  CORSMiddleware,
-   # allow_origins=[
-    #    "http://localhost:3000",
-     #   "https://compliance-intelligence-os-pro-u6yj-r5twwl9gv.vercel.app",
-    # ],
-    # allow_credentials=True,
-    # allow_methods=["*"],
-    # allow_headers=["*"],
-# )
-allow_origins=[
-    "http://localhost:3000",
-    "https://compliance-intelligence-os-m65n.vercel.app",
-    "https://compliance-intelligence-os-pro-u6yj-r5twwl9gv.vercel.app",
-    "https://compliance-intelligence-os-d3ot6ocmd-hasans-projects-b02466bd.vercel.app",
-],
-allow_origin_regex=r"^https://compliance-intelligence-os(?:-pro)?(?:-[a-z0-9-]+)?\.vercel\.app$",
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "https://compliance-intelligence-os-m65n.vercel.app",
+        "https://compliance-intelligence-os-pro-u6yj-r5twwl9gv.vercel.app",
+        "https://compliance-intelligence-os-d3ot6ocmd-hasans-projects-b02466bd.vercel.app",
+    ],
+    allow_origin_regex=r"^https://compliance-intelligence-os(?:-pro)?(?:-[a-z0-9-]+)?\.vercel\.app$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ==============================
 # STATIC FILES
