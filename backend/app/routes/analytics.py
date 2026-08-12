@@ -13,6 +13,7 @@ from app.models.controls import Control
 from app.models.controls_coverage import ControlsCoverage
 from app.models.compliance_tasks import ComplianceTask
 from app.models.evidences import Evidence
+from app.models.evidence_files import EvidenceFile
 
 router = APIRouter(
     prefix="/analytics",
@@ -553,28 +554,21 @@ def get_process_readiness(
         # --------------------------------------------------
         # EVIDENCE
         # --------------------------------------------------
-        #
-        # IMPORTANT:
-        # We deliberately do NOT use:
-        #
-        #   ANY(:control_ids)
-        #
-        # because PostgreSQL/SQLAlchemy parameter binding
-        # can fail with that construct.
-        #
-        # Instead we use IN with expanding bind parameters.
-        # --------------------------------------------------
-        # Instead of relying on PostgreSQL array syntax,
-        # build the IN list safely through SQLAlchemy.
+        # Evidence approval is derived from EvidenceFile.status.
+        # Evidence itself does not have approval_status.
         evidence_rows = (
             db.query(
                 Evidence.control_id,
-                func.count(Evidence.id).label("total"),
-                func.count(Evidence.id)
+                func.count(
+                    distinct(Evidence.id)
+                ).label("total"),
+                func.count(
+                    distinct(Evidence.id)
+                )
                 .filter(
                     func.upper(
                         func.coalesce(
-                            Evidence.approval_status,
+                            EvidenceFile.status,
                             "",
                         )
                     ).in_(
@@ -585,6 +579,10 @@ def get_process_readiness(
                     )
                 )
                 .label("approved"),
+            )
+            .outerjoin(
+                EvidenceFile,
+                EvidenceFile.evidence_id == Evidence.id,
             )
             .filter(
                 Evidence.tenant_id == tenant_id,
