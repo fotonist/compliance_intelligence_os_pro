@@ -15,7 +15,7 @@ export default function ClauseWeightsPage() {
   const [weights, setWeights] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
 
-  const standardCode = "ISO27001:2022";
+  const standardCode = "ISO27001";
 
   const token =
     typeof window !== "undefined"
@@ -27,7 +27,7 @@ export default function ClauseWeightsPage() {
     try {
       setLoading(true);
 
-      const cRes = await fetch(`${API_BASE}/clauses`, {
+      const cRes = await fetch(`${API_BASE}/standards/2/clauses`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
