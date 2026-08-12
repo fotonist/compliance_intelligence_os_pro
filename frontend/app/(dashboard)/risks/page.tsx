@@ -8,6 +8,7 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import { fetchRisks, type RiskItem } from "../../../services/risk";
 
 const PAGE_SIZE = 10;
+const KPI_PAGE_SIZE = 100;
 
 /* ================= PAGE ================= */
 
@@ -15,6 +16,7 @@ export default function RisksPage() {
   const router = useRouter();
 
   const [risks, setRisks] = useState<RiskItem[]>([]);
+  const [kpiRisks, setKpiRisks] = useState<RiskItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [page, setPage] = useState(1);
@@ -33,22 +35,24 @@ export default function RisksPage() {
 
   const criticalCount = useMemo(
     () =>
-      risks.filter((r) =>
+      kpiRisks.filter((r) =>
         r.risk_level?.toLowerCase().includes("critical")
       ).length,
-    [risks]
+    [kpiRisks]
   );
 
   const avgScore = useMemo(() => {
-    if (!risks.length) return 0;
-    const sum = risks.reduce((acc, r) => acc + (r.score || 0), 0);
-    return (sum / risks.length).toFixed(1);
-  }, [risks]);
+    if (!kpiRisks.length) return 0;
+    const scored = kpiRisks.filter((r) => r.score != null);
+    if (!scored.length) return 0;
+    const sum = scored.reduce((acc, r) => acc + Number(r.score || 0), 0);
+    return (sum / scored.length).toFixed(1);
+  }, [kpiRisks]);
 
   const totalEvidence = useMemo(
     () =>
-      risks.reduce((acc, r) => acc + (r.evidence_count || 0), 0),
-    [risks]
+      kpiRisks.reduce((acc, r) => acc + Number(r.evidence_count || 0), 0),
+    [kpiRisks]
   );
 
   /* ================= LOAD ================= */
@@ -61,15 +65,24 @@ export default function RisksPage() {
   async function loadRisks(pageNumber: number) {
     setLoading(true);
     try {
-      const data = await fetchRisks(pageNumber);
+      // Table data: canonical tenant-wide risk set, paginated for the UI.
+      const tableData = await fetchRisks(pageNumber, PAGE_SIZE, "all");
 
-      setRisks(Array.isArray(data?.items) ? data.items : []);
-      setTotal(data?.total ?? 0);
-      setTotalPages(data?.total_pages ?? 1);
-      setPage(data?.page ?? 1);
+      // KPI data: same canonical tenant-wide risk set, fetched independently
+      // so KPI values are never calculated from the current table page only.
+      const kpiData = await fetchRisks(1, KPI_PAGE_SIZE, "all");
+
+      setRisks(Array.isArray(tableData?.items) ? tableData.items : []);
+      setKpiRisks(Array.isArray(kpiData?.items) ? kpiData.items : []);
+      setTotal(Number(tableData?.total ?? 0));
+      setTotalPages(Number(tableData?.total_pages ?? 1));
+      setPage(Number(tableData?.page ?? 1));
     } catch (err) {
       console.error("Failed to load risks", err);
       setRisks([]);
+      setKpiRisks([]);
+      setTotal(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
@@ -214,7 +227,6 @@ export default function RisksPage() {
 
       {/* ================= MODALS ================= */}
 
-    
       {editRisk && (
         <UpdateRiskModal
           risk={editRisk}
@@ -226,26 +238,26 @@ export default function RisksPage() {
         />
       )}
 
-     {deletePopup.open && (
- <DeleteConfirmModal
-  title="Cannot Delete Risk"
-  message={deletePopup.message}
-  confirmText="OK"
-  onConfirm={() =>
-    setDeletePopup({
-      open: false,
-      message: "",
-    })
-  }
-  onClose={() =>
-    setDeletePopup({
-      open: false,
-      message: "",
-    })
-  }
-/>
-)}
-          </div>
+      {deletePopup.open && (
+        <DeleteConfirmModal
+          title="Cannot Delete Risk"
+          message={deletePopup.message}
+          confirmText="OK"
+          onConfirm={() =>
+            setDeletePopup({
+              open: false,
+              message: "",
+            })
+          }
+          onClose={() =>
+            setDeletePopup({
+              open: false,
+              message: "",
+            })
+          }
+        />
+      )}
+    </div>
   );
 }
 
