@@ -330,7 +330,7 @@ def list_risks(
             r.created_at,
             r.updated_at,
 
-            COUNT(rel.evidence_id)::integer AS evidence_count
+            COUNT(rel.evidence_file_id)::integer AS evidence_count
 
         FROM risks r
 
