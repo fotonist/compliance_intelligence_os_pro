@@ -41,6 +41,7 @@ from app.routes.risk_forecast import router as risk_forecast_router
 from app.routes.intelligence_control import router as intelligence_control_router
 from app.routes.uee import router as uee_router
 from app.routes.analytics import router as analytics_router
+from app.routes.process_readiness import router as process_readiness_router
 from app.routes.license import router as license_router
 from app.routes.analytics_control import router as analytics_control_router
 from app.routes.company_tasks import router as company_tasks_router
@@ -166,6 +167,7 @@ app.include_router(intelligence_api_router)
 app.include_router(risk_forecast_router)
 app.include_router(intelligence_control_router)
 app.include_router(uee_router)
+app.include_router(process_readiness_router)
 app.include_router(analytics_router)
 app.include_router(analytics_control_router)
 app.include_router(roles_router)
