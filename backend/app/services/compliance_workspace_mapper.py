@@ -22,6 +22,31 @@ from app.schemas.compliance_workspace_schema import (
 class ComplianceWorkspaceMapper:
 
     # ============================================================
+    # DATETIME NORMALIZATION
+    # ============================================================
+
+    @staticmethod
+    def _normalize_datetime(value):
+        """
+        Normalize naive and timezone-aware datetimes to UTC-aware.
+
+        The production database contains a mixture of DateTime
+        columns that may return naive values and timezone-aware
+        values. All internal comparisons must use one representation.
+        """
+
+        if value is None:
+            return None
+
+        if not isinstance(value, datetime):
+            return None
+
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+
+        return value.astimezone(timezone.utc)
+
+    # ============================================================
     # EVIDENCE FILE APPROVAL STATE
     # ============================================================
 
@@ -43,8 +68,10 @@ class ComplianceWorkspaceMapper:
             files,
             key=lambda file: (
                 getattr(file, "version", 0) or 0,
-                getattr(file, "uploaded_at", None)
-                or datetime.min,
+                ComplianceWorkspaceMapper._normalize_datetime(
+                    getattr(file, "uploaded_at", None)
+                )
+                or datetime.min.replace(tzinfo=timezone.utc),
                 getattr(file, "id", 0) or 0,
             ),
         )
@@ -651,12 +678,11 @@ class ComplianceWorkspaceMapper:
                 None,
             )
 
-            if due_date is not None:
+            due_date = ComplianceWorkspaceMapper._normalize_datetime(
+                due_date
+            )
 
-                if due_date.tzinfo is None:
-                    due_date = due_date.replace(
-                        tzinfo=timezone.utc
-                    )
+            if due_date is not None:
 
                 if (
                     due_date < now
@@ -694,16 +720,20 @@ class ComplianceWorkspaceMapper:
             [],
         ):
 
-            created_at = getattr(
-                evidence,
-                "created_at",
-                None,
+            created_at = ComplianceWorkspaceMapper._normalize_datetime(
+                getattr(
+                    evidence,
+                    "created_at",
+                    None,
+                )
             )
 
-            reviewed_at = getattr(
-                evidence,
-                "reviewed_at",
-                None,
+            reviewed_at = ComplianceWorkspaceMapper._normalize_datetime(
+                getattr(
+                    evidence,
+                    "reviewed_at",
+                    None,
+                )
             )
 
             if created_at:
@@ -736,16 +766,20 @@ class ComplianceWorkspaceMapper:
             [],
         ):
 
-            created_at = getattr(
-                risk,
-                "created_at",
-                None,
+            created_at = ComplianceWorkspaceMapper._normalize_datetime(
+                getattr(
+                    risk,
+                    "created_at",
+                    None,
+                )
             )
 
-            updated_at = getattr(
-                risk,
-                "updated_at",
-                None,
+            updated_at = ComplianceWorkspaceMapper._normalize_datetime(
+                getattr(
+                    risk,
+                    "updated_at",
+                    None,
+                )
             )
 
             if created_at:
@@ -778,16 +812,20 @@ class ComplianceWorkspaceMapper:
             [],
         ):
 
-            created_at = getattr(
-                task,
-                "created_at",
-                None,
+            created_at = ComplianceWorkspaceMapper._normalize_datetime(
+                getattr(
+                    task,
+                    "created_at",
+                    None,
+                )
             )
 
-            updated_at = getattr(
-                task,
-                "updated_at",
-                None,
+            updated_at = ComplianceWorkspaceMapper._normalize_datetime(
+                getattr(
+                    task,
+                    "updated_at",
+                    None,
+                )
             )
 
             if created_at:
@@ -820,9 +858,10 @@ class ComplianceWorkspaceMapper:
 
         timeline.sort(
             key=lambda x: (
-                x.date
-                if x.date
-                else datetime.min.replace(
+                ComplianceWorkspaceMapper._normalize_datetime(
+                    x.date
+                )
+                or datetime.min.replace(
                     tzinfo=timezone.utc
                 )
             ),
