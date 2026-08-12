@@ -35,6 +35,7 @@ from app.routes import readiness
 from app.routes import clause_weights
 from app.routes.clauses import router as clause_router
 from app.routes import heatmap
+from app.routes import standard_structure
 from app.routes.intelligence import router as intelligence_router
 from app.routes.risk_forecast import router as risk_forecast_router
 from app.routes.intelligence_control import router as intelligence_control_router
@@ -157,6 +158,7 @@ app.include_router(evidence_router)
 app.include_router(evidence_router, prefix="/company")
 app.include_router(risk_router)
 app.include_router(standards_router)
+app.include_router(standard_structure.router)
 app.include_router(controls_router)
 app.include_router(ai_router)
 app.include_router(risk_assessment_router)
