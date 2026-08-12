@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,6 +9,8 @@ type Summary = {
   avg_coverage: number;
   avg_risk_score: number;
   weak_controls: number;
+  risk_universe: number;
+  open_risks: number;
 };
 
 type Control = {
@@ -28,47 +30,73 @@ export default function ControlIntelligencePage() {
   const [controls, setControls] = useState<Control[]>([]);
   const [loading, setLoading] = useState(true);
 
-useEffect(() => {
+  useEffect(() => {
+    apiFetch("/analytics/control-health")
+      .then((res) => res.json())
+      .then((data) => {
+        setSummary(data.summary);
+        setControls(data.controls || []);
+      })
+      .catch((err) => {
+        console.error("Control Intelligence fetch error:", err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
 
-  apiFetch("/analytics/control-health")
-    .then((res) => res.json())
-    .then((data) => {
-
-      setSummary(data.summary);
-
-      setControls(data.controls || []);
-
-    })
-    .catch((err) => {
-
-      console.error(
-        "Control Intelligence fetch error:",
-        err
-      );
-
-    })
-    .finally(() => {
-
-      setLoading(false);
-
-    });
-
-}, []);
   return (
     <div className="p-6 space-y-8 bg-slate-950 min-h-screen text-white">
       {/* HEADER */}
       <div>
-        <h1 className="text-2xl font-semibold">
-          Control Intelligence
-        </h1>
+        <h1 className="text-2xl font-semibold">Control Intelligence</h1>
         <p className="text-slate-400 text-sm mt-1">
           Advanced Control Health Panel
         </p>
       </div>
 
+      {/* RISK DEFINITIONS */}
+      {summary && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900 px-5 py-4">
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+            <div>
+              <div className="text-slate-500 text-[11px] uppercase tracking-wide">
+                Risk Universe
+              </div>
+              <div className="mt-1 text-xl font-semibold">
+                {summary.risk_universe}
+              </div>
+              <div className="text-slate-500 text-xs mt-1">
+                All risks in this tenant
+              </div>
+            </div>
+
+            <div className="h-10 w-px bg-slate-800 hidden md:block" />
+
+            <div>
+              <div className="text-slate-500 text-[11px] uppercase tracking-wide">
+                Open Risks
+              </div>
+              <div className="mt-1 text-xl font-semibold">
+                {summary.open_risks}
+              </div>
+              <div className="text-slate-500 text-xs mt-1">
+                Risks currently in OPEN status
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-slate-800 text-xs text-slate-500">
+            Risk Universe and Open Risks are tenant-level populations. Linked
+            Risks in the control table are control-level relationships and may
+            overlap across multiple controls.
+          </div>
+        </div>
+      )}
+
       {/* KPI SECTION */}
       {summary && (
-        <div className="grid grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
           <KpiCard
             title="Total Controls"
             value={summary.total_controls}
@@ -99,8 +127,14 @@ useEffect(() => {
 
       {/* TABLE */}
       <div className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-semibold text-slate-300">
-          Controls Overview
+        <div className="px-4 py-3 border-b border-slate-800">
+          <div className="text-sm font-semibold text-slate-300">
+            Controls Overview
+          </div>
+          <div className="text-xs text-slate-500 mt-1">
+            Linked Risks = risks associated with the specific control; this is
+            not the tenant-wide Risk Universe count.
+          </div>
         </div>
 
         {loading ? (
@@ -174,34 +208,20 @@ function KpiCard({
       <div className="text-slate-400 text-xs uppercase tracking-wide">
         {title}
       </div>
-      <div className="mt-2 text-2xl font-semibold">
-        {value}
-      </div>
+      <div className="mt-2 text-2xl font-semibold">{value}</div>
     </div>
   );
 }
 
 function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th className="px-4 py-3 text-left font-medium">
-      {children}
-    </th>
-  );
+  return <th className="px-4 py-3 text-left font-medium">{children}</th>;
 }
 
 function Td({ children }: { children: React.ReactNode }) {
-  return (
-    <td className="px-4 py-3 text-slate-200">
-      {children}
-    </td>
-  );
+  return <td className="px-4 py-3 text-slate-200">{children}</td>;
 }
 
-function ScoreBadge({
-  value,
-}: {
-  value: number | null;
-}) {
+function ScoreBadge({ value }: { value: number | null }) {
   if (value === null) return <span>-</span>;
 
   let color = "bg-green-600";
@@ -209,19 +229,13 @@ function ScoreBadge({
   else if (value >= 40) color = "bg-yellow-600";
 
   return (
-    <span
-      className={`px-2 py-1 rounded text-xs font-medium ${color}`}
-    >
+    <span className={`px-2 py-1 rounded text-xs font-medium ${color}`}>
       {value}
     </span>
   );
 }
 
-function CoverageBadge({
-  value,
-}: {
-  value: number | null;
-}) {
+function CoverageBadge({ value }: { value: number | null }) {
   if (value === null) return <span>-</span>;
 
   let color = "bg-red-600";
@@ -229,9 +243,7 @@ function CoverageBadge({
   else if (value >= 50) color = "bg-yellow-600";
 
   return (
-    <span
-      className={`px-2 py-1 rounded text-xs font-medium ${color}`}
-    >
+    <span className={`px-2 py-1 rounded text-xs font-medium ${color}`}>
       {value}%
     </span>
   );
