@@ -209,7 +209,7 @@ const execAlerts = useMemo(
         <Card label="Total Risks" value={String(summary?.total_risks ?? "-")} />
         <Card label="Forecasted" value={String(summary?.forecasted_risks ?? "-")} />
         <Card label="High Prob (≥70%)" value={String(summary?.high_probability_risks ?? "-")} />
-        <Card label="Exec Alerts" value={String(summary?.executive_alerts ?? "-")} />
+        <Card label="Exec Alerts" value={String(execAlerts.length)} />
         <Card label="Avg Escalation Prob" value={fmtPct(summary?.avg_escalation_probability || 0)} />
         <Card label="Avg Score Delta" value={fmtNum(summary?.avg_expected_score_delta || 0)} />
       </div>
