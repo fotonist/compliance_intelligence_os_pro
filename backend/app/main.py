@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-
+from sqlalchemy import text
 from app.core.database import engine, SessionLocal
 from app.db.base import Base
 from app.api.compliance_object import router as compliance_object_router
@@ -189,3 +189,21 @@ app.include_router(license_router)
 @app.get("/")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/health/intelligence")
+def intelligence_health():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+        return {
+            "status": "active",
+            "engine": "intelligence",
+        }
+
+    except Exception:
+        return {
+            "status": "offline",
+            "engine": "intelligence",
+        }
