@@ -334,7 +334,6 @@ def list_risks(
 
         FROM risks r
 
-    """
 LEFT JOIN risk_versions rv
     ON rv.risk_id = r.id
 
