@@ -9,6 +9,7 @@ from app.models.process import Process
 from app.models.compliance_tasks import ComplianceTask
 from app.models.controls_coverage import ControlsCoverage
 from app.models.evidences import Evidence
+from app.models.evidence_files import EvidenceFile
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
@@ -47,7 +48,11 @@ def get_process_readiness(
             """),
             {"tenant_id": tenant_id, "standard_id": standard_id},
         ).mappings().all()
-        standard_control_ids = {int(r["control_id"]) for r in rows if r["control_id"] is not None}
+        standard_control_ids = {
+            int(r["control_id"])
+            for r in rows
+            if r["control_id"] is not None
+        }
 
     results = []
 
@@ -62,7 +67,11 @@ def get_process_readiness(
             .distinct()
             .all()
         )
-        control_ids = {int(r.control_id) for r in task_rows if r.control_id is not None}
+        control_ids = {
+            int(r.control_id)
+            for r in task_rows
+            if r.control_id is not None
+        }
 
         if standard_control_ids is not None:
             control_ids &= standard_control_ids
@@ -81,21 +90,37 @@ def get_process_readiness(
                 "ACHIEVED": 100,
             }
             coverage_by_control = {
-                r.control_id: coverage_map.get(str(r.coverage_status).upper(), 0)
+                r.control_id: coverage_map.get(
+                    str(r.coverage_status).upper(),
+                    0,
+                )
                 for r in coverage_rows
             }
             coverage_percentage = round(
-                sum(coverage_by_control.get(cid, 0) for cid in control_ids) / total_controls,
+                sum(
+                    coverage_by_control.get(cid, 0)
+                    for cid in control_ids
+                ) / total_controls,
                 1,
             )
 
+            # Evidence approval is derived from EvidenceFile.status.
+            # Evidence itself has no approval_status column.
             evidence_rows = (
                 db.query(
                     Evidence.control_id,
-                    func.count(Evidence.id).label("total"),
-                    func.count(Evidence.id)
-                    .filter(func.upper(func.coalesce(Evidence.approval_status, "")).in_(["APPROVED", "APPROVED_REVIEW"]))
+                    func.count(func.distinct(Evidence.id)).label("total"),
+                    func.count(func.distinct(Evidence.id))
+                    .filter(
+                        func.lower(
+                            func.coalesce(EvidenceFile.status, "")
+                        ) == "approved"
+                    )
                     .label("approved"),
+                )
+                .outerjoin(
+                    EvidenceFile,
+                    EvidenceFile.evidence_id == Evidence.id,
                 )
                 .filter(
                     Evidence.tenant_id == tenant_id,
@@ -105,8 +130,24 @@ def get_process_readiness(
                 .group_by(Evidence.control_id)
                 .all()
             )
-            evidence_map = {r.control_id: (100 if r.approved else 50 if r.total else 0) for r in evidence_rows}
-            evidence_percentage = round(sum(evidence_map.get(cid, 0) for cid in control_ids) / total_controls, 1)
+
+            evidence_map = {
+                r.control_id: (
+                    100
+                    if r.approved
+                    else 50
+                    if r.total
+                    else 0
+                )
+                for r in evidence_rows
+            }
+            evidence_percentage = round(
+                sum(
+                    evidence_map.get(cid, 0)
+                    for cid in control_ids
+                ) / total_controls,
+                1,
+            )
         else:
             coverage_percentage = 0
             evidence_percentage = 0
@@ -145,16 +186,30 @@ def get_process_readiness(
         )
 
         total_risks = len(risk_rows)
-        risk_score = 100 if total_risks == 0 else max(0, 100 - ((critical + high * 0.5) / total_risks * 100))
-        task_score = max(0, 100 - min(100, open_tasks * 10))
+        risk_score = (
+            100
+            if total_risks == 0
+            else max(
+                0,
+                100 - ((critical + high * 0.5) / total_risks * 100),
+            )
+        )
+        task_score = max(
+            0,
+            100 - min(100, open_tasks * 10),
+        )
 
-        readiness_score = round(
-            coverage_percentage * 0.40
-            + evidence_percentage * 0.25
-            + risk_score * 0.20
-            + task_score * 0.15,
-            1,
-        ) if total_controls else 0
+        readiness_score = (
+            round(
+                coverage_percentage * 0.40
+                + evidence_percentage * 0.25
+                + risk_score * 0.20
+                + task_score * 0.15,
+                1,
+            )
+            if total_controls
+            else 0
+        )
 
         escalation = min(
             100,
@@ -177,5 +232,10 @@ def get_process_readiness(
             "trend_30d": 0,
         })
 
-    results.sort(key=lambda x: (-x["escalation_probability"], x["readiness_score"]))
+    results.sort(
+        key=lambda x: (
+            -x["escalation_probability"],
+            x["readiness_score"],
+        )
+    )
     return results
