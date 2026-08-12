@@ -15,6 +15,7 @@ from app.routes.roles import router as roles_router
 from app.api import auth, assessments
 from app.routes.matrix import router as matrix_router
 from app.routes.risk import router as risk_router
+from app.routes.risk_create import router as risk_create_router
 from app.routes.evidence import router as evidence_router
 from app.routes.evidence_files import router as evidence_files_router
 from app.routes.standards import router as standards_router
@@ -147,7 +148,12 @@ app.include_router(evidence_router)
 # If evidence_router has prefix="/evidences", this makes:
 #   /company/evidences/...
 app.include_router(evidence_router, prefix="/company")
+
+# Canonical create-risk endpoint MUST be registered before the legacy
+# risk router, because both expose POST /risks/.
+app.include_router(risk_create_router)
 app.include_router(risk_router)
+
 app.include_router(standards_router)
 app.include_router(standard_structure.router)
 app.include_router(controls_router)
