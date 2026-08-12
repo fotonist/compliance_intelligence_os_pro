@@ -102,18 +102,30 @@ function fmtNum(x: number) {
 
 export default function MatrixIntelligencePage() {
   const [data, setData] = useState<OverviewResponse | null>(null);
+  const [openRisks, setOpenRisks] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-   async function load() {
+  async function load() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch("/company/intelligence/overview");
-      if (!res.ok) throw new Error(await res.text());
-      setData(await res.json());
+      const [overviewRes, openRisksRes] = await Promise.all([
+        apiFetch("/company/intelligence/overview"),
+        apiFetch("/risks?page=1&page_size=1&status=open"),
+      ]);
+
+      if (!overviewRes.ok) throw new Error(await overviewRes.text());
+      if (!openRisksRes.ok) throw new Error(await openRisksRes.text());
+
+      const overview = await overviewRes.json();
+      const openRisksData = await openRisksRes.json();
+
+      setData(overview);
+      setOpenRisks(Number(openRisksData?.total ?? 0));
     } catch (e: any) {
       setError(e.message);
+      setOpenRisks(null);
     } finally {
       setLoading(false);
     }
@@ -140,46 +152,42 @@ export default function MatrixIntelligencePage() {
     load();
   }, []);
 
-const [selectedControl, setSelectedControl] = useState<number | null>(null);
-const [controlHealth, setControlHealth] = useState<any>(null);
-const [drawerLoading, setDrawerLoading] = useState(false);
+  const [selectedControl, setSelectedControl] = useState<number | null>(null);
+  const [controlHealth, setControlHealth] = useState<any>(null);
+  const [drawerLoading, setDrawerLoading] = useState(false);
 
-const [instances, setInstances] = useState<any[]>([]);
-const [instanceId, setInstanceId] = useState<number | null>(null);
-const [matrixSummary, setMatrixSummary] = useState<any>(null);
+  const [instances, setInstances] = useState<any[]>([]);
+  const [instanceId, setInstanceId] = useState<number | null>(null);
+  const [matrixSummary, setMatrixSummary] = useState<any>(null);
 
+  useEffect(() => {
+    load();
+  }, []);
 
-useEffect(() => {
-  load();
-}, []);
+  useEffect(() => {
+    // matrix instances yükle
+  }, []);
 
+  useEffect(() => {
+    // matrix summary yükle
+  }, []);
 
-useEffect(() => {
-  // matrix instances yükle
-}, []);
+  const summary = data?.summary;
 
+  const topRisks = useMemo(
+    () => data?.top_risks || [],
+    [data]
+  );
 
-useEffect(() => {
-  // matrix summary yükle
-}, []);
+  const topControls = useMemo(
+    () => data?.top_controls || [],
+    [data]
+  );
 
-
-const summary = data?.summary;
-
-const topRisks = useMemo(
-  () => data?.top_risks || [],
-  [data]
-);
-
-const topControls = useMemo(
-  () => data?.top_controls || [],
-  [data]
-);
-
-const execAlerts = useMemo(
-  () => data?.executive_alerts || [],
-  [data]
-);
+  const execAlerts = useMemo(
+    () => data?.executive_alerts || [],
+    [data]
+  );
 
   return (
     <div
@@ -202,11 +210,12 @@ const execAlerts = useMemo(
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(6,1fr)",
+          gridTemplateColumns: "repeat(7,1fr)",
           gap: 12,
         }}
       >
-        <Card label="Total Risks" value={String(summary?.total_risks ?? "-")} />
+        <Card label="Risk Universe" value={String(summary?.total_risks ?? "-")} />
+        <Card label="Open Risks" value={String(openRisks ?? "-")} />
         <Card label="Forecasted" value={String(summary?.forecasted_risks ?? "-")} />
         <Card label="High Prob (≥70%)" value={String(summary?.high_probability_risks ?? "-")} />
         <Card label="Exec Alerts" value={String(execAlerts.length)} />
