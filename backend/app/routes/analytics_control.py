@@ -15,12 +15,28 @@ def get_control_health(
     tenant_id = current_user.tenant_id
 
     # Summary
+    #
+    # Risk Universe is deliberately calculated from the risks table and is
+    # independent from control-level linked risk counts. A single risk may be
+    # linked to multiple controls, so summing linked_risk_count would not
+    # represent the tenant's actual risk population.
     summary_query = text("""
         SELECT
             COUNT(*) AS total_controls,
             AVG(coverage_score) AS avg_coverage,
             AVG(avg_risk_score) AS avg_risk_score,
-            SUM(CASE WHEN coverage_score < 50 THEN 1 ELSE 0 END) AS weak_controls
+            SUM(CASE WHEN coverage_score < 50 THEN 1 ELSE 0 END) AS weak_controls,
+            (
+                SELECT COUNT(*)
+                FROM risks r
+                WHERE r.tenant_id = :tenant_id
+            ) AS risk_universe,
+            (
+                SELECT COUNT(*)
+                FROM risks r
+                WHERE r.tenant_id = :tenant_id
+                  AND LOWER(COALESCE(r.status, '')) = 'open'
+            ) AS open_risks
         FROM analytics.v_control_health
         WHERE tenant_id = :tenant_id
     """)
@@ -45,6 +61,8 @@ def get_control_health(
         "summary": dict(summary_result) if summary_result else {},
         "controls": [dict(row) for row in controls_result],
     }
+
+
 # ------------------------------------------------------------------------------------------
 # CONTROL HEALTH
 # ------------------------------------------------------------------------------------------
