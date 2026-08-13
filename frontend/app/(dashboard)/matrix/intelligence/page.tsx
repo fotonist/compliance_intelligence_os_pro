@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/app/lib/api";
@@ -78,6 +78,8 @@ type OverviewResponse = {
   executive_alerts: ExecAlert[];
 };
 
+type IntelligenceStatus = "checking" | "active" | "offline";
+
 type ControlHealth = {
   summary: {
     linked_risk_count: number;
@@ -127,6 +129,8 @@ export default function MatrixIntelligencePage() {
   const [selectedControl, setSelectedControl] = useState<number | null>(null);
   const [controlHealth, setControlHealth] = useState<ControlHealth | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  const [intelligenceStatus, setIntelligenceStatus] =
+    useState<IntelligenceStatus>("checking");
 
   async function load() {
     setLoading(true);
@@ -176,6 +180,34 @@ export default function MatrixIntelligencePage() {
     load();
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    async function checkIntelligenceHealth() {
+      try {
+        const res = await apiFetch("/health/intelligence");
+        if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
+
+        const payload = await res.json();
+
+        if (!mounted) return;
+        setIntelligenceStatus(
+          payload?.status === "active" ? "active" : "offline"
+        );
+      } catch {
+        if (mounted) setIntelligenceStatus("offline");
+      }
+    }
+
+    checkIntelligenceHealth();
+    const interval = window.setInterval(checkIntelligenceHealth, 10000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
   const summary = data?.summary;
   const topRisks = useMemo(() => data?.top_risks || [], [data]);
   const topControls = useMemo(() => data?.top_controls || [], [data]);
@@ -196,9 +228,29 @@ export default function MatrixIntelligencePage() {
               AI Risk Forecasting &amp; Predictive Compliance (Tenant-wide)
             </div>
           </div>
-          <div className="hidden items-center gap-2 rounded-md border border-emerald-400/15 bg-slate-900/80 px-3 py-2 text-[11px] text-slate-300 sm:flex">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.8)] animate-pulse" />
-            Real-time Intelligence
+          <div
+            className={`hidden items-center gap-2 rounded-md border px-3 py-2 text-[11px] sm:flex ${
+              intelligenceStatus === "active"
+                ? "border-emerald-400/15 bg-slate-900/80 text-slate-300"
+                : intelligenceStatus === "checking"
+                  ? "border-amber-400/15 bg-slate-900/80 text-slate-300"
+                  : "border-red-400/15 bg-slate-900/80 text-slate-300"
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                intelligenceStatus === "active"
+                  ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.8)] animate-pulse"
+                  : intelligenceStatus === "checking"
+                    ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,.8)] animate-pulse"
+                    : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,.8)]"
+              }`}
+            />
+            {intelligenceStatus === "active"
+              ? "Real-time Intelligence"
+              : intelligenceStatus === "checking"
+                ? "Checking Intelligence"
+                : "Intelligence Offline"}
           </div>
         </div>
 
@@ -206,7 +258,7 @@ export default function MatrixIntelligencePage() {
           <KpiCard icon={Globe2} iconClass="text-cyan-300" label="Risk Universe" value={String(summary?.total_risks ?? "-")} sub="Total risks in universe" />
           <KpiCard icon={ShieldCheck} iconClass="text-emerald-400" label="Open Risks" value={String(openRisks ?? "-")} sub="Currently active risks" />
           <KpiCard icon={TrendingUp} iconClass="text-violet-400" label="Forecasted Risks" value={String(summary?.forecasted_risks ?? "-")} sub="AI forecasted risks" />
-          <KpiCard icon={AlertTriangle} iconClass="text-red-400" label="High Prob (â‰¥70%)" value={String(summary?.high_probability_risks ?? "-")} sub="High escalation probability" />
+          <KpiCard icon={AlertTriangle} iconClass="text-red-400" label="High Prob (>=70%)" value={String(summary?.high_probability_risks ?? "-")} sub="High escalation probability" />
           <KpiCard icon={Bell} iconClass="text-amber-400" label="Exec Alerts" value={String(summary?.executive_alerts ?? execAlerts.length)} sub="For executive attention" />
           <KpiCard icon={ChartNoAxesCombined} iconClass="text-sky-400" label="Avg Escalation Prob" value={fmtPct(summary?.avg_escalation_probability || 0)} sub="Average escalation probability" />
           <KpiCard icon={LineChartIcon} iconClass="text-purple-400" label="Avg Score Delta" value={`+${fmtNum(summary?.avg_expected_score_delta || 0)}`} sub="Average score change" />
@@ -220,48 +272,48 @@ export default function MatrixIntelligencePage() {
 
         <Section title="Executive Escalation Alerts">
           <DataTable
-            columns={["Risk", "Score", "Level", "Escalation Prob", "Expected Î”", "Control", "Processes"]}
+            columns={["Risk", "Score", "Level", "Escalation Prob", "Expected Delta", "Control", "Processes"]}
             empty={loading || execAlerts.length === 0}
             emptyText={loading ? "Loading intelligence..." : "No executive escalation alerts."}
             rows={execAlerts.map((r) => [
-              <span key="risk" className="font-medium text-slate-100">{r.risk_id} â€” {r.title || "Untitled risk"}</span>,
-              r.current_score ?? "â€”",
-              <Badge key="level" tone={levelTone(r.risk_level)}>{r.risk_level || "â€”"}</Badge>,
+              <span key="risk" className="font-medium text-slate-100">{r.risk_id} - {r.title || "Untitled risk"}</span>,
+              r.current_score == null ? "Score unavailable" : r.current_score,
+              <Badge key="level" tone={levelTone(r.risk_level)}>{r.risk_level || "-"}</Badge>,
               <Badge key="prob" tone={probabilityTone(r.escalation_probability_30d)}>{fmtPct(r.escalation_probability_30d)}</Badge>,
               fmtNum(r.expected_score_delta),
-              r.control_code ?? "â€”",
-              (r.process_names ?? []).join(", ") || "â€”",
+              r.control_code ?? "-",
+              (r.process_names ?? []).join(", ") || "No process linked",
             ])}
           />
         </Section>
 
         <Section title="Escalation Watchlist (Top Risks)">
           <DataTable
-            columns={["Risk", "Score", "Level", "Status", "Escalation Prob", "Expected Î”", "Control", "Processes", "Model"]}
+            columns={["Risk", "Score", "Level", "Status", "Escalation Prob", "Expected Delta", "Control", "Processes", "Model"]}
             empty={loading || topRisks.length === 0}
             emptyText={loading ? "Loading intelligence..." : "No watchlist risks."}
             rows={topRisks.map((r) => [
-              <span key="risk" className="font-medium text-slate-100">{r.risk_id} â€” {r.title || "Untitled risk"}</span>,
-              r.current_score ?? "â€”",
-              <Badge key="level" tone={levelTone(r.risk_level)}>{r.risk_level || "â€”"}</Badge>,
-              <Badge key="status" tone={statusTone(r.status)}>{r.status || "â€”"}</Badge>,
+              <span key="risk" className="font-medium text-slate-100">{r.risk_id} - {r.title || "Untitled risk"}</span>,
+              r.current_score == null ? "Score unavailable" : r.current_score,
+              <Badge key="level" tone={levelTone(r.risk_level)}>{r.risk_level || "-"}</Badge>,
+              <Badge key="status" tone={statusTone(r.status)}>{r.status || "-"}</Badge>,
               <Badge key="prob" tone={probabilityTone(r.escalation_probability_30d)}>{fmtPct(r.escalation_probability_30d)}</Badge>,
               fmtNum(r.expected_score_delta),
-              r.control_code ?? "â€”",
-              (r.process_names ?? []).join(", ") || "â€”",
-              r.model_version ?? "â€”",
+              r.control_code ?? "-",
+              (r.process_names ?? []).join(", ") || "No process linked",
+              r.model_version ?? "Model unavailable",
             ])}
           />
         </Section>
 
         <Section title="AI Priority Controls (Top Controls)">
           <DataTable
-            columns={["Control", "Risk Count", "Avg Prob", "Max Prob", "Î” Sum", "AI Priority"]}
+            columns={["Control", "Risk Count", "Avg Prob", "Max Prob", "Delta Sum", "AI Priority"]}
             empty={loading || topControls.length === 0}
             emptyText={loading ? "Loading intelligence..." : "No priority controls."}
             rows={topControls.map((c) => [
               <button key="control" type="button" onClick={() => openControl(c.control_id)} className="group flex items-center gap-1 text-left font-semibold text-slate-100 hover:text-cyan-300">
-                <span>{c.control_code} â€” {c.control_title}</span>
+                <span>{c.control_code} - {c.control_title}</span>
                 <ChevronRight className="h-3.5 w-3.5 opacity-0 transition group-hover:opacity-100" />
               </button>,
               c.risk_count,
