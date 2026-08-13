@@ -54,7 +54,9 @@ type TopRisk = {
   status?: string | null;
   escalation_probability_30d: number;
   expected_score_delta: number;
+  model_version?: string | null;
   control_code?: string | null;
+  process_names?: string[];
 };
 
 type ExecAlert = {
@@ -65,7 +67,7 @@ type ExecAlert = {
   escalation_probability_30d: number;
   expected_score_delta?: number | null;
   control_code?: string | null;
-  process_name?: string | null;
+  process_names?: string[];
 };
 
 type Overview = {
@@ -203,9 +205,10 @@ export default function IntelligencePage() {
     (Number(summary.avg_escalation_probability) || 0) * 100
   );
 
-  const avgDelta = Number(
-    summary.avg_expected_score_delta || 0
-  ).toFixed(2);
+  const avgDelta =
+    summary.avg_expected_score_delta == null
+      ? null
+      : Number(summary.avg_expected_score_delta).toFixed(2);
 
   const engineIsActive = intelligenceStatus === "active";
   const engineIsChecking =
@@ -317,7 +320,7 @@ export default function IntelligencePage() {
 
           <MetricCard
             label="Avg Score Delta"
-            value={`+${avgDelta}`}
+            value={avgDelta == null ? "No forecast" : `+${avgDelta}`}
             icon={<Triangle />}
             tone="purple"
             sub="Average score change"
@@ -378,7 +381,7 @@ export default function IntelligencePage() {
                     </td>
 
                     <td className="px-3 py-3 text-slate-300">
-                      {r.process_name || "—"}
+                      {r.process_names?.length ? r.process_names.join(", ") : "No process linked"}
                     </td>
                   </tr>
                 ))
@@ -449,11 +452,13 @@ export default function IntelligencePage() {
                     </td>
 
                     <td className="px-3 py-3 text-slate-300">
-                      —
+                      {r.process_names?.length
+                        ? r.process_names.join(", ")
+                        : "No process linked"}
                     </td>
 
                     <td className="px-3 py-3 text-slate-300">
-                      Risk Forecast v2
+                      {r.model_version || "Model unavailable"}
                     </td>
                   </tr>
                 ))
