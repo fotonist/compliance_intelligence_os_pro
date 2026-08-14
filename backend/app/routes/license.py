@@ -31,17 +31,14 @@ def create_license_request(
 
     tenant_id = user.tenant_id
 
-
     module_code = payload.get("module_code")
     module_name = payload.get("module_name")
-
 
     if not module_code or not module_name:
         raise HTTPException(
             status_code=400,
             detail="module_code and module_name are required"
         )
-
 
     existing = (
         db.query(PremiumModuleRequest)
@@ -54,14 +51,12 @@ def create_license_request(
         .first()
     )
 
-
     if existing:
         return {
             "message": "Request already exists",
             "id": existing.id,
             "status": existing.status,
         }
-
 
     request = PremiumModuleRequest(
         tenant_id=tenant_id,
@@ -71,17 +66,16 @@ def create_license_request(
         status="PENDING",
     )
 
-
     db.add(request)
     db.commit()
     db.refresh(request)
-
 
     return {
         "message": "Activation request submitted",
         "id": request.id,
         "status": request.status,
     }
+
 
 # ==========================================================
 # GET ACTIVE PREMIUM MODULES
@@ -101,12 +95,11 @@ def get_active_modules(
         .all()
     )
 
-    result = {}
+    return {
+        module.module_code: True
+        for module in modules
+    }
 
-    for module in modules:
-        result[module.module_code] = True
-
-    return result
 
 # ==========================================================
 # LIST REQUESTS
@@ -126,9 +119,7 @@ def list_license_requests(
         .all()
     )
 
-
     return requests
-
 
 
 # ==========================================================
@@ -150,18 +141,15 @@ def approve_license_request(
         .first()
     )
 
-
     if not request:
         raise HTTPException(
             status_code=404,
             detail="Request not found"
         )
 
-
     request.status = "APPROVED"
     request.reviewed_by = user.id
     request.reviewed_at = datetime.utcnow()
-
 
     existing_module = (
         db.query(TenantPremiumModule)
@@ -172,21 +160,21 @@ def approve_license_request(
         .first()
     )
 
-
     if not existing_module:
-
         premium_module = TenantPremiumModule(
             tenant_id=request.tenant_id,
             module_code=request.module_code,
             status="ACTIVE",
             activated_by=user.id,
         )
-
         db.add(premium_module)
-
+    else:
+        # Re-activate an existing module as well. This handles
+        # previously disabled/revoked modules correctly.
+        existing_module.status = "ACTIVE"
+        existing_module.activated_by = user.id
 
     db.commit()
-
 
     return {
         "message": "Request approved",
@@ -215,50 +203,21 @@ def reject_license_request(
         .first()
     )
 
-
     if not request:
         raise HTTPException(
             status_code=404,
             detail="Request not found"
         )
 
-
     request.status = "REJECTED"
     request.reviewed_by = user.id
     request.reviewed_at = datetime.utcnow()
     request.review_note = payload.get("review_note")
 
-
     db.commit()
-
 
     return {
         "message": "Request rejected",
         "id": request.id,
         "status": request.status,
-    }
-    
-# ==========================================================
-# GET ACTIVE PREMIUM MODULES
-# ==========================================================
-
-@router.get("/modules")
-def get_active_modules(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_permission("risk.intelligence.view")),
-):
-
-    modules = (
-        db.query(TenantPremiumModule)
-        .filter(
-            TenantPremiumModule.tenant_id == user.tenant_id,
-            TenantPremiumModule.status == "ACTIVE",
-        )
-        .all()
-    )
-
-
-    return {
-        module.module_code: True
-        for module in modules
     }
