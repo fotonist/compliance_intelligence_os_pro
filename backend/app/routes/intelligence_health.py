@@ -19,7 +19,6 @@ from app.services.exposure_engine import ExposureEngine
 
 router = APIRouter(tags=["Intelligence Health"])
 
-
 RESOLVED_GAP_STATUSES = {"resolved", "accepted", "closed", "cancelled", "archived"}
 PARTIAL_GAP_STATUSES = {"in_progress", "in-progress", "partial", "partially_achieved"}
 
@@ -102,28 +101,31 @@ def get_gap_intelligence_fixed(
             "trend": [],
         }
 
-    uncovered = sum(1 for r in rows if not _is_resolved_gap(r.get("status")) and not _is_partial_gap(r.get("status")))
+    uncovered = sum(
+        1 for r in rows
+        if not _is_resolved_gap(r.get("status"))
+        and not _is_partial_gap(r.get("status"))
+    )
     partial = sum(1 for r in rows if _is_partial_gap(r.get("status")))
     resolved = sum(1 for r in rows if _is_resolved_gap(r.get("status")))
     active_rows = [r for r in rows if not _is_resolved_gap(r.get("status"))]
 
-    # Global health is based only on active gaps. Resolved/accepted historical
-    # gaps must not continue to depress the current health index.
     active_worst_severity = max(
         (float(r.get("severity_score") or 0.0) for r in active_rows),
         default=0.0,
     )
-    global_health_index = round(max(0.0, min(100.0, 100.0 - active_worst_severity)), 1)
+    global_health_index = round(
+        max(0.0, min(100.0, 100.0 - active_worst_severity)),
+        1,
+    )
 
     control_map: Dict[int, Dict[str, Any]] = {}
     for row in rows:
-        cid = row.get("control_id")
-        if cid is None:
+        if _is_resolved_gap(row.get("status")):
             continue
 
-        # Resolved/accepted gaps remain available in the drill-down history,
-        # but do not inflate current control gap pressure.
-        if _is_resolved_gap(row.get("status")):
+        cid = row.get("control_id")
+        if cid is None:
             continue
 
         control = control_map.setdefault(
@@ -174,8 +176,7 @@ def get_gap_intelligence_fixed(
         risks = list(control["risks"].values())
         avg_exposure = (
             sum(float(r["exposure_score"]) for r in risks) / len(risks)
-            if risks
-            else 0.0
+            if risks else 0.0
         )
         priority = round(
             float(control["worst_severity"]) * 0.55
@@ -271,6 +272,18 @@ def get_gap_trend_fixed(
                     WHERE lower(coalesce(status, '')) IN
                     ('in_progress', 'in-progress', 'partial', 'partially_achieved')
                 ) AS partial_count,
+                sum(
+                    CASE
+                        WHEN lower(coalesce(status, '')) NOT IN
+                        ('resolved', 'accepted', 'closed', 'cancelled', 'archived')
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS active_gap_count,
+                max(severity_score) FILTER (
+                    WHERE lower(coalesce(status, '')) NOT IN
+                    ('resolved', 'accepted', 'closed', 'cancelled', 'archived')
+                ) AS worst_severity,
                 avg(severity_score) FILTER (
                     WHERE lower(coalesce(status, '')) NOT IN
                     ('resolved', 'accepted', 'closed', 'cancelled', 'archived')
@@ -287,13 +300,21 @@ def get_gap_trend_fixed(
     return [
         {
             "day": r["day"].isoformat() if r.get("day") else None,
-            "gap_count": int(r.get("gap_count") or 0),
+            "gap_count": int(r.get("active_gap_count") or 0),
             "partial_count": int(r.get("partial_count") or 0),
             "uncovered_count": max(
                 0,
-                int(r.get("gap_count") or 0) - int(r.get("partial_count") or 0),
+                int(r.get("active_gap_count") or 0)
+                - int(r.get("partial_count") or 0),
             ),
             "avg_severity": float(r.get("avg_severity") or 0.0),
+            "health_index": round(
+                max(
+                    0.0,
+                    min(100.0, 100.0 - float(r.get("worst_severity") or 0.0)),
+                ),
+                1,
+            ),
         }
         for r in rows
     ]
@@ -395,10 +416,11 @@ def get_control_health_fixed(
         )
 
     total = len(controls)
-    avg_health = round(
-        sum(c["health_index"] for c in controls) / total,
-        1,
-    ) if total else 0.0
+    avg_health = (
+        round(sum(c["health_index"] for c in controls) / total, 1)
+        if total
+        else 0.0
+    )
 
     return {
         "summary": {
@@ -424,7 +446,8 @@ def get_risk_intelligence_overview(
     total_risks = int(
         db.execute(
             select(func.count(Risk.id)).where(Risk.tenant_id == tenant_id)
-        ).scalar_one() or 0
+        ).scalar_one()
+        or 0
     )
     open_risks = int(
         db.execute(
