@@ -37,6 +37,7 @@ from app.routes import clause_weights
 from app.routes.clauses import router as clause_router
 from app.routes import heatmap
 from app.routes import standard_structure
+from app.routes.intelligence_health import router as intelligence_health_router
 from app.routes.intelligence import router as intelligence_router
 from app.routes.risk_forecast import router as risk_forecast_router
 from app.routes.intelligence_control import router as intelligence_control_router
@@ -69,7 +70,7 @@ import app.models.maturity_evidence
 import app.models.maturity_evidence_file
 import app.models.process
 import app.models.process_risk_link
-import app.models.clause_weight_override  # ✅ important
+import app.models.clause_weight_override  # important
 
 # ==============================
 # SEED
@@ -144,9 +145,7 @@ app.include_router(company_tasks_router)
 # Evidence routes (existing)
 app.include_router(evidence_router)
 
-# ✅ ALSO expose evidences under /company/*
-# If evidence_router has prefix="/evidences", this makes:
-#   /company/evidences/...
+# Also expose evidences under /company/*
 app.include_router(evidence_router, prefix="/company")
 
 # Canonical create-risk endpoint MUST be registered before the legacy
@@ -168,6 +167,11 @@ app.include_router(coverage_router)
 app.include_router(readiness.router)
 app.include_router(clause_weights.router)
 app.include_router(heatmap.router)
+
+# Intelligence health endpoints are registered BEFORE the legacy intelligence
+# routes so the stabilized GAP and Control Health implementations win without
+# changing the existing intelligence architecture.
+app.include_router(intelligence_health_router)
 app.include_router(intelligence_router)
 app.include_router(intelligence_api_router)
 app.include_router(risk_forecast_router)
