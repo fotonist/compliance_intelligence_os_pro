@@ -26,7 +26,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Swagger Security Scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
@@ -49,11 +48,23 @@ def create_access_token(
     user: User,
     expires_delta: Optional[timedelta] = None,
 ) -> str:
+    roles = [r.name for r in (user.roles or [])]
+    normalized_roles = {
+        str(role).strip().lower().replace("-", "_").replace(" ", "_")
+        for role in roles
+    }
+    is_super_admin = (
+        "superadmin" in normalized_roles
+        or "super_admin" in normalized_roles
+    )
+
     payload: Dict[str, Any] = {
         "sub": str(user.id),
         "user_id": user.id,
         "tenant_id": user.tenant_id,
-        "roles": [r.name for r in (user.roles or [])],
+        "role": roles[0] if roles else None,
+        "roles": roles,
+        "is_superadmin": is_super_admin,
         "exp": datetime.utcnow()
         + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)),
     }
@@ -90,11 +101,18 @@ def get_current_user(
             detail="Invalid token payload",
         )
 
-    # ✅ CRITICAL FIX: eager load roles to prevent 403 false negative
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user identifier",
+        )
+
     user = (
         db.query(User)
         .options(joinedload(User.roles))
-        .filter(User.id == int(user_id))
+        .filter(User.id == user_id)
         .first()
     )
 
@@ -111,7 +129,7 @@ def get_current_user(
             detail="Invalid tenant context",
         )
 
-    # Multi-tenant isolation
+    # Multi-tenant isolation remains enforced for every user, including SuperAdmin.
     db.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(user.tenant_id)})
 
     return user
@@ -122,11 +140,17 @@ def get_current_user(
 # -------------------------------------------------------------------
 def require_roles(*allowed_roles: str):
     def _checker(user: User = Depends(get_current_user)):
-        print("USER ROLES:", [r.name for r in user.roles])
-        print("ALLOWED:", allowed_roles)
+        user_roles = {
+            str(r.name).strip().lower().replace("-", "_").replace(" ", "_")
+            for r in (user.roles or [])
+        }
+        allowed = {
+            str(r).strip().lower().replace("-", "_").replace(" ", "_")
+            for r in allowed_roles
+        }
 
-        user_roles = {r.name.lower() for r in (user.roles or [])}
-        allowed = {r.lower() for r in allowed_roles}
+        if "superadmin" in user_roles or "super_admin" in user_roles:
+            return user
 
         if not user_roles.intersection(allowed):
             raise HTTPException(
@@ -135,4 +159,5 @@ def require_roles(*allowed_roles: str):
             )
 
         return user
+
     return _checker
