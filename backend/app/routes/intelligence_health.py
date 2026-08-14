@@ -15,24 +15,22 @@ from app.models.user import User
 router = APIRouter(tags=["Intelligence Health"])
 
 
-def _severity_health(severity: float, gaps: int, risks: int, evidence: int) -> float:
-    score = 100.0
-    score -= min(float(severity) * 1.5, 60.0)
-    score -= min(float(gaps) * 8.0, 25.0)
-    score -= min(float(risks) * 3.0, 15.0)
-    if evidence <= 0:
-        score -= 20.0
-    return round(max(0.0, min(100.0, score)), 1)
+def _coverage_health(evidence_count: int, approved_files: int, total_files: int) -> tuple[float, str]:
+    """Derive control health from evidence state, not risk/gap heuristics.
 
+    Evidence records without an approved file are partial coverage. A control is
+    healthy only when it has evidence and all uploaded evidence files are approved.
+    A control with no evidence record has no evidence.
+    """
+    evidence_count = int(evidence_count or 0)
+    approved_files = int(approved_files or 0)
+    total_files = int(total_files or 0)
 
-def _health_status(health: float, evidence: int) -> str:
-    if evidence == 0:
-        return "No Evidence"
-    if health >= 80:
-        return "Healthy"
-    if health >= 55:
-        return "Partial"
-    return "Weak"
+    if evidence_count <= 0:
+        return 0.0, "No Evidence"
+    if total_files > 0 and approved_files >= total_files:
+        return 100.0, "Healthy"
+    return 50.0, "Partial"
 
 
 @router.get("/company/intelligence/gaps")
@@ -43,8 +41,6 @@ def get_gap_intelligence_fixed(
 ):
     tenant_id = user.tenant_id
 
-    # controls is a shared/reference table and does not contain tenant_id.
-    # Tenant ownership of a control instance is established through matrix_rows.
     stmt = text(
         """
         SELECT
@@ -80,23 +76,16 @@ def get_gap_intelligence_fixed(
 
     if not rows:
         return {
-            "summary": {
-                "gaps_total": 0,
-                "uncovered": 0,
-                "partial": 0,
-                "worst_severity_score": 0,
-            },
+            "summary": {"gaps_total": 0, "uncovered": 0, "partial": 0, "worst_severity_score": 0},
             "controls": [],
             "trend": [],
         }
 
     control_map: Dict[int, Dict[str, Any]] = {}
-
     for row in rows:
         cid = row.get("control_id")
         if cid is None:
             continue
-
         control = control_map.setdefault(
             int(cid),
             {
@@ -108,11 +97,9 @@ def get_gap_intelligence_fixed(
                 "risks": {},
             },
         )
-
         severity = float(row.get("severity_score") or 0.0)
         control["gap_count"] += 1
         control["worst_severity"] = max(control["worst_severity"], severity)
-
         rid = row.get("risk_id")
         if rid is not None:
             risk = control["risks"].setdefault(
@@ -143,16 +130,8 @@ def get_gap_intelligence_fixed(
     controls = []
     for control in control_map.values():
         risks = list(control["risks"].values())
-        avg_exposure = (
-            sum(float(r["exposure_score"]) for r in risks) / len(risks)
-            if risks else 0.0
-        )
-        priority = round(
-            float(control["worst_severity"]) * 0.55
-            + avg_exposure * 0.35
-            + float(control["gap_count"]) * 0.10,
-            2,
-        )
+        avg_exposure = sum(float(r["exposure_score"]) for r in risks) / len(risks) if risks else 0.0
+        priority = round(float(control["worst_severity"]) * 0.55 + avg_exposure * 0.35 + float(control["gap_count"]) * 0.10, 2)
         controls.append(
             {
                 "control_id": control["control_id"],
@@ -166,7 +145,6 @@ def get_gap_intelligence_fixed(
         )
 
     controls.sort(key=lambda x: x["ai_priority_score"], reverse=True)
-
     total = len(rows)
     uncovered = sum(1 for r in rows if str(r.get("status") or "").lower() == "open")
     partial = sum(1 for r in rows if str(r.get("status") or "").lower() == "in_progress")
@@ -174,37 +152,25 @@ def get_gap_intelligence_fixed(
 
     trend_stmt = text(
         """
-        SELECT
-            date_trunc('day', created_at) AS day,
-            count(*) AS gap_count,
-            coalesce(max(severity_score), 0) AS worst_severity
-        FROM gap_items
-        WHERE tenant_id = :tenant_id
-        GROUP BY day
-        ORDER BY day
+        SELECT date_trunc('day', created_at) AS day, count(*) AS gap_count,
+               coalesce(max(severity_score), 0) AS worst_severity
+        FROM gap_items WHERE tenant_id = :tenant_id
+        GROUP BY day ORDER BY day
         """
     )
     trend_rows = db.execute(trend_stmt, {"tenant_id": tenant_id}).mappings().all()
-    trend = []
-    for row in trend_rows:
-        gap_count = int(row.get("gap_count") or 0)
-        worst_severity = float(row.get("worst_severity") or 0.0)
-        trend.append(
-            {
-                "day": row["day"].isoformat() if row.get("day") else None,
-                "gap_count": gap_count,
-                "worst_severity": worst_severity,
-                "health_index": round(max(0.0, 100.0 - gap_count * 2.0 - worst_severity * 0.5), 1),
-            }
-        )
+    trend = [
+        {
+            "day": row["day"].isoformat() if row.get("day") else None,
+            "gap_count": int(row.get("gap_count") or 0),
+            "worst_severity": float(row.get("worst_severity") or 0.0),
+            "health_index": round(max(0.0, 100.0 - int(row.get("gap_count") or 0) * 2.0 - float(row.get("worst_severity") or 0.0) * 0.5), 1),
+        }
+        for row in trend_rows
+    ]
 
     return {
-        "summary": {
-            "gaps_total": total,
-            "uncovered": uncovered,
-            "partial": partial,
-            "worst_severity_score": worst,
-        },
+        "summary": {"gaps_total": total, "uncovered": uncovered, "partial": partial, "worst_severity_score": worst},
         "controls": controls,
         "trend": trend,
     }
@@ -219,15 +185,12 @@ def get_gap_trend_fixed(
     tenant_id = user.tenant_id
     stmt = text(
         """
-        SELECT
-            date_trunc('day', created_at) AS day,
-            count(*) AS gap_count,
-            sum(CASE WHEN lower(status) = 'open' THEN 1 ELSE 0 END) AS uncovered_count,
-            avg(severity_score) AS avg_severity
-        FROM gap_items
-        WHERE tenant_id = :tenant_id
-        GROUP BY day
-        ORDER BY day
+        SELECT date_trunc('day', created_at) AS day,
+               count(*) AS gap_count,
+               sum(CASE WHEN lower(status) = 'open' THEN 1 ELSE 0 END) AS uncovered_count,
+               avg(severity_score) AS avg_severity
+        FROM gap_items WHERE tenant_id = :tenant_id
+        GROUP BY day ORDER BY day
         """
     )
     rows = db.execute(stmt, {"tenant_id": tenant_id}).mappings().all()
@@ -251,8 +214,6 @@ def get_control_health_fixed(
 ):
     tenant_id = user.tenant_id
 
-    # controls is a shared/reference table and does not contain tenant_id.
-    # Restrict the visible controls through the tenant's matrix rows instead.
     stmt = text(
         """
         SELECT
@@ -262,51 +223,50 @@ def get_control_health_fixed(
             coalesce(g.gap_count, 0) AS gap_count,
             coalesce(g.worst_severity, 0) AS worst_severity,
             coalesce(r.risk_count, 0) AS risk_count,
-            coalesce(e.evidence_count, 0) AS evidence_count
+            coalesce(e.evidence_count, 0) AS evidence_count,
+            coalesce(e.total_files, 0) AS total_files,
+            coalesce(e.approved_files, 0) AS approved_files
         FROM controls c
         INNER JOIN (
             SELECT DISTINCT control_id
             FROM matrix_rows
-            WHERE tenant_id = :tenant_id
-              AND control_id IS NOT NULL
+            WHERE tenant_id = :tenant_id AND control_id IS NOT NULL
         ) mc ON mc.control_id = c.id
         LEFT JOIN (
             SELECT control_id, count(*) AS gap_count, max(severity_score) AS worst_severity
-            FROM gap_items
-            WHERE tenant_id = :tenant_id
-            GROUP BY control_id
+            FROM gap_items WHERE tenant_id = :tenant_id GROUP BY control_id
         ) g ON g.control_id = c.id
         LEFT JOIN (
             SELECT control_id, count(*) AS risk_count
-            FROM risks
-            WHERE tenant_id = :tenant_id AND control_id IS NOT NULL
-            GROUP BY control_id
+            FROM risks WHERE tenant_id = :tenant_id AND control_id IS NOT NULL GROUP BY control_id
         ) r ON r.control_id = c.id
         LEFT JOIN (
-            SELECT control_id, count(*) AS evidence_count
-            FROM evidences
-            WHERE tenant_id = :tenant_id
-              AND coalesce(is_deleted, false) = false
-              AND control_id IS NOT NULL
-            GROUP BY control_id
+            SELECT
+                e.control_id,
+                count(DISTINCT e.id) AS evidence_count,
+                count(ef.id) AS total_files,
+                count(ef.id) FILTER (WHERE lower(coalesce(ef.status, '')) = 'approved') AS approved_files
+            FROM evidences e
+            LEFT JOIN evidence_files ef ON ef.evidence_id = e.id
+            WHERE e.tenant_id = :tenant_id
+              AND coalesce(e.is_deleted, false) = false
+              AND e.control_id IS NOT NULL
+            GROUP BY e.control_id
         ) e ON e.control_id = c.id
         ORDER BY c.code NULLS LAST, c.id
         """
     )
 
     rows = db.execute(stmt, {"tenant_id": tenant_id}).mappings().all()
-
     controls: List[Dict[str, Any]] = []
     counts = {"Healthy": 0, "Partial": 0, "Weak": 0, "No Evidence": 0}
 
     for row in rows:
-        health = _severity_health(
-            float(row.get("worst_severity") or 0.0),
-            int(row.get("gap_count") or 0),
-            int(row.get("risk_count") or 0),
+        health, status = _coverage_health(
             int(row.get("evidence_count") or 0),
+            int(row.get("approved_files") or 0),
+            int(row.get("total_files") or 0),
         )
-        status = _health_status(health, int(row.get("evidence_count") or 0))
         counts[status] += 1
         controls.append(
             {
@@ -319,6 +279,8 @@ def get_control_health_fixed(
                 "worst_severity": float(row.get("worst_severity") or 0.0),
                 "risk_count": int(row.get("risk_count") or 0),
                 "evidence_count": int(row.get("evidence_count") or 0),
+                "total_files": int(row.get("total_files") or 0),
+                "approved_files": int(row.get("approved_files") or 0),
             }
         )
 
