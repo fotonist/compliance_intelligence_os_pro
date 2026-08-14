@@ -1,23 +1,18 @@
-
 import { jwtDecode } from "jwt-decode";
+
 export interface TokenPayload {
   sub: string;
-  role: string;
+  role?: string;
+  roles?: string[];
   user_id: number;
   exp: number;
 }
 
-/**
- * Returns access token from localStorage
- */
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("access_token");
 }
 
-/**
- * Decodes JWT token payload
- */
 export function decodeToken(): TokenPayload | null {
   const token = getToken();
   if (!token) return null;
@@ -30,7 +25,28 @@ export function decodeToken(): TokenPayload | null {
 }
 
 export function getUserRole(): string | null {
-  return decodeToken()?.role ?? null;
+  const decoded = decodeToken();
+  if (!decoded) return null;
+
+  if (decoded.roles?.length) {
+    const superAdmin = decoded.roles.find((role) => {
+      const normalized = role.trim().toLowerCase().replace(/[-\s]+/g, "_");
+      return normalized === "super_admin" || normalized === "superadmin";
+    });
+
+    if (superAdmin) return superAdmin;
+    return decoded.roles[0] ?? null;
+  }
+
+  return decoded.role ?? null;
+}
+
+export function isSuperAdmin(): boolean {
+  const role = getUserRole();
+  if (!role) return false;
+
+  const normalized = role.trim().toLowerCase().replace(/[-\s]+/g, "_");
+  return normalized === "super_admin" || normalized === "superadmin";
 }
 
 export function getUserId(): number | null {
@@ -43,10 +59,6 @@ export function isLoggedIn(): boolean {
   return decoded.exp * 1000 > Date.now();
 }
 
-/**
- * Centralized authenticated fetch helper
- * Used across admin & protected endpoints
- */
 export async function authFetch(
   input: RequestInfo,
   init: RequestInit = {}
@@ -69,4 +81,3 @@ export function logout() {
     window.location.href = "/login";
   }
 }
-
