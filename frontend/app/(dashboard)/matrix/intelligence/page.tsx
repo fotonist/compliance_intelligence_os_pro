@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/app/lib/api";
 import {
-  AlertTriangle,
   BarChart3,
   ChevronRight,
   ShieldCheck,
@@ -468,25 +467,8 @@ export default function MatrixIntelligencePage() {
   );
 }
 
-function MetricCard({
-  label,
-  value,
-  tone = "slate",
-  sub,
-}: {
-  label: string;
-  value: string | number;
-  tone?: "slate" | "cyan" | "green" | "amber" | "red" | "purple";
-  sub?: string;
-}) {
-  const toneClass = {
-    slate: "text-white",
-    cyan: "text-cyan-300",
-    green: "text-emerald-300",
-    amber: "text-amber-300",
-    red: "text-red-300",
-    purple: "text-violet-300",
-  }[tone];
+function MetricCard({ label, value, tone = "slate", sub }: { label: string; value: string | number; tone?: "slate" | "cyan" | "green" | "amber" | "red" | "purple"; sub?: string }) {
+  const toneClass = { slate: "text-white", cyan: "text-cyan-300", green: "text-emerald-300", amber: "text-amber-300", red: "text-red-300", purple: "text-violet-300" }[tone];
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
