@@ -158,6 +158,7 @@ export default function Sidebar() {
             <Link href="/intelligence/risk" className={itemClass("/intelligence/risk")}>Risk Intelligence</Link>
             <Link href="/intelligence/readiness/processes" className={itemClass("/intelligence/readiness/processes")}>Executive Readiness</Link>
             <Link href="/intelligence/gaps" className={itemClass("/intelligence/gaps")}>GAP Intelligence</Link>
+            <Link href="/intelligence/control/control-health" className={itemClass("/intelligence/control/control-health")}>Control Health</Link>
           </Section>
 
           <Section title="Maturity" icon={<ClipboardList size={18} />} id="maturity" open={open} toggle={toggle}>
