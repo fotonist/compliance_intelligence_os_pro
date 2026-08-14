@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { getUserRole } from "../lib/auth";
+import { isSuperAdmin } from "../lib/auth";
 
 type Props = {
   label: string;
@@ -17,12 +17,6 @@ const PREMIUM_ROUTES: Record<string, string> = {
   "Evidence Review": "/company/evidence/review",
 };
 
-function isSuperAdminRole(role?: string | null) {
-  const normalized = (role || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
-
-  return normalized === "super_admin" || normalized === "superadmin";
-}
-
 export default function PremiumMenuItem({ label }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -30,7 +24,7 @@ export default function PremiumMenuItem({ label }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const isSuperAdmin = isSuperAdminRole(getUserRole());
+  const superAdmin = isSuperAdmin();
   const route = PREMIUM_ROUTES[label];
 
   async function handleRequestActivation() {
@@ -63,8 +57,7 @@ export default function PremiumMenuItem({ label }: Props) {
     setError("");
   }
 
-  // Super Admin bypasses the premium lock completely.
-  if (isSuperAdmin) {
+  if (superAdmin) {
     return (
       <button
         type="button"
