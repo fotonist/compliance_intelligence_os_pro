@@ -8,6 +8,8 @@ from app.core.security import require_roles, get_current_user
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.audit_sessions import AuditSession
+from app.services.audit_plan_engine import AuditPlanEngine
+from app.schemas.audit_plan_schema import AuditPlanResponse
 
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
@@ -63,7 +65,6 @@ def start_audit(
     it will be CLOSED automatically.
     """
 
-    # ✅ tenant_id artık JWT'den geliyor
     tenant_id = user.tenant_id
 
     standard_id = payload.get("standard_id")
@@ -73,7 +74,6 @@ def start_audit(
     if not standard_id or not standard_version_id:
         raise HTTPException(status_code=400, detail="Missing required fields")
 
-    # Close existing ACTIVE audit if exists
     existing = (
         db.query(AuditSession)
         .filter(
@@ -108,6 +108,33 @@ def start_audit(
         "audit_session_id": new_session.id,
         "status": new_session.status,
     }
+
+
+# ============================================================
+# RISK-BASED AUDIT PLAN
+# ============================================================
+
+@router.get("/plan/{process_id}", response_model=AuditPlanResponse)
+def generate_audit_plan(
+    process_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Generates a tenant-safe, risk-based audit plan for a process.
+
+    The plan is derived from the existing Compliance Intelligence OS
+    signals: risk severity, control coverage weakness, forecasted
+    escalation probability, and expected risk-score delta.
+    """
+    try:
+        return AuditPlanEngine.generate(
+            process_id=process_id,
+            db=db,
+            user=user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 # ============================================================
