@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { isSuperAdmin } from "../lib/auth";
+import { isSuperAdmin as isSuperAdminFromToken } from "../lib/auth";
 
 type Props = {
   label: string;
@@ -17,15 +17,67 @@ const PREMIUM_ROUTES: Record<string, string> = {
   "Evidence Review": "/company/evidence/review",
 };
 
+function normalizeRole(role: unknown): string {
+  return String(role ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, "_");
+}
+
+function hasSuperAdminRole(data: any): boolean {
+  const roles = Array.isArray(data?.roles) ? data.roles : [];
+  const allRoles = [...roles, data?.role];
+
+  return allRoles.some((role) => {
+    const normalized = normalizeRole(role);
+    return normalized === "super_admin" || normalized === "superadmin";
+  });
+}
+
 export default function PremiumMenuItem({ label }: Props) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [requested, setRequested] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [superAdmin, setSuperAdmin] = useState(() => isSuperAdminFromToken());
+  const [checkingRole, setCheckingRole] = useState(true);
 
-  const superAdmin = isSuperAdmin();
   const route = PREMIUM_ROUTES[label];
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveRole() {
+      if (isSuperAdminFromToken()) {
+        if (!cancelled) {
+          setSuperAdmin(true);
+          setCheckingRole(false);
+        }
+        return;
+      }
+
+      try {
+        const res = await apiFetch("/auth/me");
+        if (!res.ok) return;
+
+        const data = await res.json();
+        if (!cancelled) {
+          setSuperAdmin(hasSuperAdminRole(data));
+        }
+      } catch {
+        // JWT check remains the fallback for unavailable /auth/me.
+      } finally {
+        if (!cancelled) setCheckingRole(false);
+      }
+    }
+
+    resolveRole();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function handleRequestActivation() {
     try {
@@ -57,18 +109,35 @@ export default function PremiumMenuItem({ label }: Props) {
     setError("");
   }
 
+  // Super Admin bypasses every frontend premium lock.
+  // This is intentionally independent of tenant license/module state.
   if (superAdmin) {
     return (
       <button
         type="button"
         onClick={() => route && router.push(route)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-100 cursor-pointer"
+        disabled={!route}
+        className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-100 ${
+          route ? "cursor-pointer" : "cursor-default"
+        }`}
       >
         <span>{label}</span>
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
           ACTIVE
         </span>
       </button>
+    );
+  }
+
+  // Avoid showing a false PRO lock while the user's role is being resolved.
+  if (checkingRole) {
+    return (
+      <div className="w-full flex items-center justify-between px-3 py-2 rounded text-sm text-slate-500">
+        <span>{label}</span>
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700/50 text-slate-400">
+          CHECKING
+        </span>
+      </div>
     );
   }
 
