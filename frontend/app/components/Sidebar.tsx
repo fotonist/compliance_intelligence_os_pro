@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   PlusCircle,
   ClipboardList,
+  ClipboardCheck,
 } from "lucide-react";
 import PremiumMenuItem from "./PremiumMenuItem";
 
@@ -89,6 +90,8 @@ export default function Sidebar() {
       pathname.startsWith("/risks/create")
     ) {
       setOpen("execution");
+    } else if (pathname.startsWith("/audit")) {
+      setOpen("audit");
     } else if (pathname.startsWith("/admin")) {
       setOpen("admin");
     } else {
@@ -157,28 +160,7 @@ export default function Sidebar() {
     loadUser();
   }, []);
 
-  /*
-   * =====================================================
-   * ACTIVE MENU LOGIC
-   * =====================================================
-   *
-   * IMPORTANT:
-   *
-   * "/matrix" must NOT match "/matrix/intelligence".
-   *
-   * Control Matrix owns:
-   *   /matrix
-   *   /matrix/instances
-   *   /matrix/builder
-   *
-   * Control Analytics owns:
-   *   /matrix/intelligence
-   *
-   * Other menu items use exact route or child routes.
-   */
-
   function isItemActive(href: string) {
-    // Control Matrix
     if (href === "/matrix") {
       return (
         pathname === "/matrix" ||
@@ -189,7 +171,6 @@ export default function Sidebar() {
       );
     }
 
-    // Control Analytics
     if (href === "/matrix/intelligence") {
       return (
         pathname === "/matrix/intelligence" ||
@@ -197,12 +178,10 @@ export default function Sidebar() {
       );
     }
 
-    // Root-level exact route
     if (href === "/dashboard") {
       return pathname === "/dashboard";
     }
 
-    // Generic hierarchical route matching
     return (
       pathname === href ||
       pathname.startsWith(`${href}/`)
@@ -432,6 +411,26 @@ export default function Sidebar() {
             <PremiumMenuItem
               label="Evidence Review"
             />
+          </Section>
+
+          <Section
+            title="Internal Audit"
+            icon={<ClipboardCheck size={18} />}
+            id="audit"
+            open={open}
+            toggle={toggle}
+          >
+            <Link
+              href="/audit/planning"
+              className={itemClass("/audit/planning")}
+            >
+              Audit Planning
+            </Link>
+
+            <PremiumMenuItem label="Audit Execution" />
+            <PremiumMenuItem label="Findings" />
+            <PremiumMenuItem label="Corrective Actions" />
+            <PremiumMenuItem label="Audit Reports" />
           </Section>
 
           <Section
