@@ -6,7 +6,6 @@ from typing import Dict, List, Optional
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from app.models.audit_plan_item import AuditPlanItem
 from app.models.controls import Control
 from app.models.controls_coverage import ControlsCoverage
 from app.models.process import Process
@@ -244,7 +243,6 @@ class AuditPlanEngine:
             coverage = coverage_by_control.get(control_id)
             coverage_status = AuditPlanEngine._coverage_status(coverage)
 
-            # Current risk severity.
             max_risk_score = max(int(r.score or 0) for r in control_risks)
             highest_risk = max(
                 control_risks,
@@ -255,8 +253,6 @@ class AuditPlanEngine:
                 highest_risk.risk_level,
             )
 
-            # Forecast signals are aggregated conservatively: use the
-            # strongest escalation probability and expected score delta.
             relevant_forecasts = [
                 latest_forecast_by_risk[risk.id]
                 for risk in control_risks
@@ -327,7 +323,6 @@ class AuditPlanEngine:
                 )
             )
 
-        # Highest priority first, deterministic tie-breaker by control code.
         actions.sort(
             key=lambda item: (
                 -item.ai_priority_score,
