@@ -15,13 +15,41 @@ from app.services.exposure_engine import ExposureEngine
 class ExecutiveSummaryService:
     """Production-safe Executive Intelligence aggregation.
 
-    Controls are tenant-scoped through matrix_rows because the production
-    controls table has no tenant_id column.
+    Executive KPI values are sourced from the database analytics layer.
+    The frontend must not independently recalculate compliance posture.
     """
 
     def __init__(self, db: Session, tenant_id: int):
         self.db = db
         self.tenant_id = tenant_id
+
+    def _dashboard_metrics(self) -> dict[str, Any]:
+        """Read the canonical Executive Intelligence KPI source."""
+        row = self.db.execute(
+            text("""
+                SELECT
+                    tenant_id,
+                    unified_exposure,
+                    compliance_health,
+                    risk_pressure,
+                    mttr_hours,
+                    total_controls,
+                    total_risks,
+                    total_evidences,
+                    open_tasks
+                FROM analytics.v_dashboard_summary
+                WHERE tenant_id = :tenant_id
+                LIMIT 1
+            """),
+            {"tenant_id": self.tenant_id},
+        ).mappings().first()
+
+        if not row:
+            raise RuntimeError(
+                f"analytics.v_dashboard_summary returned no row for tenant_id={self.tenant_id}"
+            )
+
+        return dict(row)
 
     def build(self) -> dict[str, Any]:
         return {
@@ -34,10 +62,13 @@ class ExecutiveSummaryService:
         }
 
     def executive_metrics(self) -> dict[str, Any]:
-        compliance = self.calculate_compliance_score()
+        dashboard = self._dashboard_metrics()
+        compliance = float(dashboard["compliance_health"] or 0.0)
         evidence = self.calculate_evidence_score()
         risk = self.calculate_risk_health()
+
         readiness = compliance * 0.40 + evidence * 0.30 + risk * 0.30
+
         return {
             "readiness_score": round(readiness, 2),
             "compliance_score": round(compliance, 2),
@@ -57,34 +88,43 @@ class ExecutiveSummaryService:
         return "CRITICAL"
 
     def control_metrics(self) -> dict[str, Any]:
-        row = self.db.execute(
+        """Read control posture from the canonical UEE coverage view.
+
+        A control with evidence but no approved file is not considered fully
+        covered. The view exposes partial/achieved coverage explicitly.
+        """
+        rows = self.db.execute(
             text("""
-                SELECT
-                    COUNT(DISTINCT mr.control_id) AS total,
-                    COUNT(DISTINCT CASE WHEN e.id IS NOT NULL THEN mr.control_id END) AS covered
-                FROM matrix_rows mr
-                LEFT JOIN evidences e
-                  ON e.control_id = mr.control_id
-                 AND e.tenant_id = :tenant_id
-                 AND COALESCE(e.is_deleted, false) = false
-                WHERE mr.tenant_id = :tenant_id
-                  AND mr.control_id IS NOT NULL
+                SELECT coverage_status, COUNT(*) AS count
+                FROM analytics.v_control_coverage_uee
+                GROUP BY coverage_status
             """),
-            {"tenant_id": self.tenant_id},
-        ).mappings().one()
-        total = int(row["total"] or 0)
-        covered = int(row["covered"] or 0)
+        ).mappings().all()
+
+        counts = {str(row["coverage_status"] or "").lower(): int(row["count"] or 0) for row in rows}
+        total = sum(counts.values())
+        covered = counts.get("achieved", 0) + counts.get("covered", 0)
+        partial = counts.get("partial", 0) + counts.get("partially_achieved", 0)
+        uncovered = counts.get("uncovered", 0) + counts.get("not_achieved", 0)
+
+        dashboard = self._dashboard_metrics()
+        if total == 0:
+            total = int(dashboard["total_controls"] or 0)
+
         return {
             "total": total,
             "covered": covered,
-            "uncovered": total - covered,
+            "partial": partial,
+            "uncovered": uncovered,
             "coverage_percent": round((covered / total * 100) if total else 0.0, 2),
         }
 
     def calculate_compliance_score(self) -> float:
-        return float(self.control_metrics()["coverage_percent"])
+        return float(self._dashboard_metrics()["compliance_health"] or 0.0)
 
     def risk_metrics(self) -> dict[str, Any]:
+        dashboard = self._dashboard_metrics()
+
         try:
             rows = ExposureEngine(self.db).compute_risk_exposure(
                 tenant_id=self.tenant_id, limit=1000000
@@ -99,9 +139,11 @@ class ExecutiveSummaryService:
             if level in distribution:
                 distribution[level] += 1
             total_score += float(getattr(item, "inherent_score", 0) or 0)
-        total = len(rows)
-        average = total_score / total if total else 0.0
-        exposure = sum(float(getattr(x, "unified_score", 0) or 0) for x in rows)
+
+        total = int(dashboard["total_risks"] or 0)
+        average = total_score / len(rows) if rows else 0.0
+        exposure = float(dashboard["unified_exposure"] or 0.0)
+
         return {
             "total": total,
             "critical": distribution["critical"],
@@ -221,9 +263,11 @@ class ExecutiveSummaryService:
                 due = due.replace(tzinfo=timezone.utc) if due.tzinfo is None else due
                 if due < now:
                     overdue += 1
+
+        dashboard = self._dashboard_metrics()
         return {
             "total": len(tasks),
-            "open": open_count,
+            "open": int(dashboard["open_tasks"] or open_count),
             "overdue": overdue,
             "critical": critical,
             "high": high,
@@ -280,7 +324,12 @@ class ExecutiveSummaryService:
         }
 
     def api_response(self) -> dict[str, Any]:
-        return {"success": True, "data": self.build(), "landing": self.landing_page_payload(), "generated_at": datetime.now(timezone.utc).isoformat()}
+        return {
+            "success": True,
+            "data": self.build(),
+            "landing": self.landing_page_payload(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
 
 
 def build_executive_summary(db: Session, tenant_id: int) -> dict[str, Any]:
