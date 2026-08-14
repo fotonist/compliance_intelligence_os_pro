@@ -36,7 +36,6 @@ def login_for_access_token(
         ),
     )
 
-    # ✅ SADECE JWT DÖN – COOKIE YOK
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -45,7 +44,6 @@ def login_for_access_token(
 
 @router.post("/logout")
 def logout():
-    # Header tabanlı auth → backend tarafında state yok
     return {"ok": True}
 
 
@@ -53,8 +51,14 @@ def logout():
 def read_current_user(
     current_user: User = Depends(get_current_user),
 ):
+    roles = [r.name for r in (current_user.roles or [])]
+
     return {
         "id": current_user.id,
+        "username": current_user.email,
         "email": current_user.email,
-        "roles": [r.name.lower() for r in current_user.roles],
+        "full_name": current_user.full_name,
+        "role": roles[0] if roles else None,
+        "roles": roles,
+        "tenant_id": current_user.tenant_id,
     }
