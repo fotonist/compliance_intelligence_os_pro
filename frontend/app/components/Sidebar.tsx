@@ -14,6 +14,7 @@ import {
   User,
   LogOut,
   AlertTriangle,
+  PlusCircle,
   ClipboardList,
   ClipboardCheck,
 } from "lucide-react";
@@ -164,7 +165,31 @@ export default function Sidebar() {
           </Section>
 
           <Section title="Execution" icon={<Activity size={18} />} id="execution" open={open} toggle={toggle}>
-            <Link href="/risks" className={itemClass("/risks")}><AlertTriangle size={16} />Risk Management</Link>
+            <div className="rounded-md border border-slate-800/80 bg-slate-900/20 p-1">
+              <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-200">
+                <AlertTriangle size={16} />
+                Risk Management
+              </div>
+
+              <div className="ml-3 border-l border-slate-700 pl-2">
+                <Link
+                  href="/risks"
+                  className={itemClass("/risks")}
+                >
+                  <ClipboardList size={15} />
+                  Risk Register
+                </Link>
+
+                <Link
+                  href="/risks/create"
+                  className={itemClass("/risks/create")}
+                >
+                  <PlusCircle size={15} />
+                  Create Risk
+                </Link>
+              </div>
+            </div>
+
             <PremiumMenuItem label="Remediation Center" />
             <Link href="/company/tasks" className={itemClass("/company/tasks")}><ClipboardList size={16} />My Tasks</Link>
             <PremiumMenuItem label="Evidence Library" />
