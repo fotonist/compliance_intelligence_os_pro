@@ -16,15 +16,18 @@ class Role(str, Enum):
     Auditor = "Auditor"
 
 
+def _normalize_role(role: object) -> str:
+    return str(role or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+
 def _user_roles(user: User) -> set[str]:
-    # Prefer roles from JWT claims when available.
     token_roles = getattr(user, "_token_roles", None)
     if token_roles is not None:
-        return {str(r).lower() for r in (token_roles or [])}
+        return {_normalize_role(role) for role in (token_roles or [])}
 
     return {
-        str(getattr(r, "name", r)).lower()
-        for r in (getattr(user, "roles", None) or [])
+        _normalize_role(getattr(role, "name", role))
+        for role in (getattr(user, "roles", None) or [])
     }
 
 
@@ -33,13 +36,13 @@ def is_super_admin(user: User) -> bool:
 
 
 def require_roles(*allowed: Role):
-    allowed_set = {str(r.value).lower() for r in allowed}
+    allowed_set = {_normalize_role(role.value) for role in allowed}
 
     def checker(current_user: User = Depends(get_current_user)):
         user_roles = _user_roles(current_user)
 
-        # Super Admin is a platform-level role and bypasses module-specific RBAC.
-        if "superadmin" in user_roles or "super_admin" in user_roles:
+        # SuperAdmin is a platform-level role and bypasses module-specific RBAC.
+        if is_super_admin(current_user):
             return current_user
 
         if not user_roles.intersection(allowed_set):
