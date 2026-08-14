@@ -5,7 +5,7 @@ from typing import Set
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.security import SECRET_KEY, ALGORITHM
@@ -23,7 +23,7 @@ def get_current_user(
 ) -> User:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("user_id")
+        user_id = payload.get("user_id") or payload.get("sub")
 
         if user_id is None:
             raise HTTPException(
@@ -37,12 +37,32 @@ def get_current_user(
             detail="Invalid or expired token",
         )
 
-    user = db.query(User).filter(User.id == user_id).first()
+    try:
+        user_id = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user identifier",
+        )
+
+    user = (
+        db.query(User)
+        .options(joinedload(User.roles))
+        .filter(User.id == user_id)
+        .first()
+    )
 
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
+        )
+
+    token_tenant_id = payload.get("tenant_id")
+    if token_tenant_id is not None and int(token_tenant_id) != int(user.tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid tenant context",
         )
 
     return user
@@ -52,7 +72,7 @@ def resolve_user_permissions(db: Session, user_id: int) -> Set[str]:
     """
     DB-driven RBAC resolver:
       user_roles -> role_permissions -> permissions.code
-    Returns: set of permission codes (e.g. {"admin.full", "matrix.read"})
+    Returns a set of permission codes.
     """
     rows = (
         db.query(Permission.code)
@@ -69,7 +89,4 @@ def get_current_user_permissions(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Set[str]:
-    """
-    Dependency helper: returns current user's permission set.
-    """
     return resolve_user_permissions(db, user.id)
