@@ -14,7 +14,6 @@ import {
   User,
   LogOut,
   AlertTriangle,
-  PlusCircle,
   ClipboardList,
   ClipboardCheck,
 } from "lucide-react";
@@ -79,17 +78,14 @@ export default function Sidebar() {
     ) {
       setOpen("governance");
     } else if (
-      pathname.startsWith("/intelligence") ||
-      pathname.startsWith("/risks")
-    ) {
-      setOpen("intelligence");
-    } else if (
       pathname.startsWith("/company/tasks") ||
       pathname.startsWith("/evidences") ||
       pathname.startsWith("/company/evidence") ||
-      pathname.startsWith("/risks/create")
+      pathname.startsWith("/risks")
     ) {
       setOpen("execution");
+    } else if (pathname.startsWith("/intelligence")) {
+      setOpen("intelligence");
     } else if (pathname.startsWith("/audit")) {
       setOpen("audit");
     } else if (pathname.startsWith("/admin")) {
@@ -316,9 +312,21 @@ export default function Sidebar() {
             toggle={toggle}
             badge={alertCount}
           >
-            <PremiumMenuItem
-              label="Executive Intelligence"
-            />
+            <Link
+              href="/intelligence/executive"
+              className={itemClass(
+                "/intelligence/executive"
+              )}
+            >
+              Executive Intelligence
+            </Link>
+
+            <Link
+              href="/intelligence"
+              className={itemClass("/intelligence")}
+            >
+              Risk Intelligence
+            </Link>
 
             <Link
               href="/intelligence/readiness/processes"
@@ -330,29 +338,12 @@ export default function Sidebar() {
             </Link>
 
             <Link
-              href="/risks"
-              className={itemClass("/risks")}
-            >
-              <AlertTriangle size={16} />
-              Risk Intelligence
-            </Link>
-
-            <Link
               href="/intelligence/gaps"
               className={itemClass(
                 "/intelligence/gaps"
               )}
             >
               GAP Intelligence
-            </Link>
-
-            <Link
-              href="/intelligence/control/control-health"
-              className={itemClass(
-                "/intelligence/control/control-health"
-              )}
-            >
-              Control Health
             </Link>
           </Section>
 
@@ -381,13 +372,11 @@ export default function Sidebar() {
             toggle={toggle}
           >
             <Link
-              href="/risks/create"
-              className={itemClass(
-                "/risks/create"
-              )}
+              href="/risks"
+              className={itemClass("/risks")}
             >
-              <PlusCircle size={16} />
-              Create Risk
+              <AlertTriangle size={16} />
+              Risk Management
             </Link>
 
             <PremiumMenuItem
