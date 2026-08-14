@@ -92,7 +92,7 @@ export default function AuditPlanningPage() {
     setLoadingPlan(true);
     setError(null);
     try {
-      const res = await apiFetch(`/audit/plan/${id}`, { method: "GET" });
+      const res = await apiFetch(`/company/coverage/processes/${id}/audit-plan`, { method: "GET" });
       if (!res.ok) throw new Error(await safeText(res));
       setPlan((await res.json()) as AuditPlanResponse);
     } catch (e: any) {
