@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class IntelligenceSummary(BaseModel):
     total_risks: int
+    open_risks: int
     forecasted_risks: int
     high_probability_risks: int  # prob >= 0.70
     executive_alerts: int        # prob >= 0.80 and risk_level_rank >= 3
