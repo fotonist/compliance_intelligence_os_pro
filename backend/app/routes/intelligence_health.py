@@ -43,8 +43,8 @@ def get_gap_intelligence_fixed(
 ):
     tenant_id = user.tenant_id
 
-    # Keep the GAP read path schema-safe.  GAP Intelligence must not depend on
-    # optional task source-tracking columns just to render the dashboard.
+    # controls is a shared/reference table and does not contain tenant_id.
+    # Tenant ownership of a control instance is established through matrix_rows.
     stmt = text(
         """
         SELECT
@@ -62,7 +62,12 @@ def get_gap_intelligence_fixed(
         FROM gap_items gi
         LEFT JOIN controls co
             ON co.id = gi.control_id
-           AND co.tenant_id = :tenant_id
+           AND EXISTS (
+               SELECT 1
+               FROM matrix_rows mr
+               WHERE mr.control_id = co.id
+                 AND mr.tenant_id = :tenant_id
+           )
         LEFT JOIN risks r
             ON r.id = gi.risk_id
            AND r.tenant_id = :tenant_id
@@ -246,6 +251,8 @@ def get_control_health_fixed(
 ):
     tenant_id = user.tenant_id
 
+    # controls is a shared/reference table and does not contain tenant_id.
+    # Restrict the visible controls through the tenant's matrix rows instead.
     stmt = text(
         """
         SELECT
@@ -257,6 +264,12 @@ def get_control_health_fixed(
             coalesce(r.risk_count, 0) AS risk_count,
             coalesce(e.evidence_count, 0) AS evidence_count
         FROM controls c
+        INNER JOIN (
+            SELECT DISTINCT control_id
+            FROM matrix_rows
+            WHERE tenant_id = :tenant_id
+              AND control_id IS NOT NULL
+        ) mc ON mc.control_id = c.id
         LEFT JOIN (
             SELECT control_id, count(*) AS gap_count, max(severity_score) AS worst_severity
             FROM gap_items
@@ -277,7 +290,6 @@ def get_control_health_fixed(
               AND control_id IS NOT NULL
             GROUP BY control_id
         ) e ON e.control_id = c.id
-        WHERE c.tenant_id = :tenant_id
         ORDER BY c.code NULLS LAST, c.id
         """
     )
