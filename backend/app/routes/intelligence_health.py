@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -43,6 +43,8 @@ def get_gap_intelligence_fixed(
 ):
     tenant_id = user.tenant_id
 
+    # Keep the GAP read path schema-safe.  GAP Intelligence must not depend on
+    # optional task source-tracking columns just to render the dashboard.
     stmt = text(
         """
         SELECT
@@ -56,9 +58,7 @@ def get_gap_intelligence_fixed(
             co.title AS control_title,
             r.title AS risk_title,
             r.risk_level,
-            r.score AS risk_score,
-            t.id AS task_id,
-            t.status AS task_status
+            r.score AS risk_score
         FROM gap_items gi
         LEFT JOIN controls co
             ON co.id = gi.control_id
@@ -66,16 +66,6 @@ def get_gap_intelligence_fixed(
         LEFT JOIN risks r
             ON r.id = gi.risk_id
            AND r.tenant_id = :tenant_id
-        LEFT JOIN LATERAL (
-            SELECT ct.id, ct.status
-            FROM compliance_tasks ct
-            WHERE ct.tenant_id = :tenant_id
-              AND ct.source_type = 'control_gap_auto'
-              AND ct.source_id = gi.id
-              AND lower(coalesce(ct.status, '')) IN ('open', 'in_progress')
-            ORDER BY ct.id DESC
-            LIMIT 1
-        ) t ON TRUE
         WHERE gi.tenant_id = :tenant_id
         ORDER BY gi.severity_score DESC NULLS LAST, gi.id DESC
         """
@@ -140,8 +130,8 @@ def get_gap_intelligence_fixed(
                     "gap_id": int(row["id"]),
                     "severity_score": severity,
                     "status": row.get("status"),
-                    "task_id": row.get("task_id"),
-                    "task_status": row.get("task_status"),
+                    "task_id": None,
+                    "task_status": None,
                 }
             )
 
