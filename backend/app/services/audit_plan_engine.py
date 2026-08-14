@@ -174,7 +174,10 @@ class AuditPlanEngine:
             )
         ).scalars().all()
 
-        risk_ids = {link.risk_id for link in risk_links}
+        # A process-risk link should be unique, but tolerate legacy duplicate
+        # link rows so one risk cannot inflate an audit action's risk_count or
+        # distort its priority.
+        risk_ids = {int(link.risk_id) for link in risk_links if link.risk_id is not None}
         if not risk_ids:
             return AuditPlanResponse(
                 process_id=process_id,
@@ -192,12 +195,12 @@ class AuditPlanEngine:
             )
         ).scalars().all()
 
-        # A control is the auditable unit. Aggregate all process risks that
-        # point to the same control into one prioritized audit action.
-        risk_by_control: Dict[int, List[Risk]] = {}
+        # A control is the auditable unit. Aggregate all distinct process risks
+        # that point to the same control into one prioritized audit action.
+        risk_by_control: Dict[int, Dict[int, Risk]] = {}
         for risk in risks:
             if risk.control_id is not None:
-                risk_by_control.setdefault(risk.control_id, []).append(risk)
+                risk_by_control.setdefault(int(risk.control_id), {})[int(risk.id)] = risk
 
         if not risk_by_control:
             return AuditPlanResponse(
@@ -210,18 +213,23 @@ class AuditPlanEngine:
         control_ids = list(risk_by_control.keys())
 
         controls = db.execute(
-            select(Control).where(Control.id.in_(control_ids))
+            select(Control).where(
+                and_(
+                    Control.id.in_(control_ids),
+                )
+            )
         ).scalars().all()
         controls_by_id = {control.id: control for control in controls}
 
+        # ControlsCoverage is a global per-control table (control_id is unique),
+        # so there is no tenant predicate on this model. The process/risk/control
+        # scope above remains tenant-safe.
         coverage_rows = db.execute(
             select(ControlsCoverage).where(
                 ControlsCoverage.control_id.in_(control_ids)
             )
         ).scalars().all()
-        coverage_by_control = {
-            row.control_id: row for row in coverage_rows
-        }
+        coverage_by_control = {row.control_id: row for row in coverage_rows}
 
         forecasts = db.execute(
             select(RiskForecast).where(
@@ -235,7 +243,8 @@ class AuditPlanEngine:
 
         actions: List[AuditActionItem] = []
 
-        for control_id, control_risks in risk_by_control.items():
+        for control_id, risk_map in risk_by_control.items():
+            control_risks = list(risk_map.values())
             control = controls_by_id.get(control_id)
             if not control:
                 continue
@@ -327,6 +336,7 @@ class AuditPlanEngine:
             key=lambda item: (
                 -item.ai_priority_score,
                 item.control_code or "",
+                item.control_id,
             )
         )
 
