@@ -4,6 +4,7 @@ export interface TokenPayload {
   sub: string;
   role?: string;
   roles?: string[];
+  is_superadmin?: boolean;
   user_id: number;
   exp: number;
 }
@@ -24,13 +25,20 @@ export function decodeToken(): TokenPayload | null {
   }
 }
 
+function normalizeRole(role: unknown): string {
+  return String(role ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, "_");
+}
+
 export function getUserRole(): string | null {
   const decoded = decodeToken();
   if (!decoded) return null;
 
   if (decoded.roles?.length) {
     const superAdmin = decoded.roles.find((role) => {
-      const normalized = role.trim().toLowerCase().replace(/[-\s]+/g, "_");
+      const normalized = normalizeRole(role);
       return normalized === "super_admin" || normalized === "superadmin";
     });
 
@@ -42,11 +50,20 @@ export function getUserRole(): string | null {
 }
 
 export function isSuperAdmin(): boolean {
-  const role = getUserRole();
-  if (!role) return false;
+  const decoded = decodeToken();
+  if (!decoded) return false;
 
-  const normalized = role.trim().toLowerCase().replace(/[-\s]+/g, "_");
-  return normalized === "super_admin" || normalized === "superadmin";
+  if (decoded.is_superadmin === true) return true;
+
+  const roles = [
+    ...(decoded.roles ?? []),
+    decoded.role,
+  ];
+
+  return roles.some((role) => {
+    const normalized = normalizeRole(role);
+    return normalized === "super_admin" || normalized === "superadmin";
+  });
 }
 
 export function getUserId(): number | null {
