@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import { isSuperAdmin as isSuperAdminFromToken } from "../lib/auth";
@@ -15,6 +15,10 @@ const PREMIUM_ROUTES: Record<string, string> = {
   "Remediation Center": "/company/remediation",
   "Evidence Library": "/evidences",
   "Evidence Review": "/company/evidence/review",
+  "Audit Execution": "/audit/execution",
+  "Findings": "/audit/findings",
+  "Corrective Actions": "/audit/corrective-actions",
+  "Audit Reports": "/audit/reports",
 };
 
 function normalizeRole(role: unknown): string {
@@ -36,6 +40,7 @@ function hasSuperAdminRole(data: any): boolean {
 
 export default function PremiumMenuItem({ label }: Props) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [requested, setRequested] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,6 +49,7 @@ export default function PremiumMenuItem({ label }: Props) {
   const [checkingRole, setCheckingRole] = useState(true);
 
   const route = PREMIUM_ROUTES[label];
+  const active = !!route && (pathname === route || pathname.startsWith(`${route}/`));
 
   useEffect(() => {
     let cancelled = false;
@@ -109,34 +115,27 @@ export default function PremiumMenuItem({ label }: Props) {
     setError("");
   }
 
-  // Super Admin bypasses every frontend premium lock.
-  // This is intentionally independent of tenant license/module state.
   if (superAdmin) {
     return (
       <button
         type="button"
         onClick={() => route && router.push(route)}
         disabled={!route}
-        className={`w-full flex items-center justify-between px-3 py-2 rounded text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-100 ${
-          route ? "cursor-pointer" : "cursor-default"
-        }`}
+        className={`w-full flex items-center px-3 py-2 rounded text-sm hover:bg-slate-800 hover:text-slate-100 ${
+          active
+            ? "bg-slate-800 font-medium text-slate-100"
+            : "text-slate-400"
+        } ${route ? "cursor-pointer" : "cursor-default"}`}
       >
         <span>{label}</span>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">
-          ACTIVE
-        </span>
       </button>
     );
   }
 
-  // Avoid showing a false PRO lock while the user's role is being resolved.
   if (checkingRole) {
     return (
-      <div className="w-full flex items-center justify-between px-3 py-2 rounded text-sm text-slate-500">
+      <div className="w-full flex items-center px-3 py-2 rounded text-sm text-slate-500">
         <span>{label}</span>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700/50 text-slate-400">
-          CHECKING
-        </span>
       </div>
     );
   }
