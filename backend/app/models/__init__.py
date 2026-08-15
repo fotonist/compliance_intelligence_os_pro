@@ -12,28 +12,16 @@ from .standard_versions import StandardVersion
 # --- Actions / Audit ---
 from app.models.actions import Action
 from app.models.audit_log import AuditLog
-from app.models.audit_plans import AuditPlan
-
-# --- Audit Session ----
 from .audit_sessions import AuditSession
-
-# --- ClauseWeightOverride ----
+from .audit_plans import AuditPlan
 from app.models.clause_weight_override import ClauseWeightOverride
-
-# --- Audit Scope entity ----
 from .audit_scope_entities import AuditScopeEntity
-
-# --- Audit Snapshots ---
 from .audit_evidence_snapshots import AuditEvidenceSnapshot
 from .audit_risk_snapshots import AuditRiskSnapshot
-
-# --- Audit findings ---
 from .audit_findings import AuditFinding
 
 # --- Tenants ---
 from .tenants import Tenant
-
-# --- Tasks ---
 from .compliance_tasks import ComplianceTask
 
 # --- Process ---
