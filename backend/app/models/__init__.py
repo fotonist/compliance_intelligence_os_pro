@@ -12,6 +12,7 @@ from .standard_versions import StandardVersion
 # --- Actions / Audit ---
 from app.models.actions import Action
 from app.models.audit_log import AuditLog
+from app.models.audit_plans import AuditPlan
 
 # --- Audit Session ----
 from .audit_sessions import AuditSession
@@ -32,12 +33,12 @@ from .audit_findings import AuditFinding
 # --- Tenants ---
 from .tenants import Tenant
 
-# --- Tenants ---
+# --- Tasks ---
 from .compliance_tasks import ComplianceTask
 
 # --- Process ---
 from app.models.process import Process
-from app.models.process_risk_link import ProcessRiskLink   # ✅ EKLENDİ
+from app.models.process_risk_link import ProcessRiskLink
 
 # --- Evidence ---
 from app.models.evidences import Evidence
