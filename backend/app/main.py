@@ -7,9 +7,6 @@ from sqlalchemy import text
 from app.core.database import engine, SessionLocal
 from app.db.base import Base
 from app.api.compliance_object import router as compliance_object_router
-# ==============================
-# ROUTER IMPORTS
-# ==============================
 from app.routes.user import router as user_router
 from app.routes.roles import router as roles_router
 from app.api import auth, assessments
@@ -52,11 +49,11 @@ from app.routes.company_tasks import router as company_tasks_router
 from app.routes.intelligence import api_router as intelligence_api_router
 from app.models.maturity_workspace_sessions import MaturityWorkspaceSession
 from app.api.risk_appetite import router as risk_appetite_router
+from app.routes.audit_plans import router as audit_plans_router
 
 # ==============================
 # MODELS (metadata load safety)
 # ==============================
-
 import app.models.user
 import app.models.role
 import app.models.risks
@@ -73,23 +70,12 @@ import app.models.maturity_evidence_file
 import app.models.process
 import app.models.process_risk_link
 import app.models.clause_weight_override
-
-# ==============================
-# SEED
-# ==============================
+import app.models.audit_plans
 
 from app.seed.risk_assessment_seed import seed_risk_assessment_questions
 from app.seed.iso15504_2006 import seed_iso15504_2006
 
-# ==============================
-# APP INIT
-# ==============================
-
 app = FastAPI()
-
-# ==============================
-# CORS
-# ==============================
 
 app.add_middleware(
     CORSMiddleware,
@@ -120,10 +106,6 @@ def startup():
     finally:
         db.close()
 
-# ==============================
-# ROUTER INCLUDES
-# ==============================
-
 app.include_router(auth.router, tags=["auth"])
 app.include_router(matrix_router)
 app.include_router(assessments.router)
@@ -131,11 +113,8 @@ app.include_router(kpi_router)
 app.include_router(control_assessments_router)
 app.include_router(evidence_files_router)
 app.include_router(user_router)
-
-# Schema-safe task evidence routes MUST precede the legacy task router.
 app.include_router(company_tasks_evidence_router)
 app.include_router(company_tasks_router)
-
 app.include_router(evidence_router)
 app.include_router(evidence_router, prefix="/company")
 app.include_router(risk_create_router)
@@ -154,8 +133,6 @@ app.include_router(coverage_router)
 app.include_router(readiness.router)
 app.include_router(clause_weights.router)
 app.include_router(heatmap.router)
-
-# Intelligence health endpoints precede legacy intelligence routes.
 app.include_router(intelligence_health_router)
 app.include_router(executive_summary_router)
 app.include_router(intelligence_router)
@@ -172,6 +149,7 @@ app.include_router(clause_router)
 app.include_router(risk_appetite_router)
 app.include_router(compliance_object_router)
 app.include_router(license_router)
+app.include_router(audit_plans_router)
 
 @app.get("/")
 def health():
