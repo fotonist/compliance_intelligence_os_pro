@@ -14,6 +14,22 @@ from app.models.user import User
 router = APIRouter(prefix="/audit/findings", tags=["Audit Findings"])
 
 
+def _get_finding(finding_id: int, db: Session, user: User) -> AuditFindingRecord:
+    record = (
+        db.query(AuditFindingRecord)
+        .filter(
+            and_(
+                AuditFindingRecord.id == finding_id,
+                AuditFindingRecord.tenant_id == user.tenant_id,
+            )
+        )
+        .first()
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return record
+
+
 @router.get("")
 def list_findings(
     plan_id: int | None = None,
@@ -32,6 +48,15 @@ def list_findings(
 
     records = query.order_by(AuditFindingRecord.updated_at.desc()).all()
     return [_serialize(record) for record in records]
+
+
+@router.get("/{finding_id}")
+def get_finding(
+    finding_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    return _serialize(_get_finding(finding_id, db, user))
 
 
 @router.post("")
@@ -123,13 +148,7 @@ def update_finding(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    record = (
-        db.query(AuditFindingRecord)
-        .filter(and_(AuditFindingRecord.id == finding_id, AuditFindingRecord.tenant_id == user.tenant_id))
-        .first()
-    )
-    if not record:
-        raise HTTPException(status_code=404, detail="Finding not found")
+    record = _get_finding(finding_id, db, user)
 
     for field in [
         "title",
