@@ -20,7 +20,20 @@ type Action = {
   suggested_evidence_types: string[];
 };
 
-type Plan = { actions: Action[] };
+type RiskPlan = { actions: Action[] };
+
+type AuditPlan = {
+  id: number;
+  reference: string;
+  name: string;
+  audit_type?: string | null;
+  status?: string | null;
+  objective?: string | null;
+  scope?: string | null;
+  planned_start?: string | null;
+  planned_end?: string | null;
+  process_id?: number | null;
+};
 
 export default function AuditExecutionPage() {
   return (
@@ -35,16 +48,27 @@ function AuditExecutionContent() {
   const router = useRouter();
   const processId = params.get("process_id");
   const controlId = params.get("control_id");
+  const planId = params.get("plan_id");
   const [action, setAction] = useState<Action | null>(null);
+  const [auditPlan, setAuditPlan] = useState<AuditPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("READY");
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
-    if (!processId || !controlId) return;
-    loadSelectedControl();
-  }, [processId, controlId]);
+    if (processId && controlId) {
+      loadSelectedControl();
+      return;
+    }
+    if (planId) {
+      loadAuditPlan(planId);
+      return;
+    }
+    setAction(null);
+    setAuditPlan(null);
+    setError("");
+  }, [processId, controlId, planId]);
 
   async function loadSelectedControl() {
     setLoading(true);
@@ -52,12 +76,26 @@ function AuditExecutionContent() {
     try {
       const res = await apiFetch(`/company/coverage/processes/${processId}/audit-plan`);
       if (!res.ok) throw new Error("Audit plan could not be loaded.");
-      const data = (await res.json()) as Plan;
+      const data = (await res.json()) as RiskPlan;
       const found = data.actions?.find((x) => String(x.control_id) === String(controlId));
       setAction(found || null);
       if (!found) setError("The selected control is no longer present in the audit plan.");
     } catch (e: any) {
       setError(e?.message || "Failed to load audit execution context.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadAuditPlan(id: string) {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/audit/plans/${id}`);
+      if (!res.ok) throw new Error("Audit plan could not be loaded.");
+      setAuditPlan((await res.json()) as AuditPlan);
+    } catch (e: any) {
+      setError(e?.message || "Failed to load audit plan.");
     } finally {
       setLoading(false);
     }
@@ -80,11 +118,79 @@ function AuditExecutionContent() {
         </button>
       </div>
 
-      {loading && <Panel>Loading selected audit control...</Panel>}
+      {loading && <Panel>Loading audit execution...</Panel>}
+
       {error && (
         <div className="rounded-xl border border-red-700/40 bg-red-950/30 p-4 text-sm text-red-200">
           {error}
         </div>
+      )}
+
+      {!loading && !error && !action && !auditPlan && (
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8">
+          <div className="text-lg font-semibold text-slate-100">Select an audit target</div>
+          <div className="text-sm text-slate-400 mt-2">
+            Open a control from Audit Planning or open a created audit plan to begin execution.
+          </div>
+          <button
+            onClick={() => router.push("/audit/planning")}
+            className="mt-5 px-4 py-2 rounded-lg bg-slate-100 text-slate-950 font-semibold hover:bg-white"
+          >
+            Go to Audit Planning
+          </button>
+        </div>
+      )}
+
+      {auditPlan && !action && (
+        <>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            <div className="text-xs text-slate-500">Audit Plan</div>
+            <div className="text-2xl font-semibold text-slate-100 mt-1">
+              {auditPlan.reference} — {auditPlan.name}
+            </div>
+            <div className="flex flex-wrap gap-2 mt-3 text-xs">
+              <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-slate-300">
+                Type: {auditPlan.audit_type || "Internal"}
+              </span>
+              <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-slate-300">
+                Status: {auditPlan.status || "DRAFT"}
+              </span>
+              {auditPlan.planned_start && (
+                <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-slate-300">
+                  {auditPlan.planned_start} → {auditPlan.planned_end || "-"}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Panel>
+              <div className="text-lg font-semibold text-slate-100">Audit Objective</div>
+              <div className="mt-3 text-sm text-slate-400 whitespace-pre-wrap">
+                {auditPlan.objective || "No objective has been defined for this audit plan."}
+              </div>
+            </Panel>
+            <Panel>
+              <div className="text-lg font-semibold text-slate-100">Audit Scope</div>
+              <div className="mt-3 text-sm text-slate-400 whitespace-pre-wrap">
+                {auditPlan.scope || "No scope has been defined for this audit plan."}
+              </div>
+            </Panel>
+          </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            <div className="text-lg font-semibold text-slate-100">Execution Queue</div>
+            <div className="text-sm text-slate-400 mt-1">
+              Select a risk-based control from Audit Planning to start an execution record.
+            </div>
+            <button
+              onClick={() => router.push("/audit/planning")}
+              className="mt-5 px-4 py-2 rounded-lg border border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-800"
+            >
+              Open Risk-Based Audit Queue
+            </button>
+          </div>
+        </>
       )}
 
       {action && (
