@@ -184,6 +184,14 @@ function AuditExecutionContent() {
     }
   }
 
+  function openFindingForm() {
+    const query = new URLSearchParams();
+    if (auditPlan?.id) query.set("plan_id", String(auditPlan.id));
+    if (action?.control_id) query.set("control_id", String(action.control_id));
+    if (currentRecord?.id) query.set("execution_id", String(currentRecord.id));
+    router.push(`/audit/findings?${query.toString()}`);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -321,8 +329,8 @@ function AuditExecutionContent() {
                 {saving ? "Saving..." : "Save Execution Record"}
               </button>
 
-              <button type="button" onClick={() => router.push(`/audit/findings${auditPlan ? `?plan_id=${auditPlan.id}&control_id=${action.control_id}` : ""}`)} className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-slate-200 hover:bg-slate-800">
-                Open Findings
+              <button type="button" onClick={openFindingForm} className="mt-3 w-full rounded-lg border border-red-800/60 bg-red-950/20 px-4 py-3 text-sm text-red-200 hover:bg-red-950/40">
+                {result === "CONFORMITY" ? "Open Findings" : "Create Finding"}
               </button>
             </div>
           </div>
