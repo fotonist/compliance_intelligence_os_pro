@@ -75,6 +75,7 @@ import app.models.process
 import app.models.process_risk_link
 import app.models.clause_weight_override
 import app.models.audit_plans
+import app.models.audit_execution_records
 
 # ==============================
 # SEED
