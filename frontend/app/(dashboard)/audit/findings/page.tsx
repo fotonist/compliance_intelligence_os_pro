@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "@/app/lib/api";
 
- type Finding = {
+type Finding = {
   id: number;
   audit_plan_id: number;
   execution_id?: number | null;
@@ -21,24 +21,36 @@ import { apiFetch } from "@/app/lib/api";
   root_cause?: string | null;
   recommendation?: string | null;
   created_at?: string;
+  updated_at?: string;
 };
 
 const severities = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"];
 const statuses = ["ALL", "OPEN", "IN_PROGRESS", "CLOSED"];
 
 export default function FindingsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-slate-400">Loading findings...</div>}>
+      <FindingsPageContent />
+    </Suspense>
+  );
+}
+
+function FindingsPageContent() {
   const params = useSearchParams();
   const planId = params.get("plan_id");
   const controlId = params.get("control_id");
   const executionId = params.get("execution_id");
 
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [severity, setSeverity] = useState("ALL");
   const [status, setStatus] = useState("ALL");
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(Boolean(planId && controlId));
   const [saving, setSaving] = useState(false);
+  const [detailSaving, setDetailSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   const [title, setTitle] = useState("");
@@ -73,6 +85,55 @@ export default function FindingsPage() {
     loadFindings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planId, status, severity]);
+
+  async function openFinding(finding: Finding) {
+    setSelectedFinding(finding);
+    setDetailLoading(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/audit/findings/${finding.id}`);
+      if (!res.ok) throw new Error(await safeText(res));
+      setSelectedFinding((await res.json()) as Finding);
+    } catch (e: any) {
+      setError(e?.message || "Failed to load finding detail.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function saveFindingDetail() {
+    if (!selectedFinding) return;
+    setDetailSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      const res = await apiFetch(`/audit/findings/${selectedFinding.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: selectedFinding.title.trim(),
+          description: selectedFinding.description.trim(),
+          requirement: selectedFinding.requirement?.trim() || null,
+          objective_evidence: selectedFinding.objective_evidence?.trim() || null,
+          severity: selectedFinding.severity,
+          status: selectedFinding.status,
+          owner: selectedFinding.owner?.trim() || null,
+          due_date: selectedFinding.due_date || null,
+          root_cause: selectedFinding.root_cause?.trim() || null,
+          recommendation: selectedFinding.recommendation?.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error(await safeText(res));
+      const updated = (await res.json()) as Finding;
+      setSelectedFinding(updated);
+      setFindings((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setMessage("Finding updated successfully.");
+    } catch (e: any) {
+      setError(e?.message || "Failed to update finding.");
+    } finally {
+      setDetailSaving(false);
+    }
+  }
 
   async function createFinding() {
     if (!planId || !controlId || !title.trim() || !description.trim()) {
@@ -154,7 +215,7 @@ export default function FindingsPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="font-semibold text-slate-100">Finding Register</div>
-            <div className="text-xs text-slate-500 mt-1">Findings are created from Audit Execution and remain linked to the audit plan and control.</div>
+            <div className="text-xs text-slate-500 mt-1">Click any finding to open its audit traceability and detail.</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <select value={status} onChange={(e) => setStatus(e.target.value)} className="rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200">
@@ -206,7 +267,7 @@ export default function FindingsPage() {
             <thead className="bg-slate-800/80"><tr>{["ID", "Audit Area", "Finding", "Severity", "Owner", "Status", "Due Date"].map((c) => <th key={c} className="px-4 py-3 text-left text-xs font-semibold text-slate-300">{c}</th>)}</tr></thead>
             <tbody>
               {loading ? <tr><td colSpan={7} className="px-4 py-16 text-center text-slate-500">Loading findings...</td></tr> : findings.length === 0 ? <tr><td colSpan={7} className="px-4 py-16 text-center"><div className="text-slate-300 font-medium">No findings recorded</div><div className="text-sm text-slate-500 mt-2">Create a finding from an Audit Execution result or use New Finding.</div></td></tr> : findings.map((finding) => (
-                <tr key={finding.id} className="border-t border-slate-800 hover:bg-slate-800/30">
+                <tr key={finding.id} onClick={() => openFinding(finding)} className="border-t border-slate-800 hover:bg-slate-800/40 cursor-pointer transition-colors">
                   <td className="px-4 py-4 text-sm text-slate-400">#{finding.id}</td>
                   <td className="px-4 py-4 text-sm text-slate-300">Plan #{finding.audit_plan_id}<div className="text-xs text-slate-500">Control #{finding.control_id}</div></td>
                   <td className="px-4 py-4"><div className="font-medium text-slate-100">{finding.title}</div><div className="text-xs text-slate-500 mt-1 max-w-xl truncate">{finding.description}</div></td>
@@ -220,6 +281,64 @@ export default function FindingsPage() {
           </table>
         </div>
       </div>
+
+      {selectedFinding && (
+        <div className="fixed inset-0 z-50 bg-black/70 p-4 md:p-8" onClick={() => setSelectedFinding(null)}>
+          <div className="mx-auto h-full max-w-5xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-800 bg-slate-950/95 px-6 py-5 backdrop-blur">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Finding #{selectedFinding.id}</div>
+                <div className="mt-1 text-2xl font-semibold text-slate-100">{selectedFinding.title}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <span className={`rounded-full border px-2.5 py-1 text-xs ${severityClass(selectedFinding.severity)}`}>{selectedFinding.severity}</span>
+                  <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-xs text-slate-300">{selectedFinding.status}</span>
+                </div>
+              </div>
+              <button type="button" onClick={() => setSelectedFinding(null)} className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-300 hover:text-white">Close</button>
+            </div>
+
+            {detailLoading ? (
+              <div className="p-10 text-center text-sm text-slate-500">Loading finding detail...</div>
+            ) : (
+              <div className="space-y-6 p-6">
+                <section>
+                  <div className="mb-3 text-sm font-semibold text-slate-100">Audit Traceability</div>
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                    <Trace label="Audit Plan" value={`#${selectedFinding.audit_plan_id}`} />
+                    <Trace label="Execution" value={selectedFinding.execution_id ? `#${selectedFinding.execution_id}` : "Not linked"} />
+                    <Trace label="Process" value={selectedFinding.process_id ? `#${selectedFinding.process_id}` : "—"} />
+                    <Trace label="Control" value={`#${selectedFinding.control_id}`} />
+                    <Trace label="Finding" value={`#${selectedFinding.id}`} />
+                  </div>
+                </section>
+
+                <section className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <DetailField label="Finding Title"><input value={selectedFinding.title} onChange={(e) => setSelectedFinding({ ...selectedFinding, title: e.target.value })} className={inputClass} /></DetailField>
+                  <DetailField label="Severity"><select value={selectedFinding.severity} onChange={(e) => setSelectedFinding({ ...selectedFinding, severity: e.target.value })} className={inputClass}><option>CRITICAL</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select></DetailField>
+                  <DetailField label="Status"><select value={selectedFinding.status} onChange={(e) => setSelectedFinding({ ...selectedFinding, status: e.target.value })} className={inputClass}><option>OPEN</option><option>IN_PROGRESS</option><option>CLOSED</option></select></DetailField>
+                  <DetailField label="Owner"><input value={selectedFinding.owner || ""} onChange={(e) => setSelectedFinding({ ...selectedFinding, owner: e.target.value })} className={inputClass} /></DetailField>
+                  <DetailField label="Due Date"><input type="date" value={selectedFinding.due_date || ""} onChange={(e) => setSelectedFinding({ ...selectedFinding, due_date: e.target.value || null })} className={inputClass} /></DetailField>
+                  <DetailField label="Requirement"><input value={selectedFinding.requirement || ""} onChange={(e) => setSelectedFinding({ ...selectedFinding, requirement: e.target.value })} className={inputClass} /></DetailField>
+                  <DetailField label="Finding Description" wide><textarea value={selectedFinding.description} onChange={(e) => setSelectedFinding({ ...selectedFinding, description: e.target.value })} className={textareaClass} /></DetailField>
+                  <DetailField label="Objective Evidence" wide><textarea value={selectedFinding.objective_evidence || ""} onChange={(e) => setSelectedFinding({ ...selectedFinding, objective_evidence: e.target.value })} className={textareaClass} /></DetailField>
+                  <DetailField label="Root Cause" wide><textarea value={selectedFinding.root_cause || ""} onChange={(e) => setSelectedFinding({ ...selectedFinding, root_cause: e.target.value })} className={textareaClass} /></DetailField>
+                  <DetailField label="Recommendation" wide><textarea value={selectedFinding.recommendation || ""} onChange={(e) => setSelectedFinding({ ...selectedFinding, recommendation: e.target.value })} className={textareaClass} /></DetailField>
+                </section>
+
+                <section className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+                  <div className="text-sm font-semibold text-slate-100">Corrective Action</div>
+                  <div className="mt-2 text-sm text-slate-400">This finding is ready to be linked to the Corrective Actions module. The corrective-action workflow will preserve this finding as the originating audit issue.</div>
+                </section>
+
+                <div className="flex justify-end gap-3 border-t border-slate-800 pt-5">
+                  <button type="button" onClick={() => setSelectedFinding(null)} className="rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-300">Close</button>
+                  <button type="button" onClick={saveFindingDetail} disabled={detailSaving} className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{detailSaving ? "Saving..." : "Save Finding"}</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -230,6 +349,10 @@ const textareaClass = "w-full min-h-28 rounded-lg border border-slate-800 bg-sla
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return <label className={wide ? "lg:col-span-2" : ""}><div className="mb-2 text-xs text-slate-400">{label}</div>{children}</label>;
 }
+function DetailField({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
+  return <label className={wide ? "lg:col-span-2" : ""}><div className="mb-2 text-xs text-slate-400">{label}</div>{children}</label>;
+}
+function Trace({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-slate-800 bg-slate-900 p-3"><div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-sm font-medium text-slate-200">{value}</div></div>; }
 function Kpi({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border border-slate-800 bg-slate-900 p-4"><div className="text-xs text-slate-500">{label}</div><div className="text-2xl font-semibold mt-2 text-slate-100">{value}</div></div>; }
 function severityClass(value: string) { if (value === "CRITICAL") return "border-red-700/50 bg-red-950/30 text-red-300"; if (value === "HIGH") return "border-orange-700/50 bg-orange-950/30 text-orange-300"; if (value === "LOW") return "border-slate-700 text-slate-400"; return "border-yellow-700/50 bg-yellow-950/20 text-yellow-300"; }
 async function safeText(res: Response) { try { return (await res.text()).slice(0, 500); } catch { return ""; } }
