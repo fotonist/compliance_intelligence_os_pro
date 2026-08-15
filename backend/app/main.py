@@ -7,6 +7,9 @@ from sqlalchemy import text
 from app.core.database import engine, SessionLocal
 from app.db.base import Base
 from app.api.compliance_object import router as compliance_object_router
+# ==============================
+# ROUTER IMPORTS
+# ==============================
 from app.routes.user import router as user_router
 from app.routes.roles import router as roles_router
 from app.api import auth, assessments
@@ -54,6 +57,7 @@ from app.routes.audit_plans import router as audit_plans_router
 # ==============================
 # MODELS (metadata load safety)
 # ==============================
+
 import app.models.user
 import app.models.role
 import app.models.risks
@@ -72,10 +76,22 @@ import app.models.process_risk_link
 import app.models.clause_weight_override
 import app.models.audit_plans
 
+# ==============================
+# SEED
+# ==============================
+
 from app.seed.risk_assessment_seed import seed_risk_assessment_questions
 from app.seed.iso15504_2006 import seed_iso15504_2006
 
+# ==============================
+# APP INIT
+# ==============================
+
 app = FastAPI()
+
+# ==============================
+# CORS
+# ==============================
 
 app.add_middleware(
     CORSMiddleware,
@@ -105,6 +121,10 @@ def startup():
         seed_iso15504_2006(db)
     finally:
         db.close()
+
+# ==============================
+# ROUTER INCLUDES
+# ==============================
 
 app.include_router(auth.router, tags=["auth"])
 app.include_router(matrix_router)
