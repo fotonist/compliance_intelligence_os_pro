@@ -5,7 +5,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { apiFetch } from "@/app/lib/api";
 
- type Action = {
+type Action = {
   control_code?: string | null;
   standard_code?: string | null;
   clause_code?: string | null;
@@ -155,7 +155,7 @@ function AuditExecutionContent() {
   }
 
   async function saveExecution() {
-    if (!auditPlan?.id || !action) return;
+    if (!auditPlan?.id || !action) return null;
     setSaving(true);
     setSaveMessage("");
     setError("");
@@ -177,20 +177,39 @@ function AuditExecutionContent() {
       const saved = (await res.json()) as ExecutionRecord;
       setRecords((current) => [...current.filter((x) => x.control_id !== saved.control_id), saved]);
       setSaveMessage("Execution record saved successfully.");
+      return saved;
     } catch (e: any) {
       setError(e?.message || "Failed to save execution record.");
+      return null;
     } finally {
       setSaving(false);
     }
   }
 
-  function openFindingForm() {
+  function openFindings() {
     const query = new URLSearchParams();
     if (auditPlan?.id) query.set("plan_id", String(auditPlan.id));
     if (action?.control_id) query.set("control_id", String(action.control_id));
     if (currentRecord?.id) query.set("execution_id", String(currentRecord.id));
     router.push(`/audit/findings?${query.toString()}`);
   }
+
+  async function createFinding() {
+    if (!auditPlan?.id || !action) return;
+    if (!currentRecord) {
+      const saved = await saveExecution();
+      if (!saved) return;
+      const query = new URLSearchParams();
+      query.set("plan_id", String(auditPlan.id));
+      query.set("control_id", String(action.control_id));
+      query.set("execution_id", String(saved.id));
+      router.push(`/audit/findings?${query.toString()}`);
+      return;
+    }
+    openFindings();
+  }
+
+  const findingRequired = result === "NONCONFORMITY" || result === "PARTIAL_CONFORMITY" || result === "OBSERVATION";
 
   return (
     <div className="space-y-6">
@@ -329,9 +348,15 @@ function AuditExecutionContent() {
                 {saving ? "Saving..." : "Save Execution Record"}
               </button>
 
-              <button type="button" onClick={openFindingForm} className="mt-3 w-full rounded-lg border border-red-800/60 bg-red-950/20 px-4 py-3 text-sm text-red-200 hover:bg-red-950/40">
-                {result === "CONFORMITY" ? "Open Findings" : "Create Finding"}
-              </button>
+              {findingRequired ? (
+                <button type="button" onClick={createFinding} disabled={saving || !auditPlan || !action} className="mt-3 w-full rounded-lg border border-indigo-700/60 bg-indigo-950/30 px-4 py-3 text-sm font-semibold text-indigo-200 hover:bg-indigo-950/50 disabled:opacity-50">
+                  {saving ? "Saving Execution..." : "Create Finding"}
+                </button>
+              ) : (
+                <button type="button" onClick={openFindings} className="mt-3 w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm font-medium text-slate-300 hover:bg-slate-800">
+                  View Findings
+                </button>
+              )}
             </div>
           </div>
         </>
