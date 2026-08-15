@@ -8,6 +8,9 @@ from app.core.security import require_roles, get_current_user
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.audit_sessions import AuditSession
+from app.models.audit_plans import AuditPlan
+from app.models.audit_execution_records import AuditExecutionRecord
+from app.models.controls import Control
 from app.services.audit_plan_engine import AuditPlanEngine
 from app.schemas.audit_plan_schema import AuditPlanResponse
 
@@ -135,6 +138,161 @@ def generate_audit_plan(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# ============================================================
+# AUDIT EXECUTION RECORDS
+# ============================================================
+
+@router.get("/execution")
+def list_execution_records(
+    plan_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    plan = (
+        db.query(AuditPlan)
+        .filter(
+            and_(
+                AuditPlan.id == plan_id,
+                AuditPlan.tenant_id == user.tenant_id,
+            )
+        )
+        .first()
+    )
+    if not plan:
+        raise HTTPException(status_code=404, detail="Audit plan not found")
+
+    records = (
+        db.query(AuditExecutionRecord)
+        .filter(
+            and_(
+                AuditExecutionRecord.audit_plan_id == plan_id,
+                AuditExecutionRecord.tenant_id == user.tenant_id,
+            )
+        )
+        .order_by(AuditExecutionRecord.updated_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "id": record.id,
+            "audit_plan_id": record.audit_plan_id,
+            "process_id": record.process_id,
+            "control_id": record.control_id,
+            "auditor_id": record.auditor_id,
+            "status": record.status,
+            "result": record.result,
+            "observation": record.observation,
+            "conclusion": record.conclusion,
+            "started_at": record.started_at,
+            "completed_at": record.completed_at,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+        }
+        for record in records
+    ]
+
+
+@router.post("/execution")
+def save_execution_record(
+    payload: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    plan_id = payload.get("audit_plan_id")
+    control_id = payload.get("control_id")
+    process_id = payload.get("process_id")
+    status = (payload.get("status") or "READY").upper()
+    result = payload.get("result")
+    observation = payload.get("observation")
+    conclusion = payload.get("conclusion")
+
+    if not plan_id or not control_id:
+        raise HTTPException(status_code=400, detail="audit_plan_id and control_id are required")
+
+    allowed_statuses = {"READY", "IN_PROGRESS", "COMPLETED", "EXCEPTION"}
+    if status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Invalid execution status")
+
+    plan = (
+        db.query(AuditPlan)
+        .filter(
+            and_(
+                AuditPlan.id == plan_id,
+                AuditPlan.tenant_id == user.tenant_id,
+            )
+        )
+        .first()
+    )
+    if not plan:
+        raise HTTPException(status_code=404, detail="Audit plan not found")
+
+    control = db.query(Control).filter(Control.id == control_id).first()
+    if not control:
+        raise HTTPException(status_code=404, detail="Control not found")
+
+    if plan.process_id is not None and process_id is not None and int(process_id) != int(plan.process_id):
+        raise HTTPException(status_code=400, detail="Process does not match the audit plan scope")
+
+    effective_process_id = plan.process_id if plan.process_id is not None else process_id
+
+    record = (
+        db.query(AuditExecutionRecord)
+        .filter(
+            and_(
+                AuditExecutionRecord.audit_plan_id == plan_id,
+                AuditExecutionRecord.control_id == control_id,
+                AuditExecutionRecord.tenant_id == user.tenant_id,
+            )
+        )
+        .first()
+    )
+
+    now = datetime.utcnow()
+    if record is None:
+        record = AuditExecutionRecord(
+            tenant_id=user.tenant_id,
+            audit_plan_id=plan_id,
+            process_id=effective_process_id,
+            control_id=control_id,
+            auditor_id=user.id,
+            created_at=now,
+        )
+        db.add(record)
+
+    record.process_id = effective_process_id
+    record.auditor_id = user.id
+    record.status = status
+    record.result = result
+    record.observation = observation
+    record.conclusion = conclusion
+    record.updated_at = now
+    if status == "IN_PROGRESS" and record.started_at is None:
+        record.started_at = now
+    if status == "COMPLETED":
+        if record.started_at is None:
+            record.started_at = now
+        record.completed_at = now
+
+    db.commit()
+    db.refresh(record)
+
+    return {
+        "id": record.id,
+        "audit_plan_id": record.audit_plan_id,
+        "process_id": record.process_id,
+        "control_id": record.control_id,
+        "status": record.status,
+        "result": record.result,
+        "observation": record.observation,
+        "conclusion": record.conclusion,
+        "auditor_id": record.auditor_id,
+        "started_at": record.started_at,
+        "completed_at": record.completed_at,
+        "updated_at": record.updated_at,
+    }
 
 
 # ============================================================
