@@ -1,7 +1,8 @@
 "use client";
 
-import { Suspense, useSearchParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { apiFetch } from "@/app/lib/api";
 
 type Action = {
@@ -159,7 +160,7 @@ function AuditExecutionContent() {
   );
 }
 
-function Panel({ children }: { children: React.ReactNode }) {
+function Panel({ children }: { children: ReactNode }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-400">
       {children}
