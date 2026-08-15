@@ -53,6 +53,8 @@ from app.routes.intelligence import api_router as intelligence_api_router
 from app.models.maturity_workspace_sessions import MaturityWorkspaceSession
 from app.api.risk_appetite import router as risk_appetite_router
 from app.routes.audit_plans import router as audit_plans_router
+from app.routes.audit import router as audit_router
+from app.routes.audit_findings import router as audit_findings_router
 
 # ==============================
 # MODELS (metadata load safety)
@@ -76,6 +78,7 @@ import app.models.process_risk_link
 import app.models.clause_weight_override
 import app.models.audit_plans
 import app.models.audit_execution_records
+import app.models.audit_finding_records
 
 # ==============================
 # SEED
@@ -171,6 +174,8 @@ app.include_router(risk_appetite_router)
 app.include_router(compliance_object_router)
 app.include_router(license_router)
 app.include_router(audit_plans_router)
+app.include_router(audit_router)
+app.include_router(audit_findings_router)
 
 @app.get("/")
 def health():
