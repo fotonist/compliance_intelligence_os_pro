@@ -22,7 +22,13 @@ class Action(Base):
         nullable=True,
         index=True,
     )
+
+    # The production database already uses actions.user_id.
+    # Keep the domain-level Python name owner_id without forcing a destructive
+    # database rename. This preserves existing data and keeps the API contract
+    # as owner_id.
     owner_id = Column(
+        "user_id",
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
