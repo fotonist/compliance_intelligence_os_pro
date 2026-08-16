@@ -1,44 +1,46 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
 
 class ActionBase(BaseModel):
+    requirement_id: int
     title: str
     description: Optional[str] = None
     risk_id: Optional[int] = None
-    owner_id: Optional[int] = None      # Aksiyondan sorumlu kişi
-    due_date: Optional[datetime] = None
-    status: Optional[str] = "open"      # open / in-progress / completed
+    owner_id: Optional[int] = None
+    due_date: Optional[date] = None
+    status: Optional[str] = "OPEN"
+    priority: Optional[str] = "MEDIUM"
 
 
 class ActionCreate(ActionBase):
-    """Aksiyon oluşturma şeması."""
     pass
 
 
 class ActionUpdate(BaseModel):
-    """Aksiyon güncelleme şeması (kısmi alanlar)."""
+    requirement_id: Optional[int] = None
     title: Optional[str] = None
     description: Optional[str] = None
     risk_id: Optional[int] = None
     owner_id: Optional[int] = None
-    due_date: Optional[datetime] = None
+    due_date: Optional[date] = None
     status: Optional[str] = None
+    priority: Optional[str] = None
 
 
 class ActionInDBBase(ActionBase):
     id: int
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class Action(ActionInDBBase):
-    """API’nin döneceği aksiyon modeli."""
-    model_config = ConfigDict(from_attributes=True)
+    pass
 
 
 class ActionInDB(ActionInDBBase):
-    model_config = ConfigDict(from_attributes=True)
+    pass
