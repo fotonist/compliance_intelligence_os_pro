@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
 from app.db.base import Base
 
@@ -8,7 +9,43 @@ class Action(Base):
     __tablename__ = "actions"
 
     id = Column(Integer, primary_key=True, index=True)
-    description = Column(String, nullable=False)
 
-    user_id = Column(Integer, ForeignKey("users.id"))
-    user = relationship("User", back_populates="actions")
+    requirement_id = Column(
+        Integer,
+        ForeignKey("requirements.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    risk_id = Column(
+        Integer,
+        ForeignKey("risks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    owner_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, default="OPEN", server_default="OPEN")
+    priority = Column(String(50), nullable=False, default="MEDIUM", server_default="MEDIUM")
+    due_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    user = relationship(
+        "User",
+        foreign_keys=[owner_id],
+        back_populates="actions",
+    )
+    requirement = relationship("Requirement")
+    risk = relationship("Risk")
