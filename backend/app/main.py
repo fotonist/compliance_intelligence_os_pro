@@ -174,8 +174,8 @@ app.include_router(risk_appetite_router)
 app.include_router(compliance_object_router)
 app.include_router(license_router)
 app.include_router(audit_plans_router)
-app.include_router(audit_router)
 app.include_router(audit_findings_router)
+app.include_router(audit_router)
 
 @app.get("/")
 def health():
