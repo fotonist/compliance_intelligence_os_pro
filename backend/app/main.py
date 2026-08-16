@@ -55,6 +55,7 @@ from app.api.risk_appetite import router as risk_appetite_router
 from app.routes.audit_plans import router as audit_plans_router
 from app.routes.audit import router as audit_router
 from app.routes.audit_findings import router as audit_findings_router
+from app.routes.audit_finding_workflow import router as audit_finding_workflow_router
 from app.routes.actions import router as actions_router
 
 # ==============================
@@ -178,6 +179,7 @@ app.include_router(risk_appetite_router)
 app.include_router(compliance_object_router)
 app.include_router(license_router)
 app.include_router(audit_plans_router)
+app.include_router(audit_finding_workflow_router)
 app.include_router(audit_findings_router)
 app.include_router(audit_router)
 app.include_router(actions_router)
