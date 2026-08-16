@@ -11,52 +11,15 @@ class AuditFindingRecord(Base, TenantMixin):
     __tablename__ = "audit_finding_records"
 
     id = Column(Integer, primary_key=True, index=True)
-
-    tenant_id = Column(
-        Integer,
-        ForeignKey("tenants.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-    audit_plan_id = Column(
-        Integer,
-        ForeignKey("audit_plans.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    execution_id = Column(
-        Integer,
-        ForeignKey("audit_execution_records.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    process_id = Column(
-        Integer,
-        ForeignKey("processes.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    control_id = Column(
-        Integer,
-        ForeignKey("controls.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
+    audit_plan_id = Column(Integer, ForeignKey("audit_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    execution_id = Column(Integer, ForeignKey("audit_execution_records.id", ondelete="SET NULL"), nullable=True, index=True)
+    process_id = Column(Integer, ForeignKey("processes.id", ondelete="SET NULL"), nullable=True, index=True)
+    control_id = Column(Integer, ForeignKey("controls.id", ondelete="RESTRICT"), nullable=False, index=True)
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Workflow ownership
-    assigned_owner_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    process_manager_id = Column(
-        Integer,
-        ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
+    assigned_owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    process_manager_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=False)
@@ -64,7 +27,6 @@ class AuditFindingRecord(Base, TenantMixin):
     objective_evidence = Column(Text, nullable=True)
     severity = Column(String(32), nullable=False, default="MEDIUM", index=True)
 
-    # Controlled finding lifecycle:
     # OPEN -> ASSIGNED -> OWNER_RESPONSE -> SUBMITTED_FOR_REVIEW ->
     # REVISION_REQUIRED -> PLAN_APPROVED -> IN_PROGRESS ->
     # READY_FOR_VERIFICATION -> VERIFICATION_FAILED -> CLOSED
