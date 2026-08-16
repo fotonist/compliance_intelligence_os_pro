@@ -80,6 +80,7 @@ import app.models.clause_weight_override
 import app.models.audit_plans
 import app.models.audit_execution_records
 import app.models.audit_finding_records
+import app.models.audit_finding_workflow_events
 import app.models.actions
 import app.models.requirements
 
