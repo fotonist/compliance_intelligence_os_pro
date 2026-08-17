@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.audit_execution_records import AuditExecutionRecord
 from app.models.audit_plans import AuditPlan
 from app.models.user import User
 from app.schemas.audit_plan_create_schema import (
@@ -10,8 +12,63 @@ from app.schemas.audit_plan_create_schema import (
     AuditPlanDetail,
     AuditPlanSummary,
 )
+from app.services.audit_plan_engine import AuditPlanEngine
 
 router = APIRouter(prefix="/audit/plans", tags=["Audit Plans"])
+
+
+def _sync_plan_status(plan: AuditPlan, db: Session, user: User) -> None:
+    records = (
+        db.query(AuditExecutionRecord)
+        .filter(
+            and_(
+                AuditExecutionRecord.audit_plan_id == plan.id,
+                AuditExecutionRecord.tenant_id == user.tenant_id,
+            )
+        )
+        .all()
+    )
+
+    if not records:
+        plan.status = "DRAFT"
+        return
+
+    completed_control_ids = {
+        int(record.control_id)
+        for record in records
+        if str(record.status or "").upper() == "COMPLETED"
+    }
+
+    if plan.process_id is not None:
+        try:
+            risk_plan = AuditPlanEngine.generate(
+                process_id=plan.process_id,
+                db=db,
+                user=user,
+            )
+            planned_control_ids = {
+                int(action.control_id)
+                for action in risk_plan.actions
+            }
+        except ValueError:
+            planned_control_ids = set()
+
+        if planned_control_ids and planned_control_ids.issubset(completed_control_ids):
+            plan.status = "COMPLETED"
+            return
+
+    plan.status = "IN_PROGRESS"
+
+
+def _sync_plans(plans: list[AuditPlan], db: Session, user: User) -> None:
+    changed = False
+    for plan in plans:
+        previous = plan.status
+        _sync_plan_status(plan=plan, db=db, user=user)
+        if plan.status != previous:
+            changed = True
+    if changed:
+        db.commit()
 
 
 @router.post("", response_model=AuditPlanDetail, status_code=201)
@@ -62,12 +119,14 @@ def list_audit_plans(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    return (
+    plans = (
         db.query(AuditPlan)
         .filter(AuditPlan.tenant_id == user.tenant_id)
         .order_by(AuditPlan.created_at.desc())
         .all()
     )
+    _sync_plans(plans, db, user)
+    return plans
 
 
 @router.get("/{plan_id}", response_model=AuditPlanDetail)
@@ -86,4 +145,8 @@ def get_audit_plan(
     )
     if not plan:
         raise HTTPException(status_code=404, detail="Audit plan not found")
+
+    _sync_plan_status(plan, db, user)
+    db.commit()
+    db.refresh(plan)
     return plan
