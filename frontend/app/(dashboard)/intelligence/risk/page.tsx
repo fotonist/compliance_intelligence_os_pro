@@ -44,7 +44,7 @@ export default function RiskIntelligencePage() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await apiFetch("/company/intelligence/risk-overview");
+        const res = await apiFetch("/company/intelligence/overview");
         if (!res.ok) throw new Error(await res.text());
         setData(await res.json());
       } catch (e: any) {
