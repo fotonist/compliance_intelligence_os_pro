@@ -15,8 +15,9 @@ from app.services.exposure_engine import ExposureEngine
 class ExecutiveSummaryService:
     """Production-safe Executive Intelligence aggregation.
 
-    Executive KPI values are sourced from the database analytics layer.
-    The frontend must not independently recalculate compliance posture.
+    Executive KPI values are sourced from tenant-scoped database data and
+    canonical analytics views. The frontend must not independently recalculate
+    compliance posture.
     """
 
     def __init__(self, db: Session, tenant_id: int):
@@ -88,21 +89,23 @@ class ExecutiveSummaryService:
         return "CRITICAL"
 
     def control_metrics(self) -> dict[str, Any]:
-        """Read control posture from the canonical UEE coverage view.
-
-        A control with evidence but no approved file is not considered fully
-        covered. The view exposes partial/achieved coverage explicitly.
-        """
+        """Read tenant-scoped control coverage from the canonical UEE view."""
         rows = self.db.execute(
             text("""
                 SELECT coverage_status, COUNT(*) AS count
                 FROM analytics.v_control_coverage_uee
+                WHERE tenant_id = :tenant_id
                 GROUP BY coverage_status
             """),
+            {"tenant_id": self.tenant_id},
         ).mappings().all()
 
-        counts = {str(row["coverage_status"] or "").lower(): int(row["count"] or 0) for row in rows}
+        counts = {
+            str(row["coverage_status"] or "").strip().lower(): int(row["count"] or 0)
+            for row in rows
+        }
         total = sum(counts.values())
+
         covered = counts.get("achieved", 0) + counts.get("covered", 0)
         partial = counts.get("partial", 0) + counts.get("partially_achieved", 0)
         uncovered = counts.get("uncovered", 0) + counts.get("not_achieved", 0)
@@ -123,26 +126,65 @@ class ExecutiveSummaryService:
         return float(self._dashboard_metrics()["compliance_health"] or 0.0)
 
     def risk_metrics(self) -> dict[str, Any]:
+        """Build risk posture directly from the tenant's Risk records.
+
+        This deliberately does not infer Critical/High counts from ExposureEngine
+        output. Risk level and score are attributes of the Risk entity and must
+        therefore be counted from that same tenant-scoped source used by the
+        Risk Intelligence overview.
+        """
         dashboard = self._dashboard_metrics()
 
+        risks = (
+            self.db.query(Risk)
+            .filter(Risk.tenant_id == self.tenant_id)
+            .all()
+        )
+
+        distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        scores: list[float] = []
+
+        for risk in risks:
+            level = str(getattr(risk, "risk_level", "") or "").strip().lower()
+            score = getattr(risk, "score", None)
+            if score is not None:
+                scores.append(float(score))
+
+            if level in distribution:
+                distribution[level] += 1
+            elif score is not None:
+                numeric_score = float(score)
+                if numeric_score >= 17:
+                    distribution["critical"] += 1
+                elif numeric_score >= 10:
+                    distribution["high"] += 1
+                elif numeric_score >= 5:
+                    distribution["medium"] += 1
+                else:
+                    distribution["low"] += 1
+
+        total = len(risks)
+        average = sum(scores) / len(scores) if scores else 0.0
+        exposure = float(dashboard["unified_exposure"] or 0.0)
+
         try:
-            rows = ExposureEngine(self.db).compute_risk_exposure(
+            exposure_rows = ExposureEngine(self.db).compute_risk_exposure(
                 tenant_id=self.tenant_id, limit=1000000
             )
         except Exception:
-            rows = []
+            exposure_rows = []
 
-        distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-        total_score = 0.0
-        for item in rows:
-            level = str(getattr(item, "risk_level", "") or "").lower()
-            if level in distribution:
-                distribution[level] += 1
-            total_score += float(getattr(item, "inherent_score", 0) or 0)
+        exposure_by_risk = {
+            int(getattr(item, "risk_id")): item
+            for item in exposure_rows
+            if getattr(item, "risk_id", None) is not None
+        }
 
-        total = int(dashboard["total_risks"] or 0)
-        average = total_score / len(rows) if rows else 0.0
-        exposure = float(dashboard["unified_exposure"] or 0.0)
+        ranked = sorted(
+            risks,
+            key=lambda risk: float(getattr(exposure_by_risk.get(risk.id), "unified_score", 0) or 0),
+            reverse=True,
+        )
 
         return {
             "total": total,
@@ -155,13 +197,15 @@ class ExecutiveSummaryService:
             "distribution": distribution,
             "top_risks": [
                 {
-                    "id": getattr(x, "risk_id", None),
-                    "title": getattr(x, "title", None),
-                    "score": getattr(x, "inherent_score", 0),
-                    "level": getattr(x, "risk_level", None),
-                    "unified_score": getattr(x, "unified_score", 0),
+                    "id": risk.id,
+                    "title": risk.title,
+                    "score": risk.score,
+                    "level": risk.risk_level,
+                    "unified_score": float(
+                        getattr(exposure_by_risk.get(risk.id), "unified_score", 0) or 0
+                    ),
                 }
-                for x in rows[:5]
+                for risk in ranked[:5]
             ],
         }
 
