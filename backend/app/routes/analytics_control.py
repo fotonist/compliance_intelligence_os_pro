@@ -19,15 +19,15 @@ def get_control_health(
         SELECT
             COUNT(*) AS total_controls,
             COALESCE(AVG(
-                CASE coverage_status
+                CASE cc.coverage_status
                     WHEN 'covered' THEN 100.0
                     WHEN 'partial' THEN 50.0
                     WHEN 'uncovered' THEN 0.0
                     ELSE 0.0
                 END
             ), 0) AS avg_coverage,
-            COALESCE(AVG(avg_risk_score), 0) AS avg_risk_score,
-            SUM(CASE WHEN coverage_status <> 'covered' THEN 1 ELSE 0 END) AS weak_controls,
+            COALESCE(AVG(risk_stats.avg_risk_score), 0) AS avg_risk_score,
+            SUM(CASE WHEN cc.coverage_status <> 'covered' THEN 1 ELSE 0 END) AS weak_controls,
             (
                 SELECT COUNT(*)
                 FROM risks r
@@ -49,11 +49,12 @@ def get_control_health(
               AND r.control_id IS NOT NULL
             GROUP BY r.control_id
         ) risk_stats ON risk_stats.control_id = cc.control_id
-        INNER JOIN controls c ON c.id = cc.control_id
-        WHERE c.tenant_id = :tenant_id
     """)
 
-    summary_result = db.execute(summary_query, {"tenant_id": tenant_id}).mappings().first()
+    summary_result = db.execute(
+        summary_query,
+        {"tenant_id": tenant_id},
+    ).mappings().first()
 
     controls_query = text("""
         SELECT
@@ -73,11 +74,9 @@ def get_control_health(
                 ELSE 0
             END AS coverage_score
         FROM analytics.v_control_coverage_uee cc
-        INNER JOIN controls c ON c.id = cc.control_id
         LEFT JOIN risks r
           ON r.control_id = cc.control_id
          AND r.tenant_id = :tenant_id
-        WHERE c.tenant_id = :tenant_id
         GROUP BY
             cc.control_id,
             cc.code,
@@ -88,7 +87,10 @@ def get_control_health(
         ORDER BY worst_risk_score DESC NULLS LAST, cc.code ASC
     """)
 
-    controls_result = db.execute(controls_query, {"tenant_id": tenant_id}).mappings().all()
+    controls_result = db.execute(
+        controls_query,
+        {"tenant_id": tenant_id},
+    ).mappings().all()
 
     return {
         "summary": dict(summary_result) if summary_result else {},
@@ -122,12 +124,10 @@ def get_control_detail(
                 ELSE 0
             END AS coverage_score
         FROM analytics.v_control_coverage_uee cc
-        INNER JOIN controls c ON c.id = cc.control_id
         LEFT JOIN risks r
           ON r.control_id = cc.control_id
          AND r.tenant_id = :tenant_id
         WHERE cc.control_id = :control_id
-          AND c.tenant_id = :tenant_id
         GROUP BY
             cc.control_id,
             cc.code,
@@ -137,7 +137,10 @@ def get_control_detail(
             cc.coverage_status
     """)
 
-    result = db.execute(query, {"control_id": control_id, "tenant_id": tenant_id}).mappings().first()
+    result = db.execute(
+        query,
+        {"control_id": control_id, "tenant_id": tenant_id},
+    ).mappings().first()
 
     if not result:
         return {"detail": "Control not found"}
@@ -145,9 +148,9 @@ def get_control_detail(
     return dict(result)
 
 
-# analytics.py also defines a legacy implementation of the same detail route.
-# Remove that duplicate before analytics_router is registered by main.py so the
-# canonical tenant-safe implementation above is the only handler for the path.
+# analytics.py also contains a legacy detail handler for the same route.
+# Remove that legacy route from the imported router so this implementation is
+# the sole handler for /analytics/control-health/{control_id}.
 from app.routes.analytics import router as legacy_analytics_router
 legacy_analytics_router.routes[:] = [
     route
