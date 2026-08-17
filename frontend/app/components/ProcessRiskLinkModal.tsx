@@ -14,7 +14,7 @@ type Props = {
   processId: number;
   open: boolean;
   onClose: () => void;
-  onLinked?: () => void; // parent refresh callback
+  onLinked?: () => void;
 };
 
 export default function ProcessRiskLinkModal({
@@ -36,19 +36,36 @@ export default function ProcessRiskLinkModal({
       try {
         setLoading(true);
         setError(null);
+        setSelectedId(null);
 
         const res = await apiFetch("/risks", { method: "GET" });
 
         if (!res.ok) {
+          const message = await res.text().catch(() => "");
           setRisks([]);
+          setError(message || `Failed to load risks (${res.status})`);
           return;
         }
 
         const json = await res.json();
-        setRisks(Array.isArray(json) ? json : []);
+
+        // /risks returns a paginated response: { items, total, page, ... }
+        // Keep compatibility with endpoints that may still return a plain array.
+        const items = Array.isArray(json)
+          ? json
+          : Array.isArray(json?.items)
+          ? json.items
+          : [];
+
+        setRisks(items);
+
+        if (items.length === 0) {
+          setError("No risks found for this tenant.");
+        }
       } catch (err) {
         console.error("Failed to load risks", err);
         setRisks([]);
+        setError("Failed to load risks.");
       } finally {
         setLoading(false);
       }
@@ -109,7 +126,7 @@ export default function ProcessRiskLinkModal({
             <div className="text-sm text-slate-400">Loading risks...</div>
           ) : risks.length === 0 ? (
             <div className="text-sm text-slate-500">
-              No risks found for this tenant.
+              {error || "No risks found for this tenant."}
             </div>
           ) : (
             <select
@@ -127,7 +144,7 @@ export default function ProcessRiskLinkModal({
           )}
         </div>
 
-        {error ? (
+        {error && risks.length > 0 ? (
           <div className="text-sm text-red-400">{error}</div>
         ) : null}
 
@@ -140,7 +157,7 @@ export default function ProcessRiskLinkModal({
           </button>
           <button
             onClick={linkRisk}
-            disabled={!selectedId || linking}
+            disabled={!selectedId || linking || loading || risks.length === 0}
             className="px-4 py-2 rounded-lg text-sm bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50"
           >
             {linking ? "Linking..." : "Link"}
