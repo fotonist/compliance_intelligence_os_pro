@@ -22,23 +22,17 @@ class RiskExposureDTO:
     title: str
     control_id: Optional[int]
     risk_level: Optional[str]
-
     inherent_score: float
-
     linked_evidence_count: int
     approved_evidence_count: int
-
     evidence_quality: float
     density_factor: float
     pressure_factor: float
     finding_pressure_score: float
     velocity_factor: float
-
     residual_exposure: float
-
     escalation_probability_30d: float
     expected_score_delta: float
-
     unified_score: float
 
 
@@ -51,10 +45,9 @@ class ExposureTotalsDTO:
 
 
 class ExposureEngine:
-    """
-    Compliance OS – Phase-2 Unified Exposure Engine.
+    """Compliance OS – Phase-2 Unified Exposure Engine.
 
-    Active audit findings now contribute to the control pressure factor.
+    Active audit findings contribute to the control pressure factor.
     Closed / verified findings do not contribute active pressure.
     """
 
@@ -63,36 +56,21 @@ class ExposureEngine:
 
     @staticmethod
     def _clamp01(x: float) -> float:
-        if x < 0.0:
-            return 0.0
-        if x > 1.0:
-            return 1.0
-        return x
+        return max(0.0, min(1.0, x))
 
     @staticmethod
     def _safe_float(x: Any, default: float = 0.0) -> float:
         try:
-            if x is None:
-                return default
-            return float(x)
+            return default if x is None else float(x)
         except Exception:
             return default
 
     @staticmethod
     def _safe_int(x: Any, default: int = 0) -> int:
         try:
-            if x is None:
-                return default
-            return int(x)
+            return default if x is None else int(x)
         except Exception:
             return default
-
-    @staticmethod
-    def _status_is_approved(status: Any) -> bool:
-        if status is None:
-            return False
-        s = str(status).strip().lower()
-        return s in {"approved", "approve", "ok", "accepted"}
 
     def _latest_risk_versions(self, tenant_id: int) -> List[Tuple[int, int, float]]:
         subq = (
@@ -104,13 +82,8 @@ class ExposureEngine:
             .group_by(RiskVersion.risk_id)
             .subquery()
         )
-
         stmt = (
-            select(
-                RiskVersion.risk_id,
-                RiskVersion.id,
-                RiskVersion.score,
-            )
+            select(RiskVersion.risk_id, RiskVersion.id, RiskVersion.score)
             .join(
                 subq,
                 and_(
@@ -120,7 +93,6 @@ class ExposureEngine:
             )
             .where(RiskVersion.tenant_id == tenant_id)
         )
-
         rows = self.db.execute(stmt).all()
         return [
             (self._safe_int(r[0]), self._safe_int(r[1]), self._safe_float(r[2]))
@@ -152,42 +124,23 @@ class ExposureEngine:
             .where(RiskEvidenceLink.tenant_id == tenant_id)
             .group_by(RiskEvidenceLink.risk_version_id)
         )
-
         rows = self.db.execute(stmt).all()
-        out: Dict[int, Tuple[int, int]] = {}
-        for rv_id, linked_cnt, approved_cnt in rows:
-            out[self._safe_int(rv_id)] = (
-                self._safe_int(linked_cnt),
-                self._safe_int(approved_cnt),
-            )
-        return out
+        return {
+            self._safe_int(rv_id): (self._safe_int(linked), self._safe_int(approved))
+            for rv_id, linked, approved in rows
+        }
 
     def _risk_count_per_control(self, tenant_id: int) -> Dict[int, int]:
         stmt = (
-            select(
-                Risk.control_id,
-                func.count(Risk.id).label("risk_cnt"),
-            )
+            select(Risk.control_id, func.count(Risk.id).label("risk_cnt"))
             .where(and_(Risk.tenant_id == tenant_id, Risk.control_id.isnot(None)))
             .group_by(Risk.control_id)
         )
-
         rows = self.db.execute(stmt).all()
-        out: Dict[int, int] = {}
-        for cid, cnt in rows:
-            out[self._safe_int(cid)] = self._safe_int(cnt)
-        return out
+        return {self._safe_int(cid): self._safe_int(cnt) for cid, cnt in rows}
 
     def _finding_pressure_by_control(self, tenant_id: int) -> Dict[int, float]:
-        """Return active finding pressure keyed by control_id.
-
-        Severity weights:
-          CRITICAL=1.00, MAJOR/HIGH=0.80, MEDIUM=0.50, MINOR/LOW=0.25.
-        Workflow progress reduces active pressure:
-          READY_FOR_VERIFICATION=0.25, IN_PROGRESS/PLAN_APPROVED=0.50,
-          all other active states=1.00.
-        CLOSED and VERIFIED findings contribute zero.
-        """
+        """Aggregate active finding pressure by control."""
         rows = self.db.execute(
             select(
                 AuditFindingRecord.control_id,
@@ -197,33 +150,31 @@ class ExposureEngine:
         ).all()
 
         out: Dict[int, float] = {}
+        severity_weights = {
+            "CRITICAL": 1.00,
+            "MAJOR": 0.80,
+            "HIGH": 0.80,
+            "MEDIUM": 0.50,
+            "MINOR": 0.25,
+            "LOW": 0.25,
+        }
+        workflow_factors = {
+            "READY_FOR_VERIFICATION": 0.25,
+            "IN_PROGRESS": 0.50,
+            "PLAN_APPROVED": 0.50,
+        }
+
         for control_id, severity, status in rows:
             if control_id is None:
                 continue
-
-            severity_key = str(severity or "").upper()
             status_key = str(status or "").upper()
-
             if status_key in {"CLOSED", "VERIFIED"}:
                 continue
-
-            severity_weight = {
-                "CRITICAL": 1.00,
-                "MAJOR": 0.80,
-                "HIGH": 0.80,
-                "MEDIUM": 0.50,
-                "MINOR": 0.25,
-                "LOW": 0.25,
-            }.get(severity_key, 0.50)
-
-            workflow_factor = {
-                "READY_FOR_VERIFICATION": 0.25,
-                "IN_PROGRESS": 0.50,
-                "PLAN_APPROVED": 0.50,
-            }.get(status_key, 1.00)
-
+            severity_key = str(severity or "").upper()
+            weight = severity_weights.get(severity_key, 0.50)
+            factor = workflow_factors.get(status_key, 1.00)
             cid = self._safe_int(control_id)
-            out[cid] = out.get(cid, 0.0) + severity_weight * workflow_factor
+            out[cid] = out.get(cid, 0.0) + weight * factor
 
         return out
 
@@ -237,7 +188,6 @@ class ExposureEngine:
             .group_by(RiskForecast.risk_id)
             .subquery()
         )
-
         stmt = (
             select(
                 RiskForecast.risk_id,
@@ -253,46 +203,26 @@ class ExposureEngine:
             )
             .where(RiskForecast.tenant_id == tenant_id)
         )
-
         rows = self.db.execute(stmt).all()
-        out: Dict[int, Tuple[float, float]] = {}
-        for rid, p, d in rows:
-            out[self._safe_int(rid)] = (
-                self._safe_float(p),
-                self._safe_float(d),
-            )
-        return out
+        return {
+            self._safe_int(rid): (self._safe_float(prob), self._safe_float(delta))
+            for rid, prob, delta in rows
+        }
 
     def _calc_evidence_quality(self, approved: int, linked: int) -> float:
-        if linked <= 0:
-            return 0.0
-        return self._clamp01(float(approved) / float(linked))
+        return 0.0 if linked <= 0 else self._clamp01(float(approved) / float(linked))
 
     def _calc_density_factor(self, linked: int) -> float:
-        if linked <= 0:
-            return 0.0
-        return self._clamp01(float(linked) / 3.0)
+        return 0.0 if linked <= 0 else self._clamp01(float(linked) / 3.0)
 
-    def _calc_pressure_factor(
-        self,
-        risk_count_for_control: int,
-        finding_pressure_score: float,
-    ) -> float:
+    def _calc_pressure_factor(self, risk_count_for_control: int, finding_pressure_score: float) -> float:
         rc = max(0, int(risk_count_for_control))
-        finding_pressure = max(0.0, float(finding_pressure_score))
-        return 1.0 + (float(rc) / 10.0) + (finding_pressure / 10.0)
+        return 1.0 + (float(rc) / 10.0) + (max(0.0, float(finding_pressure_score)) / 10.0)
 
     def _calc_velocity_factor(self, expected_delta: float) -> float:
         return 1.0 + (float(expected_delta) / 20.0)
 
-    def _calc_residual(
-        self,
-        inherent: float,
-        evidence_quality: float,
-        density_factor: float,
-        pressure_factor: float,
-        velocity_factor: float,
-    ) -> float:
+    def _calc_residual(self, inherent: float, evidence_quality: float, density_factor: float, pressure_factor: float, velocity_factor: float) -> float:
         residual = (
             float(inherent)
             * (1.0 - float(evidence_quality))
@@ -312,32 +242,26 @@ class ExposureEngine:
         if not latest_versions:
             return []
 
-        risk_ids = [rid for (rid, _rv, _score) in latest_versions]
-        risk_stmt = (
-            select(
-                Risk.id,
-                Risk.title,
-                Risk.control_id,
-                Risk.risk_level,
-            )
-            .where(and_(Risk.tenant_id == tenant_id, Risk.id.in_(risk_ids)))
-        )
+        risk_ids = [rid for rid, _rv, _score in latest_versions]
+        risk_stmt = select(
+            Risk.id,
+            Risk.title,
+            Risk.control_id,
+            Risk.risk_level,
+        ).where(and_(Risk.tenant_id == tenant_id, Risk.id.in_(risk_ids)))
         risk_rows = self.db.execute(risk_stmt).all()
-        risk_meta: Dict[int, Dict[str, Any]] = {}
-        for rid, title, control_id, risk_level in risk_rows:
-            risk_meta[self._safe_int(rid)] = {
+        risk_meta: Dict[int, Dict[str, Any]] = {
+            self._safe_int(rid): {
                 "title": title or "",
                 "control_id": self._safe_int(control_id) if control_id is not None else None,
                 "risk_level": risk_level,
             }
+            for rid, title, control_id, risk_level in risk_rows
+        }
 
         out: List[RiskExposureDTO] = []
-
         for risk_id, rv_id, score in latest_versions:
-            meta = risk_meta.get(
-                risk_id,
-                {"title": "", "control_id": None, "risk_level": None},
-            )
+            meta = risk_meta.get(risk_id, {"title": "", "control_id": None, "risk_level": None})
             title = str(meta.get("title") or "")
             control_id = meta.get("control_id")
             risk_level = meta.get("risk_level")
@@ -345,28 +269,13 @@ class ExposureEngine:
             linked_cnt, approved_cnt = evidence_map.get(rv_id, (0, 0))
             evidence_quality = self._calc_evidence_quality(approved_cnt, linked_cnt)
             density_factor = self._calc_density_factor(linked_cnt)
-
-            risk_count_for_control = (
-                control_risk_counts.get(int(control_id), 0) if control_id else 0
-            )
-            finding_pressure_score = (
-                finding_pressure_map.get(int(control_id), 0.0) if control_id else 0.0
-            )
-            pressure_factor = self._calc_pressure_factor(
-                risk_count_for_control,
-                finding_pressure_score,
-            )
+            risk_count_for_control = control_risk_counts.get(int(control_id), 0) if control_id else 0
+            finding_pressure_score = finding_pressure_map.get(int(control_id), 0.0) if control_id else 0.0
+            pressure_factor = self._calc_pressure_factor(risk_count_for_control, finding_pressure_score)
 
             prob, expected_delta = forecast_map.get(risk_id, (0.0, 0.0))
             velocity_factor = self._calc_velocity_factor(expected_delta)
-
-            residual = self._calc_residual(
-                inherent=score,
-                evidence_quality=evidence_quality,
-                density_factor=density_factor,
-                pressure_factor=pressure_factor,
-                velocity_factor=velocity_factor,
-            )
+            residual = self._calc_residual(score, evidence_quality, density_factor, pressure_factor, velocity_factor)
             unified = float(residual) * float(prob)
 
             out.append(
@@ -399,12 +308,7 @@ class ExposureEngine:
         rows = self.compute_risk_exposure(tenant_id=tenant_id, limit=1000000)
         total_inherent = sum(r.inherent_score for r in rows)
         total_residual = sum(r.residual_exposure for r in rows)
-
-        if total_inherent <= 0:
-            reduction = 0.0
-        else:
-            reduction = (total_inherent - total_residual) / total_inherent
-
+        reduction = 0.0 if total_inherent <= 0 else (total_inherent - total_residual) / total_inherent
         return ExposureTotalsDTO(
             total_inherent=float(total_inherent),
             total_residual=float(total_residual),
