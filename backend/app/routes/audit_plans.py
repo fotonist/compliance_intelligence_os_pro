@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.audit_execution_records import AuditExecutionRecord
 from app.models.audit_plans import AuditPlan
+from app.models.process import Process
 from app.models.user import User
 from app.schemas.audit_plan_create_schema import (
     AuditPlanCreate,
@@ -71,33 +72,87 @@ def _sync_plans(plans: list[AuditPlan], db: Session, user: User) -> None:
         db.commit()
 
 
+def _validate_process_scope(
+    process_id: int | None,
+    db: Session,
+    user: User,
+) -> None:
+    if process_id is None:
+        return
+
+    process = (
+        db.query(Process)
+        .filter(
+            Process.id == process_id,
+            Process.tenant_id == user.tenant_id,
+        )
+        .first()
+    )
+    if not process:
+        raise HTTPException(status_code=404, detail="Process not found")
+
+
+def _validate_lead_auditor(
+    lead_auditor_id: int | None,
+    db: Session,
+    user: User,
+) -> None:
+    if lead_auditor_id is None:
+        return
+
+    auditor = (
+        db.query(User)
+        .filter(
+            User.id == lead_auditor_id,
+            User.tenant_id == user.tenant_id,
+        )
+        .first()
+    )
+    if not auditor:
+        raise HTTPException(status_code=404, detail="Lead auditor not found")
+
+
 @router.post("", response_model=AuditPlanDetail, status_code=201)
 def create_audit_plan(
     payload: AuditPlanCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    reference = payload.reference.strip()
+    name = payload.name.strip()
+    audit_type = payload.audit_type.strip().lower()
+
+    if not reference:
+        raise HTTPException(status_code=400, detail="Audit plan reference is required")
+    if not name:
+        raise HTTPException(status_code=400, detail="Audit plan name is required")
+    if not audit_type:
+        raise HTTPException(status_code=400, detail="Audit type is required")
+
+    if payload.planned_start and payload.planned_end and payload.planned_end < payload.planned_start:
+        raise HTTPException(status_code=400, detail="Planned end date cannot be before planned start date")
+
+    _validate_process_scope(payload.process_id, db, user)
+    _validate_lead_auditor(payload.lead_auditor_id, db, user)
+
     existing = (
         db.query(AuditPlan)
         .filter(
             AuditPlan.tenant_id == user.tenant_id,
-            AuditPlan.reference == payload.reference,
+            AuditPlan.reference == reference,
         )
         .first()
     )
     if existing:
         raise HTTPException(status_code=409, detail="Audit plan reference already exists")
 
-    if payload.planned_start and payload.planned_end and payload.planned_end < payload.planned_start:
-        raise HTTPException(status_code=400, detail="Planned end date cannot be before planned start date")
-
     plan = AuditPlan(
         tenant_id=user.tenant_id,
-        reference=payload.reference,
-        name=payload.name,
-        audit_type=payload.audit_type,
-        objective=payload.objective,
-        scope=payload.scope,
+        reference=reference,
+        name=name,
+        audit_type=audit_type,
+        objective=payload.objective.strip() if payload.objective and payload.objective.strip() else None,
+        scope=payload.scope.strip() if payload.scope and payload.scope.strip() else None,
         standard_id=payload.standard_id,
         standard_version_id=payload.standard_version_id,
         process_id=payload.process_id,
