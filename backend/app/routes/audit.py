@@ -17,6 +17,61 @@ from app.schemas.audit_plan_schema import AuditPlanResponse
 router = APIRouter(prefix="/audit", tags=["Audit"])
 
 
+def _sync_audit_plan_status(
+    plan: AuditPlan,
+    db: Session,
+    user: User,
+) -> None:
+    """
+    Keep the persistent audit-plan lifecycle aligned with its execution records.
+
+    DRAFT      -> no execution records exist yet
+    IN_PROGRESS -> at least one execution record exists, but not all planned
+                   audit actions are completed
+    COMPLETED  -> every risk-based audit action has a COMPLETED execution record
+    """
+    records = (
+        db.query(AuditExecutionRecord)
+        .filter(
+            and_(
+                AuditExecutionRecord.audit_plan_id == plan.id,
+                AuditExecutionRecord.tenant_id == user.tenant_id,
+            )
+        )
+        .all()
+    )
+
+    if not records:
+        plan.status = "DRAFT"
+        return
+
+    completed_control_ids = {
+        int(record.control_id)
+        for record in records
+        if str(record.status or "").upper() == "COMPLETED"
+    }
+
+    if plan.process_id is not None:
+        try:
+            risk_plan = AuditPlanEngine.generate(
+                process_id=plan.process_id,
+                db=db,
+                user=user,
+            )
+            planned_control_ids = {
+                int(action.control_id)
+                for action in risk_plan.actions
+            }
+        except ValueError:
+            planned_control_ids = set()
+
+        if planned_control_ids and planned_control_ids.issubset(completed_control_ids):
+            plan.status = "COMPLETED"
+            return
+
+    plan.status = "IN_PROGRESS"
+
+
 # ============================================================
 # TENANT-SAFE LOG ENDPOINT
 # ============================================================
@@ -276,8 +331,11 @@ def save_execution_record(
             record.started_at = now
         record.completed_at = now
 
+    _sync_audit_plan_status(plan=plan, db=db, user=user)
+
     db.commit()
     db.refresh(record)
+    db.refresh(plan)
 
     return {
         "id": record.id,
@@ -292,6 +350,7 @@ def save_execution_record(
         "started_at": record.started_at,
         "completed_at": record.completed_at,
         "updated_at": record.updated_at,
+        "audit_plan_status": plan.status,
     }
 
 
