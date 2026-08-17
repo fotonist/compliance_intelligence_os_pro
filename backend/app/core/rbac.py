@@ -9,11 +9,31 @@ from app.models.user import User
 
 
 class Role(str, Enum):
-    Admin = "Admin"
+    # Platform administration
     SuperAdmin = "SuperAdmin"
-    ComplianceOfficer = "ComplianceOfficer"
+    TenantAdmin = "TenantAdmin"
+
+    # Management / governance
+    ComplianceManager = "ComplianceManager"
+    RiskManager = "RiskManager"
+    AuditManager = "AuditManager"
+    EvidenceManager = "EvidenceManager"
+
+    # Operational ownership
+    ProcessOwner = "ProcessOwner"
     ControlOwner = "ControlOwner"
+
+    # Assurance / review
     Auditor = "Auditor"
+    Reviewer = "Reviewer"
+
+    # Limited operational access
+    Contributor = "Contributor"
+    Viewer = "Viewer"
+
+    # Legacy roles retained for backward compatibility.
+    Admin = "Admin"
+    ComplianceOfficer = "ComplianceOfficer"
 
 
 def _normalize_role(role: object) -> str:
@@ -59,7 +79,8 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if is_super_admin(current_user):
         return current_user
 
-    if "admin" not in _user_roles(current_user):
+    user_roles = _user_roles(current_user)
+    if not ({"admin", "tenantadmin"} & user_roles):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin role required",
