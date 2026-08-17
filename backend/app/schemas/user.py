@@ -1,9 +1,76 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    TypeAdapter,
+    field_validator,
+)
 
 from app.schemas.role import Role as RoleRead
+
+
+# ==========================================================
+# Email Validation
+# ==========================================================
+
+_email_adapter = TypeAdapter(EmailStr)
+
+
+def validate_system_email(value: str) -> str:
+    """
+    Validate normal email addresses with Pydantic EmailStr.
+
+    Internal/system users may use reserved .local domains,
+    for example:
+
+        admin@default.local
+        superadmin@compliance.local
+
+    These addresses are intentionally accepted because they
+    are valid internal application identities even though
+    Pydantic's EmailStr rejects reserved/special-use domains.
+    """
+
+    if not isinstance(value, str):
+        raise ValueError("Email must be a string")
+
+    value = value.strip().lower()
+
+    if not value:
+        raise ValueError("Email must not be empty")
+
+    if "@" not in value:
+        raise ValueError("Invalid email address")
+
+    local_part, domain = value.rsplit("@", 1)
+
+    if not local_part or not domain:
+        raise ValueError("Invalid email address")
+
+    # ------------------------------------------------------
+    # Internal .local addresses
+    # ------------------------------------------------------
+    if domain.endswith(".local"):
+        if (
+            len(local_part) > 0
+            and len(domain) > len(".local")
+            and "." in domain
+        ):
+            return value
+
+        raise ValueError("Invalid internal email address")
+
+    # ------------------------------------------------------
+    # Standard email validation
+    # ------------------------------------------------------
+    try:
+        validated = _email_adapter.validate_python(value)
+        return str(validated)
+    except Exception as exc:
+        raise ValueError("Invalid email address") from exc
 
 
 # ==========================================================
@@ -11,9 +78,14 @@ from app.schemas.role import Role as RoleRead
 # ==========================================================
 
 class UserBase(BaseModel):
-    email: EmailStr
+    email: str
     full_name: Optional[str] = None
     is_active: bool = True
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return validate_system_email(value)
 
 
 # ==========================================================
@@ -62,6 +134,7 @@ class UserUpdate(BaseModel):
 
 class UserStatusUpdate(BaseModel):
     is_active: Optional[bool] = None
+
     is_locked: Optional[bool] = None
 
 
@@ -71,11 +144,13 @@ class UserStatusUpdate(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
+
     new_password: str
 
 
 class PasswordResetRequest(BaseModel):
     new_password: str
+
     must_change_password: bool = True
 
 
