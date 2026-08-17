@@ -1,4 +1,6 @@
-﻿import numpy as np
+from __future__ import annotations
+
+import numpy as np
 from datetime import datetime, timedelta, timezone
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.exceptions import NotFittedError
@@ -23,36 +25,27 @@ class RiskForecastEngine:
         "open_tasks",
     ]
 
+    MIN_TRAINING_SAMPLES = 30
+    MIN_SAMPLES_PER_CLASS = 5
+
     def __init__(self):
-        self.classifier = RandomForestClassifier(n_estimators=200, random_state=42)
+        self.classifier = RandomForestClassifier(n_estimators=200, random_state=42, class_weight="balanced")
         self.regressor = RandomForestRegressor(n_estimators=200, random_state=42)
-        self.model_version = "v2.0"
-
+        self.model_version = "v2.1"
         self._is_trained = False
-        self._train_info = {"trained": False, "samples": 0, "reason": None}
+        self._regressor_trained = False
+        self._train_info = {"trained": False, "samples": 0, "reason": None, "class_distribution": {}, "regressor_trained": False}
 
-    # -----------------------------
-    # Time utils (TZ-safe)
-    # -----------------------------
     def _utcnow(self) -> datetime:
-        # timezone-aware UTC "now"
         return datetime.now(timezone.utc)
 
     def _as_aware_utc(self, dt: datetime) -> datetime:
-        """
-        Normalize any datetime to timezone-aware UTC.
-        - If dt is naive: assume UTC.
-        - If dt is aware: convert to UTC.
-        """
         if dt is None:
             return None
         if dt.tzinfo is None:
             return dt.replace(tzinfo=timezone.utc)
         return dt.astimezone(timezone.utc)
 
-    # -------------------------------------------------
-    # Utility
-    # -------------------------------------------------
     def _risk_level_rank(self, level):
         if not level:
             return 0
@@ -72,81 +65,55 @@ class RiskForecastEngine:
             s = float(score or 0.0)
         except Exception:
             s = 0.0
-        x = (s - 9.0) / 3.0
+        s = min(max(s, 0.0), 25.0)
+        x = (s - 10.0) / 3.0
         prob = 1.0 / (1.0 + np.exp(-x))
-        return float(min(max(prob, 0.0), 1.0))
+        return float(min(max(prob, 0.05), 0.95))
 
-    # -------------------------------------------------
-    # Feature Engineering
-    # -------------------------------------------------
+    def _baseline_delta(self, score: float) -> float:
+        return 0.0
+
     def _build_features_at_time(self, db: Session, risk: Risk, snapshot_time: datetime):
         snapshot_time = self._as_aware_utc(snapshot_time)
-
         history = (
             db.query(RiskHistory)
-            .filter(
-                RiskHistory.risk_id == risk.id,
-                RiskHistory.changed_at <= snapshot_time,
-            )
+            .filter(RiskHistory.risk_id == risk.id, RiskHistory.changed_at <= snapshot_time)
             .order_by(RiskHistory.changed_at.desc())
             .all()
         )
-
         last_change_days = 999
         if history and history[0].changed_at:
             last_dt = self._as_aware_utc(history[0].changed_at)
             last_change_days = (snapshot_time - last_dt).days
-
         cutoff_90 = snapshot_time - timedelta(days=90)
-
-        hist_90 = []
-        for h in history:
-            if not h.changed_at:
-                continue
-            hdt = self._as_aware_utc(h.changed_at)
-            if hdt >= cutoff_90:
-                hist_90.append(h)
-
-        changes_90d = len(hist_90)
-
-        deltas = []
-        for h in hist_90:
-            if h.score_old is not None and h.score_new is not None:
-                deltas.append(float(h.score_new) - float(h.score_old))
-
+        hist_90 = [h for h in history if h.changed_at and self._as_aware_utc(h.changed_at) >= cutoff_90]
+        deltas = [float(h.score_new) - float(h.score_old) for h in hist_90 if h.score_old is not None and h.score_new is not None]
         avg_delta = float(np.mean(deltas)) if deltas else 0.0
         max_delta = float(max(deltas)) if deltas else 0.0
-
         open_tasks = (
             db.query(ComplianceTask)
             .filter(
                 ComplianceTask.tenant_id == risk.tenant_id,
                 ComplianceTask.control_id == risk.control_id,
-                ComplianceTask.status != "done",
+                ComplianceTask.status.notin_(["done", "closed", "cancelled"]),
             )
             .count()
         )
-
-        feature_vector = [
+        return [
             float(risk.score or 0.0),
             float(risk.impact or 0.0),
             float(risk.likelihood or 0.0),
             float(self._risk_level_rank(risk.risk_level)),
             float(last_change_days),
-            float(changes_90d),
+            float(len(hist_90)),
             float(avg_delta),
             float(max_delta),
             float(open_tasks),
         ]
-        return feature_vector
 
-    # -------------------------------------------------
-    # Label Builder (Forward 30d)
-    # -------------------------------------------------
     def _build_label(self, db: Session, risk: Risk, snapshot_time: datetime):
         snapshot_time = self._as_aware_utc(snapshot_time)
         end_time = snapshot_time + timedelta(days=30)
-
         future_changes = (
             db.query(RiskHistory)
             .filter(
@@ -156,33 +123,20 @@ class RiskForecastEngine:
             )
             .all()
         )
-
         escalated = 0
         delta = 0.0
-
         for h in future_changes:
             if h.score_old is not None and h.score_new is not None:
                 if float(h.score_new) > float(h.score_old):
                     escalated = 1
                 delta += float(h.score_new) - float(h.score_old)
-
         return int(escalated), float(delta)
 
-    # -------------------------------------------------
-    # Dataset Builder (Time-Based, sorted)
-    # -------------------------------------------------
     def build_dataset(self, db: Session, tenant_id: int):
         risks = db.query(Risk).filter(Risk.tenant_id == tenant_id).all()
-        samples = []  # (snapshot_time, features, escalated, delta)
-
+        samples = []
         for r in risks:
-            history = (
-                db.query(RiskHistory)
-                .filter(RiskHistory.risk_id == r.id)
-                .order_by(RiskHistory.changed_at)
-                .all()
-            )
-
+            history = db.query(RiskHistory).filter(RiskHistory.risk_id == r.id).order_by(RiskHistory.changed_at).all()
             for h in history:
                 if not h.changed_at:
                     continue
@@ -190,120 +144,82 @@ class RiskForecastEngine:
                 features = self._build_features_at_time(db, r, snapshot_time)
                 escalated, delta = self._build_label(db, r, snapshot_time)
                 samples.append((snapshot_time, features, escalated, delta))
-
         samples.sort(key=lambda t: t[0])
-
         X = np.array([s[1] for s in samples], dtype=float) if samples else np.array([], dtype=float)
         y_class = np.array([s[2] for s in samples], dtype=int) if samples else np.array([], dtype=int)
         y_reg = np.array([s[3] for s in samples], dtype=float) if samples else np.array([], dtype=float)
-
         return X, y_class, y_reg
 
-    # -------------------------------------------------
-    # True Time-Based Split + Train
-    # -------------------------------------------------
     def train(self, db: Session, tenant_id: int):
         X, y_class, y_reg = self.build_dataset(db, tenant_id)
-
         n = int(len(X)) if X is not None else 0
-        self._train_info = {"trained": False, "samples": n, "reason": None}
         self._is_trained = False
-
-        if n < 10:
+        self._regressor_trained = False
+        self._train_info = {"trained": False, "samples": n, "reason": None, "class_distribution": {}, "regressor_trained": False}
+        if n < self.MIN_TRAINING_SAMPLES:
             self._train_info["reason"] = "insufficient_training_samples"
             return
-
         split_index = int(n * 0.8)
         if split_index <= 0 or split_index >= n:
             self._train_info["reason"] = "invalid_time_split"
             return
-
         X_train = X[:split_index]
         y_train_class = y_class[:split_index]
         y_train_reg = y_reg[:split_index]
-
-        unique_classes = set(int(x) for x in y_train_class.tolist())
-        if len(unique_classes) < 2:
+        class_values, class_counts = np.unique(y_train_class, return_counts=True)
+        self._train_info["class_distribution"] = {str(int(label)): int(count) for label, count in zip(class_values, class_counts)}
+        if len(class_values) < 2:
             self._train_info["reason"] = "single_class_training_data"
             return
-
+        if int(class_counts.min()) < self.MIN_SAMPLES_PER_CLASS:
+            self._train_info["reason"] = "imbalanced_training_data"
+            return
         self.classifier.fit(X_train, y_train_class)
-        self.regressor.fit(X_train, y_train_reg)
-
         self._is_trained = True
         self._train_info["trained"] = True
+        if len(np.unique(y_train_reg)) >= 3:
+            self.regressor.fit(X_train, y_train_reg)
+            self._regressor_trained = True
+            self._train_info["regressor_trained"] = True
 
-    # -------------------------------------------------
-    # Forecast Current State
-    # -------------------------------------------------
     def forecast(self, db: Session, tenant_id: int):
         risks = db.query(Risk).filter(Risk.tenant_id == tenant_id).all()
         now = self._utcnow()
-
         for r in risks:
             features = self._build_features_at_time(db, r, now)
             X = np.array([features], dtype=float)
-
-            prob = 0.0
-            delta = 0.0
+            prob = self._baseline_prob(r.score or 0.0)
+            delta = self._baseline_delta(r.score or 0.0)
             explanation = {}
-
+            model_version = "baseline-v2"
             if self._is_trained:
                 try:
                     proba = self.classifier.predict_proba(X)
                     if proba.shape[1] == 2:
                         prob = float(proba[0][1])
                     else:
-                        cls = int(self.classifier.classes_[0])
-                        prob = 1.0 if cls == 1 else 0.0
-
-                    delta = float(self.regressor.predict(X)[0])
-
-                    explanation = {
-                        "mode": "rf",
-                        "train_info": self._train_info,
-                        "feature_importance": dict(
-                            zip(self.FEATURE_NAMES, self.classifier.feature_importances_.tolist())
-                        ),
-                    }
+                        classes = [int(x) for x in self.classifier.classes_.tolist()]
+                        prob = 1.0 if classes[0] == 1 else 0.0
+                    prob = float(min(max(prob, 0.05), 0.95))
+                    if self._regressor_trained:
+                        delta = float(self.regressor.predict(X)[0])
+                        delta = float(min(max(delta, -5.0), 5.0))
+                    else:
+                        delta = 0.0
+                    model_version = self.model_version
+                    explanation = {"mode": "rf", "train_info": self._train_info, "feature_importance": dict(zip(self.FEATURE_NAMES, self.classifier.feature_importances_.tolist()))}
                 except NotFittedError:
-                    prob = self._baseline_prob(r.score or 0.0)
-                    delta = 0.0
-                    explanation = {
-                        "mode": "baseline",
-                        "reason": "model_not_fitted",
-                        "train_info": self._train_info,
-                        "features": dict(zip(self.FEATURE_NAMES, features)),
-                    }
+                    explanation = {"mode": "baseline", "reason": "model_not_fitted", "train_info": self._train_info, "features": dict(zip(self.FEATURE_NAMES, features))}
                 except Exception as e:
-                    prob = self._baseline_prob(r.score or 0.0)
-                    delta = 0.0
-                    explanation = {
-                        "mode": "baseline",
-                        "reason": "ml_exception",
-                        "error": str(e),
-                        "train_info": self._train_info,
-                        "features": dict(zip(self.FEATURE_NAMES, features)),
-                    }
+                    explanation = {"mode": "baseline", "reason": "ml_exception", "error": str(e), "train_info": self._train_info, "features": dict(zip(self.FEATURE_NAMES, features))}
             else:
-                prob = self._baseline_prob(r.score or 0.0)
-                delta = 0.0
-                explanation = {
-                    "mode": "baseline",
-                    "reason": self._train_info.get("reason") or "not_trained",
-                    "train_info": self._train_info,
-                    "features": dict(zip(self.FEATURE_NAMES, features)),
-                }
-
-            forecast = RiskForecast(
+                explanation = {"mode": "baseline", "reason": self._train_info.get("reason") or "not_trained", "train_info": self._train_info, "features": dict(zip(self.FEATURE_NAMES, features))}
+            db.add(RiskForecast(
                 tenant_id=tenant_id,
                 risk_id=r.id,
-                model_version=self.model_version if self._is_trained else "baseline-v1",
+                model_version=model_version,
                 escalation_probability_30d=float(prob),
                 expected_score_delta=float(delta),
                 explanation=explanation,
-            )
-
-            db.add(forecast)
-
+            ))
         db.commit()
