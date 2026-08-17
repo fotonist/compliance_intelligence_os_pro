@@ -10,12 +10,13 @@ from app.models.risks import Risk
 from app.models.evidences import Evidence
 from app.models.compliance_tasks import ComplianceTask
 from app.services.exposure_engine import ExposureEngine
+from app.services.uee_engine import UEEEngine
 
 
 class ExecutiveSummaryService:
     """Production-safe Executive Intelligence aggregation.
 
-    Executive KPI values are sourced from the database analytics layer.
+    Executive KPI values are sourced from the database analytics and UEE layers.
     The frontend must not independently recalculate compliance posture.
     """
 
@@ -51,6 +52,10 @@ class ExecutiveSummaryService:
 
         return dict(row)
 
+    def _uee_state(self):
+        """Compute the current tenant UEE state from live analytics sources."""
+        return UEEEngine().compute_summary(db=self.db, tenant_id=self.tenant_id)
+
     def build(self) -> dict[str, Any]:
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -62,8 +67,11 @@ class ExecutiveSummaryService:
         }
 
     def executive_metrics(self) -> dict[str, Any]:
-        dashboard = self._dashboard_metrics()
-        compliance = float(dashboard["compliance_health"] or 0.0)
+        # UEE is the authoritative live compliance-health calculation.
+        # Because UEE consumes analytics.v_risk_exposure, active audit findings
+        # now affect compliance_health_index and therefore readiness.
+        uee = self._uee_state()
+        compliance = float(uee.compliance_health_index or 0.0)
         evidence = self.calculate_evidence_score()
         risk = self.calculate_risk_health()
 
@@ -88,11 +96,7 @@ class ExecutiveSummaryService:
         return "CRITICAL"
 
     def control_metrics(self) -> dict[str, Any]:
-        """Read control posture from the canonical UEE coverage view.
-
-        A control with evidence but no approved file is not considered fully
-        covered. The view exposes partial/achieved coverage explicitly.
-        """
+        """Read control posture from the canonical UEE coverage view."""
         rows = self.db.execute(
             text("""
                 SELECT coverage_status, COUNT(*) AS count
@@ -101,7 +105,10 @@ class ExecutiveSummaryService:
             """),
         ).mappings().all()
 
-        counts = {str(row["coverage_status"] or "").lower(): int(row["count"] or 0) for row in rows}
+        counts = {
+            str(row["coverage_status"] or "").lower(): int(row["count"] or 0)
+            for row in rows
+        }
         total = sum(counts.values())
         covered = counts.get("achieved", 0) + counts.get("covered", 0)
         partial = counts.get("partial", 0) + counts.get("partially_achieved", 0)
@@ -120,29 +127,63 @@ class ExecutiveSummaryService:
         }
 
     def calculate_compliance_score(self) -> float:
-        return float(self._dashboard_metrics()["compliance_health"] or 0.0)
+        return float(self._uee_state().compliance_health_index or 0.0)
 
     def risk_metrics(self) -> dict[str, Any]:
         dashboard = self._dashboard_metrics()
 
         try:
             rows = ExposureEngine(self.db).compute_risk_exposure(
-                tenant_id=self.tenant_id, limit=1000000
+                tenant_id=self.tenant_id,
+                limit=1000000,
             )
         except Exception:
             rows = []
 
         distribution = {"critical": 0, "high": 0, "medium": 0, "low": 0}
         total_score = 0.0
+        total_residual = 0.0
+        total_unified = 0.0
+        total_finding_pressure = 0.0
+        open_findings = 0
+        critical_findings = 0
+
         for item in rows:
             level = str(getattr(item, "risk_level", "") or "").lower()
             if level in distribution:
                 distribution[level] += 1
+
             total_score += float(getattr(item, "inherent_score", 0) or 0)
+            total_residual += float(getattr(item, "residual_exposure", 0) or 0)
+            total_unified += float(getattr(item, "unified_score", 0) or 0)
+            total_finding_pressure += float(getattr(item, "finding_pressure_score", 0) or 0)
+
+        # Read finding counts independently so a tenant with findings but no
+        # risk rows still exposes the finding posture in Executive Intelligence.
+        finding_row = self.db.execute(
+            text("""
+                SELECT
+                    COUNT(*) AS total_findings,
+                    COUNT(*) FILTER (
+                        WHERE UPPER(COALESCE(status, '')) NOT IN ('CLOSED', 'VERIFIED')
+                    ) AS open_findings,
+                    COUNT(*) FILTER (
+                        WHERE UPPER(COALESCE(severity, '')) = 'CRITICAL'
+                          AND UPPER(COALESCE(status, '')) NOT IN ('CLOSED', 'VERIFIED')
+                    ) AS critical_open_findings
+                FROM audit_finding_records
+                WHERE tenant_id = :tenant_id
+            """),
+            {"tenant_id": self.tenant_id},
+        ).mappings().first()
+
+        if finding_row:
+            open_findings = int(finding_row["open_findings"] or 0)
+            critical_findings = int(finding_row["critical_open_findings"] or 0)
 
         total = int(dashboard["total_risks"] or 0)
         average = total_score / len(rows) if rows else 0.0
-        exposure = float(dashboard["unified_exposure"] or 0.0)
+        average_residual = total_residual / len(rows) if rows else 0.0
 
         return {
             "total": total,
@@ -151,7 +192,11 @@ class ExecutiveSummaryService:
             "medium": distribution["medium"],
             "low": distribution["low"],
             "average_score": round(average, 2),
-            "unified_exposure": round(exposure, 2),
+            "average_residual_exposure": round(average_residual, 2),
+            "unified_exposure": round(total_unified, 2),
+            "finding_pressure": round(total_finding_pressure, 2),
+            "open_findings": open_findings,
+            "critical_open_findings": critical_findings,
             "distribution": distribution,
             "top_risks": [
                 {
@@ -160,13 +205,17 @@ class ExecutiveSummaryService:
                     "score": getattr(x, "inherent_score", 0),
                     "level": getattr(x, "risk_level", None),
                     "unified_score": getattr(x, "unified_score", 0),
+                    "finding_pressure_score": getattr(x, "finding_pressure_score", 0),
                 }
                 for x in rows[:5]
             ],
         }
 
     def calculate_risk_health(self) -> float:
-        return round(max(0.0, 100.0 - self.risk_metrics()["average_score"] * 2.0), 2)
+        # Risk health follows live residual exposure rather than immutable
+        # inherent risk, so active findings and their remediation state change it.
+        average_residual = self.risk_metrics()["average_residual_exposure"]
+        return round(max(0.0, 100.0 - float(average_residual) * 2.0), 2)
 
     def top_risks(self, limit: int = 5) -> list[dict[str, Any]]:
         risks = (
@@ -182,7 +231,10 @@ class ExecutiveSummaryService:
         ]
 
     def _evidence_state(self, evidence: Evidence) -> str:
-        files = [f for f in (getattr(evidence, "files", None) or []) if not getattr(f, "is_deleted", False)]
+        files = [
+            f for f in (getattr(evidence, "files", None) or [])
+            if not getattr(f, "is_deleted", False)
+        ]
         if not files:
             return "PENDING"
         statuses = {str(getattr(f, "status", "") or "").lower() for f in files}
@@ -195,7 +247,10 @@ class ExecutiveSummaryService:
     def evidence_metrics(self) -> dict[str, Any]:
         evidences = (
             self.db.query(Evidence)
-            .filter(Evidence.tenant_id == self.tenant_id, Evidence.is_deleted.is_(False))
+            .filter(
+                Evidence.tenant_id == self.tenant_id,
+                Evidence.is_deleted.is_(False),
+            )
             .all()
         )
         states = [self._evidence_state(e) for e in evidences]
@@ -218,7 +273,10 @@ class ExecutiveSummaryService:
     def weak_evidences(self, limit: int = 10) -> list[dict[str, Any]]:
         evidences = (
             self.db.query(Evidence)
-            .filter(Evidence.tenant_id == self.tenant_id, Evidence.is_deleted.is_(False))
+            .filter(
+                Evidence.tenant_id == self.tenant_id,
+                Evidence.is_deleted.is_(False),
+            )
             .all()
         )
         result = []
@@ -299,6 +357,8 @@ class ExecutiveSummaryService:
         risks = self.risk_metrics()
         if risks["critical"]:
             alerts.append({"type": "CRITICAL_RISK", "count": risks["critical"], "severity": "CRITICAL"})
+        if risks["critical_open_findings"]:
+            alerts.append({"type": "CRITICAL_AUDIT_FINDING", "count": risks["critical_open_findings"], "severity": "CRITICAL"})
         tasks = self.task_metrics()
         if tasks["overdue"]:
             alerts.append({"type": "OVERDUE_TASK", "count": tasks["overdue"], "severity": "HIGH"})
@@ -310,7 +370,11 @@ class ExecutiveSummaryService:
     def landing_page_payload(self) -> dict[str, Any]:
         executive = self.executive_metrics()
         return {
-            "hero": {"title": "Compliance Intelligence OS", "readiness_score": executive["readiness_score"], "status": executive["status"]},
+            "hero": {
+                "title": "Compliance Intelligence OS",
+                "readiness_score": executive["readiness_score"],
+                "status": executive["status"],
+            },
             "cards": [
                 {"key": "compliance", "label": "Compliance Health", "value": executive["compliance_score"]},
                 {"key": "evidence", "label": "Evidence Strength", "value": executive["evidence_score"]},
