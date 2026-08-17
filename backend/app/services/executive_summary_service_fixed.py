@@ -83,9 +83,9 @@ class ExecutiveSummaryService:
         total = int(dashboard["total_controls"] or 0)
 
         # A control is covered when at least one non-deleted evidence belonging to
-        # the current tenant has at least one approved, non-deleted file.
-        # Partial means tenant evidence exists for the control but none of its
-        # current evidence files are approved. Uncovered means no tenant evidence.
+        # the current tenant has at least one approved file. Partial means tenant
+        # evidence exists for the control but none of its current evidence files
+        # are approved. Uncovered means no tenant evidence.
         evidence_rows = self.db.execute(
             text("""
                 SELECT
@@ -98,7 +98,6 @@ class ExecutiveSummaryService:
                 LEFT JOIN evidence_files ef
                     ON ef.evidence_id = e.id
                     AND ef.tenant_id = e.tenant_id
-                    AND COALESCE(ef.is_deleted, FALSE) = FALSE
                 WHERE e.tenant_id = :tenant_id
                   AND e.is_deleted = FALSE
                   AND e.control_id IS NOT NULL
@@ -115,8 +114,6 @@ class ExecutiveSummaryService:
         )
         uncovered = max(total - covered - partial, 0)
 
-        # Never let duplicated evidence rows inflate the control counts beyond
-        # the canonical control universe.
         if covered + partial > total:
             partial = max(total - covered, 0)
             uncovered = 0
