@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 # =====================================================
 # STANDARD
@@ -93,6 +93,20 @@ class EvidenceDto(BaseModel):
     updated_at: Optional[datetime] = None
 
     file_count: int
+
+    @model_validator(mode="after")
+    def sync_status_with_approval_state(self):
+        """
+        The workspace evidence status must reflect the same
+        evidence-file-derived approval state used by CoverageDto.
+
+        This prevents stale evidences.status values (for example,
+        APPROVED with zero files) from disagreeing with the KPI
+        counters and coverage calculation.
+        """
+        if self.approval_status:
+            self.status = self.approval_status
+        return self
 
 
 # =====================================================
