@@ -2,24 +2,19 @@ from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Response
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from jose import jwt, JWTError
 
 from app.core.database import get_db
 from app.core.security import (
     verify_password,
-    get_password_hash,
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    SECRET_KEY,
-    ALGORITHM,
 )
 from app.core.audit import create_log
 from app.models.user import User
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
@@ -49,12 +44,11 @@ def login_for_access_token(
 
     print("✅ AUTH OK | USER ID:", user.id)
 
+    # security.create_access_token() is the canonical JWT builder.
+    # Pass the complete User object so tenant context, roles and the
+    # SuperAdmin flag are generated consistently in one place.
     access_token = create_access_token(
-        data={
-            "sub": user.email,
-            "user_id": user.id,
-            "roles": [r.name for r in user.roles],
-        },
+        user=user,
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
 
