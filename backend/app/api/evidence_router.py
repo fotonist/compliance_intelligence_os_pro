@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
@@ -36,7 +37,10 @@ def list_evidences(
 ):
     return (
         db.query(Evidence)
-        .filter(Evidence.is_deleted == False)
+        .filter(
+            Evidence.tenant_id == current_user.tenant_id,
+            Evidence.is_deleted == False,
+        )
         .order_by(Evidence.created_at.desc())
         .all()
     )
@@ -59,6 +63,7 @@ def create_evidence(
     ),
 ):
     evidence = Evidence(
+        tenant_id=current_user.tenant_id,
         title=payload.get("title"),
         description=payload.get("description"),
         control_id=payload.get("control_id"),
@@ -88,7 +93,15 @@ def update_evidence(
         )
     ),
 ):
-    evidence = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+    evidence = (
+        db.query(Evidence)
+        .filter(
+            Evidence.id == evidence_id,
+            Evidence.tenant_id == current_user.tenant_id,
+            Evidence.is_deleted == False,
+        )
+        .first()
+    )
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
@@ -118,9 +131,24 @@ def list_evidence_files(
         )
     ),
 ):
+    evidence = (
+        db.query(Evidence)
+        .filter(
+            Evidence.id == evidence_id,
+            Evidence.tenant_id == current_user.tenant_id,
+            Evidence.is_deleted == False,
+        )
+        .first()
+    )
+    if not evidence:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
     files = (
         db.query(EvidenceFile)
-        .filter(EvidenceFile.evidence_id == evidence_id)
+        .filter(
+            EvidenceFile.evidence_id == evidence_id,
+            EvidenceFile.tenant_id == current_user.tenant_id,
+        )
         .order_by(EvidenceFile.version.desc(), EvidenceFile.id.desc())
         .all()
     )
@@ -134,9 +162,52 @@ def list_evidence_files(
             "uploaded_by": f.uploaded_by,
             "mime_type": f.mime_type,
             "file_size": f.file_size,
+            "status": f.status,
+            "download_url": f"/evidences/files/{f.id}/download",
         }
         for f in files
     ]
+
+
+# =====================================================
+# GET /evidences/files/{file_id}/download
+# =====================================================
+@router.get("/files/{file_id}/download")
+def download_evidence_file(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            Role.Admin,
+            Role.ComplianceOfficer,
+            Role.ControlOwner,
+            Role.Auditor,
+        )
+    ),
+):
+    file = (
+        db.query(EvidenceFile)
+        .join(Evidence, Evidence.id == EvidenceFile.evidence_id)
+        .filter(
+            EvidenceFile.id == file_id,
+            EvidenceFile.tenant_id == current_user.tenant_id,
+            Evidence.tenant_id == current_user.tenant_id,
+            Evidence.is_deleted == False,
+        )
+        .first()
+    )
+
+    if not file:
+        raise HTTPException(status_code=404, detail="Evidence file not found")
+
+    if not file.file_path or not os.path.isfile(file.file_path):
+        raise HTTPException(status_code=404, detail="Physical evidence file not found")
+
+    return FileResponse(
+        path=file.file_path,
+        media_type=file.mime_type or "application/octet-stream",
+        filename=file.file_name,
+    )
 
 
 # =====================================================
@@ -156,7 +227,15 @@ def upload_evidence_files(
         )
     ),
 ):
-    evidence = db.query(Evidence).filter(Evidence.id == evidence_id).first()
+    evidence = (
+        db.query(Evidence)
+        .filter(
+            Evidence.id == evidence_id,
+            Evidence.tenant_id == current_user.tenant_id,
+            Evidence.is_deleted == False,
+        )
+        .first()
+    )
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
@@ -175,13 +254,17 @@ def upload_evidence_files(
 
         last = (
             db.query(EvidenceFile)
-            .filter(EvidenceFile.evidence_id == evidence_id)
+            .filter(
+                EvidenceFile.evidence_id == evidence_id,
+                EvidenceFile.tenant_id == current_user.tenant_id,
+            )
             .order_by(EvidenceFile.version.desc())
             .first()
         )
         next_version = (last.version + 1) if last else 1
 
         record = EvidenceFile(
+            tenant_id=current_user.tenant_id,
             evidence_id=evidence_id,
             version=next_version,
             uploaded_by=current_user.id,
@@ -203,6 +286,7 @@ def upload_evidence_files(
                 "id": f.id,
                 "version": f.version,
                 "file_name": f.file_name,
+                "download_url": f"/evidences/files/{f.id}/download",
             }
             for f in saved
         ]
@@ -224,7 +308,16 @@ def rollback_evidence_file(
         )
     ),
 ):
-    file = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
+    file = (
+        db.query(EvidenceFile)
+        .join(Evidence, Evidence.id == EvidenceFile.evidence_id)
+        .filter(
+            EvidenceFile.id == file_id,
+            EvidenceFile.tenant_id == current_user.tenant_id,
+            Evidence.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
