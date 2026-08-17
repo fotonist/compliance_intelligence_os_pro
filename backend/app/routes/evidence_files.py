@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
@@ -8,6 +8,7 @@ import uuid
 from app.db.session import get_db
 from app.models.evidence_files import EvidenceFile
 from app.models.evidences import Evidence
+from app.models.risk_evidence_link import RiskEvidenceLink
 from app.core.security import get_current_user
 
 router = APIRouter(prefix="/evidences", tags=["Evidence Files"])
@@ -68,7 +69,7 @@ def upload_files(
             shutil.copyfileobj(f.file, buffer)
 
         ef = EvidenceFile(
-            tenant_id=1,  # 🔥 CRITICAL FIX
+            tenant_id=getattr(user, "tenant_id", None) or 1,
             evidence_id=evidence_id,
             version=current_version,
             uploaded_by=user.id,
@@ -172,20 +173,52 @@ def rollback_file(
 # =====================================================
 # DELETE FILE
 # =====================================================
+
+def _delete_evidence_file(file_id: int, db: Session):
+    file = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Approved / waiting-approval evidence must remain in the audit trail.
+    # Uploaded and rejected files can be removed from the working set.
+    if file.status not in ["uploaded", "draft", "rejected"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot delete a file with status '{file.status}'",
+        )
+
+    # Risk links belong to the evidence file. Remove them before deleting it.
+    db.query(RiskEvidenceLink).filter(
+        RiskEvidenceLink.evidence_file_id == file.id
+    ).delete(synchronize_session=False)
+
+    file_path = file.file_path
+    db.delete(file)
+    db.commit()
+
+    if file_path and os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+
+    return {"success": True, "deleted_file_id": file_id}
+
+
 @router.delete("/files/{file_id}")
 def delete_evidence_file(
     file_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    file = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
+    return _delete_evidence_file(file_id, db)
 
-    if file.status not in ["draft", "rejected"]:
-        raise HTTPException(status_code=400, detail="Cannot delete this file")
 
-    db.delete(file)
-    db.commit()
-
-    return {"success": True}
+# Backward-compatible alias for the existing frontend contract.
+@router.post("/files/{file_id}/delete")
+def delete_evidence_file_legacy(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return _delete_evidence_file(file_id, db)
