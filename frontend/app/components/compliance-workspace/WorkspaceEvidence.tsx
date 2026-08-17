@@ -30,10 +30,15 @@ type EvidenceFile = {
     uploaded_at?: string;
     mime_type?: string;
     file_size?: number;
+    status?: string;
     url?: string;
     file_url?: string;
     download_url?: string;
 };
+
+const BACKEND_URL =
+    process.env.NEXT_PUBLIC_API_URL ||
+    "https://compliance-intelligence-os-pro-2.onrender.com";
 
 const statusColor = (status: string = "") => {
     const s = status.toLowerCase();
@@ -72,6 +77,7 @@ export default function WorkspaceEvidence({ workspace }: Props) {
     const [advancedOpen, setAdvancedOpen] = useState(false);
     const [selectedEvidence, setSelectedEvidence] = useState<any | null>(null);
     const [copiedId, setCopiedId] = useState<number | string | null>(null);
+    const [downloadingId, setDownloadingId] = useState<number | string | null>(null);
 
     const handleExport = () => {
         const blob = new Blob([JSON.stringify(evidences, null, 2)], { type: "application/json" });
@@ -110,46 +116,62 @@ export default function WorkspaceEvidence({ workspace }: Props) {
         }
     };
 
-    const handleDownload = (item: any) => {
+    const handleDownload = async (item: any) => {
         const files: EvidenceFile[] = Array.isArray(item.files) ? item.files : [];
         const file = files[0];
-        const fileUrl = file?.download_url ?? file?.file_url ?? file?.url ?? item.download_url ?? item.file_url ?? item.url;
 
-        if (fileUrl) {
-            const link = document.createElement("a");
-            link.href = fileUrl;
-            link.target = "_blank";
-            link.rel = "noopener noreferrer";
-            link.download = file?.file_name ?? `${item.title ?? "evidence"}.json`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
+        if (!file?.id) {
+            console.warn("No physical evidence file is attached to this evidence.");
             return;
         }
 
-        // The current evidence API exposes file metadata but not a browser-download URL.
-        // Until a download endpoint is exposed, provide a truthful export of the evidence record.
-        const payload = {
-            id: item.id,
-            title: item.title,
-            description: item.description,
-            assessment_type: item.assessment_type,
-            version: item.version ?? 1,
-            owner: item.owner_name ?? item.owner ?? null,
-            status: item.status,
-            uploaded_at: item.uploaded_at ?? item.created_at ?? null,
-            expiration_date: item.expiration_date ?? null,
-            files,
-        };
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${String(item.title ?? "evidence").replace(/[^a-z0-9-_]+/gi, "-").replace(/-+/g, "-")}.json`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
+        const token = localStorage.getItem("access_token");
+        if (!token) {
+            console.error("Evidence download failed: access token is missing.");
+            return;
+        }
+
+        setDownloadingId(item.id);
+
+        try {
+            const response = await fetch(
+                `${BACKEND_URL}/evidences/files/${file.id}/download`,
+                {
+                    method: "GET",
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                const detail = await response.text().catch(() => "");
+                throw new Error(
+                    `Evidence download failed (${response.status})${detail ? `: ${detail}` : ""}`
+                );
+            }
+
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+
+            const contentDisposition = response.headers.get("content-disposition") ?? "";
+            const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+            const filename = filenameMatch?.[1]
+                ? decodeURIComponent(filenameMatch[1].replace(/^"|"$/g, ""))
+                : file.file_name ?? "evidence-file";
+
+            const link = document.createElement("a");
+            link.href = objectUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(objectUrl);
+        } catch (error) {
+            console.error("Evidence physical file download failed:", error);
+        } finally {
+            setDownloadingId(null);
+        }
     };
 
     const filtered = useMemo(() => {
@@ -296,7 +318,7 @@ export default function WorkspaceEvidence({ workspace }: Props) {
                                                         <DocumentDuplicateIcon className="h-5 w-5" />
                                                     </button>
 
-                                                    <button type="button" title="Download evidence" aria-label={`Download ${item.title ?? "evidence"}`} onClick={() => handleDownload(item)} className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:bg-slate-800 hover:text-cyan-400">
+                                                    <button type="button" title={downloadingId === item.id ? "Downloading..." : files.length ? "Download physical evidence file" : "No physical file attached"} aria-label={`Download ${item.title ?? "evidence"}`} disabled={!files.length || downloadingId === item.id} onClick={() => handleDownload(item)} className={clsx("rounded-lg border p-2", files.length ? "border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-cyan-400" : "cursor-not-allowed border-slate-800 text-slate-600", downloadingId === item.id && "opacity-60")}>
                                                         <ArrowDownTrayIcon className="h-5 w-5" />
                                                     </button>
                                                 </div>
@@ -363,7 +385,7 @@ export default function WorkspaceEvidence({ workspace }: Props) {
                             <button type="button" onClick={() => handleCopy(selectedEvidence)} className="flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800">
                                 <DocumentDuplicateIcon className="h-4 w-4" /> Copy
                             </button>
-                            <button type="button" onClick={() => handleDownload(selectedEvidence)} className="flex items-center gap-2 rounded-lg bg-cyan-500/10 px-4 py-2 text-sm text-cyan-300 hover:bg-cyan-500/20">
+                            <button type="button" disabled={!Array.isArray(selectedEvidence.files) || selectedEvidence.files.length === 0 || downloadingId === selectedEvidence.id} onClick={() => handleDownload(selectedEvidence)} className="flex items-center gap-2 rounded-lg bg-cyan-500/10 px-4 py-2 text-sm text-cyan-300 hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50">
                                 <ArrowDownTrayIcon className="h-4 w-4" /> Download
                             </button>
                         </div>
