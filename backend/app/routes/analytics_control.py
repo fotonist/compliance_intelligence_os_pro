@@ -157,3 +157,5 @@ legacy_analytics_router.routes[:] = [
     for route in legacy_analytics_router.routes
     if getattr(route, "path", None) != "/control-health/{control_id}"
 ]
+
+# Control Analytics release marker: canonical coverage view + tenant-scoped risk joins.
