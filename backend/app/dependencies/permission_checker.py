@@ -6,9 +6,41 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_user, resolve_user_permissions
 from app.models.user import User
-from app.dependencies.auth import resolve_user_permissions
+
+
+# Canonical application permission codes are the codes stored in the
+# permissions table. These aliases preserve compatibility with older
+# Administration route contracts without requiring duplicate permissions.
+PERMISSION_ALIASES = {
+    "admin.users.read": {"user.view"},
+    "admin.users.write": {"user.edit"},
+    "admin.users.delete": {"user.edit"},
+    "admin.roles.read": {"role.view"},
+    "admin.roles.create": {"role.edit"},
+    "admin.roles.update": {"role.edit"},
+    "admin.roles.delete": {"role.edit"},
+    "admin.roles.write": {"role.edit"},
+    "roles.read": {"role.view"},
+}
+
+
+def _normalize_role(value: object) -> str:
+    return (
+        str(value or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+
+
+def _required_permissions(permission_code: str) -> Set[str]:
+    return {
+        permission_code,
+        *PERMISSION_ALIASES.get(permission_code, set()),
+    }
 
 
 def require_permission(permission_code: str) -> Callable:
@@ -16,7 +48,11 @@ def require_permission(permission_code: str) -> Callable:
     Route-level permission guard.
 
     SuperAdmin is a platform-level role and bypasses individual permission
-    checks. Existing admin.full and compatibility behavior are preserved.
+    checks. Existing admin.full behavior is preserved.
+
+    Administration routes historically used admin.users.* / admin.roles.*
+    permission names while the canonical permission matrix uses user.* and
+    role.*. The compatibility aliases above allow both contracts to work.
     """
 
     def checker(
@@ -24,10 +60,11 @@ def require_permission(permission_code: str) -> Callable:
         db: Session = Depends(get_db),
     ) -> User:
         user_roles = {
-            str(getattr(role, "name", role)).strip().lower()
+            _normalize_role(getattr(role, "name", role))
             for role in (getattr(user, "roles", None) or [])
         }
 
+        # Supports both "SuperAdmin" and "Super Admin" role names.
         if "superadmin" in user_roles or "super_admin" in user_roles:
             return user
 
@@ -36,10 +73,13 @@ def require_permission(permission_code: str) -> Callable:
         if "admin.full" in perms:
             return user
 
+        # Preserve the existing compatibility behavior for users whose
+        # permission set has not yet been populated.
         if not perms:
             return user
 
-        if permission_code not in perms:
+        required = _required_permissions(permission_code)
+        if not required.intersection(perms):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Missing permission: {permission_code}",
