@@ -109,7 +109,6 @@ def submit_file(
     f.status = "waiting_approval"
     f.submitted_by = user.id
     f.submitted_at = datetime.utcnow()
-
     db.commit()
     return {"success": True}
 
@@ -127,7 +126,6 @@ def approve_file(
     f.status = "approved"
     f.approved_by = user.id
     f.approved_at = datetime.utcnow()
-
     db.commit()
     return {"success": True}
 
@@ -145,7 +143,6 @@ def reject_file(
     f.status = "rejected"
     f.rejected_by = user.id
     f.rejected_at = datetime.utcnow()
-
     db.commit()
     return {"success": True}
 
@@ -165,7 +162,6 @@ def rollback_file(
     f.approved_at = None
     f.submitted_by = None
     f.submitted_at = None
-
     db.commit()
     return {"success": True}
 
@@ -179,13 +175,14 @@ def _delete_evidence_file(file_id: int, db: Session):
     if not file:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Approved / waiting-approval evidence must remain in the audit trail.
-    # Uploaded and rejected files can be removed from the working set.
+    # Approved / waiting-approval files are part of the assurance trail.
     if file.status not in ["uploaded", "draft", "rejected"]:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot delete a file with status '{file.status}'",
         )
+
+    evidence = db.query(Evidence).filter(Evidence.id == file.evidence_id).first()
 
     # Risk links belong to the evidence file. Remove them before deleting it.
     db.query(RiskEvidenceLink).filter(
@@ -193,7 +190,21 @@ def _delete_evidence_file(file_id: int, db: Session):
     ).delete(synchronize_session=False)
 
     file_path = file.file_path
+    evidence_id = file.evidence_id
     db.delete(file)
+
+    # If this was the last file, return the parent evidence to draft/no-file state.
+    remaining_files = (
+        db.query(EvidenceFile.id)
+        .filter(EvidenceFile.evidence_id == evidence_id)
+        .filter(EvidenceFile.id != file.id)
+        .first()
+    )
+    if evidence is not None and remaining_files is None:
+        evidence.status = "draft"
+        if hasattr(evidence, "approval_status"):
+            evidence.approval_status = None
+
     db.commit()
 
     if file_path and os.path.exists(file_path):
