@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -8,8 +8,6 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://compliance-intelligence-os-pro-2.onrender.com";
 
 const EVIDENCE_BASE = `${API_URL}/company/evidences`;
-
-/* ================= TYPES ================= */
 
 type EvidenceFile = {
   id: number;
@@ -25,8 +23,6 @@ type Risk = {
   score?: number;
   risk_level?: string;
 };
-
-/* ================= HELPERS ================= */
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -62,8 +58,6 @@ async function safeFetch(res: Response) {
   return res.json();
 }
 
-/* ================= PAGE ================= */
-
 export default function EvidenceDetailPage() {
   const { evidenceId } = useParams<{ evidenceId: string }>();
   const router = useRouter();
@@ -75,26 +69,26 @@ export default function EvidenceDetailPage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  /* ================= RISK ================= */
-
   const [showRiskModal, setShowRiskModal] = useState(false);
   const [allRisks, setAllRisks] = useState<Risk[]>([]);
   const [riskQuery, setRiskQuery] = useState("");
   const [selectedRiskIds, setSelectedRiskIds] = useState<number[]>([]);
   const [linkingRisks, setLinkingRisks] = useState(false);
+  const [riskLoading, setRiskLoading] = useState(false);
+  const [riskError, setRiskError] = useState<string | null>(null);
 
   const ev = meta?.evidence ?? null;
-  const risks: Risk[] = meta?.risks ?? [];
+  const risks: Risk[] = Array.isArray(meta?.risks) ? meta.risks : [];
 
   const filteredRisks = useMemo(() => {
     const q = riskQuery.trim().toLowerCase();
     if (!q) return allRisks;
     return allRisks.filter((r) =>
-      `${r.id} ${r.title ?? ""}`.toLowerCase().includes(q)
+      `${r.id} ${r.title ?? ""} ${r.risk_level ?? ""}`
+        .toLowerCase()
+        .includes(q)
     );
   }, [allRisks, riskQuery]);
-
-  /* ================= FETCH ================= */
 
   async function fetchAll() {
     const token = getToken();
@@ -128,21 +122,48 @@ export default function EvidenceDetailPage() {
     const token = getToken();
     if (!token) return;
 
-    const res = await fetch(`${API_URL}/risks/`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    setRiskLoading(true);
+    setRiskError(null);
 
-    if (!res.ok) return;
+    try {
+      const res = await fetch(
+        `${EVIDENCE_BASE}/${evidenceId}/available-risks`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-    const json = await res.json();
-    setAllRisks(Array.isArray(json) ? json : []);
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Failed to load available risks");
+      }
+
+      const json = await res.json();
+      const raw = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.items)
+        ? json.items
+        : [];
+
+      setAllRisks(
+        raw.map((r: any) => ({
+          id: Number(r.id ?? r.risk_id),
+          title: r.title ?? r.risk_title ?? `Risk #${r.id ?? r.risk_id}`,
+          score: r.score ?? undefined,
+          risk_level: r.risk_level ?? undefined,
+        }))
+      );
+    } catch (err: any) {
+      setAllRisks([]);
+      setRiskError(err.message || "Failed to load available risks");
+    } finally {
+      setRiskLoading(false);
+    }
   }
 
   useEffect(() => {
     fetchAll();
   }, [evidenceId]);
-
-  /* ================= FILE UPLOAD ================= */
 
   async function uploadFiles(fileList: FileList | null) {
     const token = getToken();
@@ -151,16 +172,19 @@ export default function EvidenceDetailPage() {
     const fd = new FormData();
     Array.from(fileList).forEach((f) => fd.append("files", f));
 
-    await fetch(`${EVIDENCE_BASE}/${evidenceId}/files`, {
+    const res = await fetch(`${EVIDENCE_BASE}/${evidenceId}/files`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: fd,
     });
 
+    if (!res.ok) {
+      setError((await res.text()) || "File upload failed");
+      return;
+    }
+
     await fetchAll();
   }
-
-  /* ================= FILE ACTION ================= */
 
   async function fileAction(
     fileId: number,
@@ -169,10 +193,15 @@ export default function EvidenceDetailPage() {
     const token = getToken();
     if (!token) return;
 
-    await fetch(`${API_URL}/evidences/files/${fileId}/${action}`, {
+    const res = await fetch(`${API_URL}/evidences/files/${fileId}/${action}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
+
+    if (!res.ok) {
+      setError((await res.text()) || `File ${action} failed`);
+      return;
+    }
 
     await fetchAll();
   }
@@ -182,21 +211,25 @@ export default function EvidenceDetailPage() {
     if (!token) return;
     if (!confirm("Remove this file?")) return;
 
-    await fetch(`${API_URL}/evidences/files/${fileId}/delete`, {
+    const res = await fetch(`${API_URL}/evidences/files/${fileId}/delete`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
 
+    if (!res.ok) {
+      setError((await res.text()) || "Remove failed");
+      return;
+    }
+
     await fetchAll();
   }
-
-  /* ================= RISK LINK ================= */
 
   async function openRiskModal() {
     setRiskQuery("");
     setSelectedRiskIds([]);
-    await fetchRisks();
+    setRiskError(null);
     setShowRiskModal(true);
+    await fetchRisks();
   }
 
   function toggleRiskSelection(id: number) {
@@ -207,11 +240,13 @@ export default function EvidenceDetailPage() {
 
   async function linkSelectedRisks() {
     const token = getToken();
-    if (!token || selectedRiskIds.length === 0) return;
+    if (!token || selectedRiskIds.length === 0 || files.length === 0) return;
 
     setLinkingRisks(true);
+    setRiskError(null);
+
     try {
-      await fetch(`${EVIDENCE_BASE}/${evidenceId}/link-risk`, {
+      const res = await fetch(`${EVIDENCE_BASE}/${evidenceId}/link-risk`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -220,8 +255,15 @@ export default function EvidenceDetailPage() {
         body: JSON.stringify({ risk_ids: selectedRiskIds }),
       });
 
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Risk linking failed");
+      }
+
       await fetchAll();
       setShowRiskModal(false);
+    } catch (err: any) {
+      setRiskError(err.message || "Risk linking failed");
     } finally {
       setLinkingRisks(false);
     }
@@ -232,7 +274,7 @@ export default function EvidenceDetailPage() {
     if (!token) return;
     if (!confirm("Unlink this risk?")) return;
 
-    await fetch(`${EVIDENCE_BASE}/${evidenceId}/unlink-risk`, {
+    const res = await fetch(`${EVIDENCE_BASE}/${evidenceId}/unlink-risk`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -241,27 +283,24 @@ export default function EvidenceDetailPage() {
       body: JSON.stringify({ risk_id: riskId }),
     });
 
+    if (!res.ok) {
+      setError((await res.text()) || "Unlink failed");
+      return;
+    }
+
     await fetchAll();
   }
 
   if (error) {
-    return (
-      <div className="p-6 text-red-400 text-sm">
-        {error}
-      </div>
-    );
+    return <div className="p-6 text-red-400 text-sm">{error}</div>;
   }
 
   if (!ev) return null;
 
-  /* ================= UI ================= */
-
   return (
     <div className="p-6 max-w-6xl space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-xl font-semibold text-white">
-          Evidence Detail
-        </h1>
+        <h1 className="text-xl font-semibold text-white">Evidence Detail</h1>
         <button
           onClick={() => router.back()}
           className="text-sm underline text-slate-400"
@@ -270,37 +309,39 @@ export default function EvidenceDetailPage() {
         </button>
       </div>
 
-      {/* RISKS */}
       <section className="bg-slate-900 border border-slate-700 rounded-xl p-5">
         <div className="flex justify-between mb-3">
           <h3 className="font-semibold">Related Risks</h3>
           <button
             onClick={openRiskModal}
-            className="px-3 py-1 bg-slate-700 rounded text-sm"
+            className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm"
           >
             Add Related Risk
           </button>
         </div>
 
-        {risks.map((r) => (
-          <div
-            key={r.id}
-            className="bg-slate-800 p-3 rounded mb-2 flex justify-between"
-          >
-            <div>
-              <b>{r.id}</b> — {r.title}
-            </div>
-            <button
-              onClick={() => unlinkRisk(r.id)}
-              className="text-xs text-slate-400 hover:text-slate-200"
+        {risks.length === 0 ? (
+          <div className="text-sm text-slate-500">No related risks.</div>
+        ) : (
+          risks.map((r) => (
+            <div
+              key={r.id}
+              className="bg-slate-800 p-3 rounded mb-2 flex justify-between"
             >
-              Unlink
-            </button>
-          </div>
-        ))}
+              <div>
+                <b>{r.id}</b> — {r.title}
+              </div>
+              <button
+                onClick={() => unlinkRisk(r.id)}
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                Unlink
+              </button>
+            </div>
+          ))
+        )}
       </section>
 
-      {/* FILES */}
       <section className="bg-slate-900 border border-slate-700 rounded-xl p-5">
         <h3 className="font-semibold mb-2">Files & Versions</h3>
 
@@ -319,9 +360,7 @@ export default function EvidenceDetailPage() {
             dragOver ? "border-emerald-400" : "border-slate-600"
           }`}
         >
-          <p className="text-xs text-slate-400">
-            Drag & drop files or
-          </p>
+          <p className="text-xs text-slate-400">Drag & drop files or</p>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="mt-2 px-3 py-1 text-sm bg-slate-700 rounded"
@@ -355,7 +394,7 @@ export default function EvidenceDetailPage() {
               </div>
 
               <div className="flex gap-2 items-center">
-                <EvidenceStatusBadge status={status}/>
+                <EvidenceStatusBadge status={status} />
 
                 {(status === "uploaded" || status === "rejected") && (
                   <button
@@ -404,37 +443,85 @@ export default function EvidenceDetailPage() {
         })}
       </section>
 
-      {/* RISK MODAL */}
       {showRiskModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-slate-900 p-6 rounded-xl w-full max-w-3xl">
-            <h3 className="text-lg font-semibold mb-3">Link Risks</h3>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 p-6 rounded-xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+            <h3 className="text-lg font-semibold mb-3 text-white">Link Risks</h3>
 
-            {filteredRisks.map((r) => (
-              <label key={r.id} className="flex gap-2 mb-2">
+            {files.length === 0 ? (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+                Upload at least one evidence file before linking risks.
+              </div>
+            ) : (
+              <>
                 <input
-                  type="checkbox"
-                  checked={selectedRiskIds.includes(r.id)}
-                  onChange={() => toggleRiskSelection(r.id)}
+                  value={riskQuery}
+                  onChange={(e) => setRiskQuery(e.target.value)}
+                  placeholder="Search risks by ID, title or level..."
+                  className="w-full mb-4 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder:text-slate-500 outline-none focus:border-slate-500"
                 />
-                {r.id} — {r.title}
-              </label>
-            ))}
 
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                onClick={() => setShowRiskModal(false)}
-                className="px-4 py-2 bg-slate-700 rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={linkSelectedRisks}
-                disabled={linkingRisks}
-                className="px-4 py-2 bg-emerald-700 rounded disabled:opacity-50"
-              >
-                ADD
-              </button>
+                <div className="overflow-y-auto flex-1 min-h-0 pr-1">
+                  {riskLoading ? (
+                    <div className="text-sm text-slate-400 py-4">
+                      Loading available risks…
+                    </div>
+                  ) : riskError ? (
+                    <div className="text-sm text-red-400 py-4 whitespace-pre-wrap">
+                      {riskError}
+                    </div>
+                  ) : filteredRisks.length === 0 ? (
+                    <div className="text-sm text-slate-400 py-4">
+                      No available risks found.
+                    </div>
+                  ) : (
+                    filteredRisks.map((r) => (
+                      <label
+                        key={r.id}
+                        className="flex items-center gap-3 p-3 mb-2 rounded-lg bg-slate-800 hover:bg-slate-750 cursor-pointer border border-transparent hover:border-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedRiskIds.includes(r.id)}
+                          onChange={() => toggleRiskSelection(r.id)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm text-white">
+                            <span className="font-semibold">RISK-{r.id}</span>
+                            <span className="text-slate-300"> — {r.title}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-1">
+                            Score: {r.score ?? "-"} · Level: {r.risk_level ?? "-"}
+                          </div>
+                        </div>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+
+            <div className="flex justify-between items-center gap-2 mt-4 pt-4 border-t border-slate-800">
+              <div className="text-xs text-slate-500">
+                {selectedRiskIds.length > 0
+                  ? `${selectedRiskIds.length} risk${selectedRiskIds.length > 1 ? "s" : ""} selected`
+                  : "No risks selected"}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowRiskModal(false)}
+                  className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={linkSelectedRisks}
+                  disabled={linkingRisks || selectedRiskIds.length === 0 || files.length === 0}
+                  className="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {linkingRisks ? "Adding…" : "ADD"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
