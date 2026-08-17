@@ -15,9 +15,14 @@ export async function apiFetch(
   // DEMO MODE
   // =============================
   // Authentication must always use the real backend.
-  // Otherwise /auth/me would return the static demo user even
-  // after a real user has successfully logged in.
-  if (DEMO_MODE && path !== "/auth/me") {
+  // Risk Intelligence overview must also use the real backend
+  // because its metrics and process mappings are tenant-aware
+  // and are now served by the live intelligence API.
+  if (
+    DEMO_MODE &&
+    path !== "/auth/me" &&
+    path !== "/company/intelligence/overview"
+  ) {
     const mockResponse = await mockApiFetch(path);
 
     if (mockResponse) {
