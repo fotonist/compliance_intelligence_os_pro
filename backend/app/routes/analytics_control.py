@@ -143,3 +143,14 @@ def get_control_detail(
         return {"detail": "Control not found"}
 
     return dict(result)
+
+
+# analytics.py also defines a legacy implementation of the same detail route.
+# Remove that duplicate before analytics_router is registered by main.py so the
+# canonical tenant-safe implementation above is the only handler for the path.
+from app.routes.analytics import router as legacy_analytics_router
+legacy_analytics_router.routes[:] = [
+    route
+    for route in legacy_analytics_router.routes
+    if getattr(route, "path", None) != "/control-health/{control_id}"
+]
