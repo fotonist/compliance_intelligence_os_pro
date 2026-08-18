@@ -97,6 +97,47 @@ def get_matrix_view(
         else_=literal(None),
     ).label("risk_level")
 
+    # ISO/IEC 27001:2022 Annex A is organized into four control themes.
+    # The existing database stores these controls under the legacy pseudo-clause
+    # "A". The matrix must expose the actual Annex A theme as the Clause column,
+    # while the Requirement column contains the requirement/title and the Control
+    # column identifies the actual one of the 93 Annex A controls.
+    annex_clause_code = case(
+        (Requirement.code.like("A.5.%"), literal("A.5")),
+        (Requirement.code.like("A.6.%"), literal("A.6")),
+        (Requirement.code.like("A.7.%"), literal("A.7")),
+        (Requirement.code.like("A.8.%"), literal("A.8")),
+        else_=Clause.code,
+    ).label("clause_code")
+
+    annex_clause_title = case(
+        (Requirement.code.like("A.5.%"), literal("Organizational controls")),
+        (Requirement.code.like("A.6.%"), literal("People controls")),
+        (Requirement.code.like("A.7.%"), literal("Physical controls")),
+        (Requirement.code.like("A.8.%"), literal("Technological controls")),
+        else_=Clause.title,
+    ).label("clause_title")
+
+    annex_clause_description = case(
+        (Requirement.code.like("A.5.%"), literal("Annex A — 37 organizational controls")),
+        (Requirement.code.like("A.6.%"), literal("Annex A — 8 people controls")),
+        (Requirement.code.like("A.7.%"), literal("Annex A — 14 physical controls")),
+        (Requirement.code.like("A.8.%"), literal("Annex A — 34 technological controls")),
+        else_=Clause.description,
+    ).label("clause_description")
+
+    # The Annex A identifier belongs to the Control column. Keeping the same
+    # identifier in Requirement creates the duplicate information seen in the UI.
+    # Therefore Annex A requirement_code is intentionally omitted from the matrix
+    # payload while the requirement title remains visible as the requirement.
+    matrix_requirement_code = case(
+        (
+            Requirement.code.op("~")(r"^A\.[5-8]\.[0-9]+$"),
+            literal(None),
+        ),
+        else_=Requirement.code,
+    ).label("requirement_code")
+
     query = (
         db.query(
             MatrixRow.id.label("id"),
@@ -105,11 +146,11 @@ def get_matrix_view(
             Standard.code.label("standard_code"),
             Standard.title.label("standard_title"),
             Clause.id.label("clause_id"),
-            Clause.code.label("clause_code"),
-            Clause.title.label("clause_title"),
-            Clause.description.label("clause_description"),
+            annex_clause_code,
+            annex_clause_title,
+            annex_clause_description,
             Requirement.id.label("requirement_id"),
-            Requirement.code.label("requirement_code"),
+            matrix_requirement_code,
             Requirement.title.label("requirement_title"),
             Requirement.description.label("requirement_description"),
             Control.id.label("control_id"),
@@ -163,7 +204,7 @@ def get_matrix_view(
 
     rows = query.order_by(
         Standard.code,
-        Clause.code,
+        annex_clause_code,
         Requirement.code,
         Control.code,
         MatrixRow.id,
