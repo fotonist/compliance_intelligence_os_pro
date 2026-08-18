@@ -2,6 +2,7 @@
 
 Usage (from backend root):
     python -m app.seed.run_seed iso27001_2022
+    python -m app.seed.run_seed iso27001_2022_matrix
 """
 
 from __future__ import annotations
@@ -47,28 +48,38 @@ def _import_session_local() -> Callable[[], Session]:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print("Usage: python -m app.seed.run_seed iso27001_2022")
+        print(
+            "Usage: python -m app.seed.run_seed "
+            "iso27001_2022 | iso27001_2022_matrix"
+        )
         return 2
 
     seed_name = sys.argv[1].strip().lower()
     session_factory = _import_session_local()
 
-    if seed_name in ("iso27001_2022", "iso27001", "27001"):
-        from app.seed.iso27001_2022_clean import seed_iso27001_2022
+    db = session_factory()
+    try:
+        if seed_name in ("iso27001_2022", "iso27001", "27001"):
+            from app.seed.iso27001_2022_clean import seed_iso27001_2022
 
-        db = session_factory()
-        try:
             result = seed_iso27001_2022(db)
             print("Seed OK:", result)
             return 0
-        finally:
-            try:
-                db.close()
-            except Exception:
-                pass
 
-    print(f"Unknown seed: {seed_name}")
-    return 2
+        if seed_name in ("iso27001_2022_matrix", "27001_matrix"):
+            from app.seed.iso27001_2022_matrix import seed_iso27001_2022_matrix
+
+            result = seed_iso27001_2022_matrix(db)
+            print("Matrix seed OK:", result)
+            return 0
+
+        print(f"Unknown seed: {seed_name}")
+        return 2
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
