@@ -156,7 +156,7 @@ def get_matrix_view(
             MatrixRow.tenant_id == tenant_id,
             MatrixInstance.tenant_id == tenant_id,
             latest_instance.c.instance_id.isnot(None),
-            MatrixRow.mode == "control",
+            MatrixRow.control_id.isnot(None),
         )
     )
 
