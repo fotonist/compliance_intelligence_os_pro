@@ -59,30 +59,48 @@ def _latest_control_matrix_instance_ids(
     tenant_id: int,
     standard_id: Optional[int],
 ) -> List[int]:
-    """Resolve the latest tenant-owned control matrix instance per standard."""
+    """
+    Resolve the tenant-owned control matrix instance to use per standard.
+
+    A newer empty/draft instance must not hide an older populated matrix.
+    Selection therefore prefers the instance with the highest matrix-row
+    count; when row counts tie, the newest instance id wins.
+    """
     query = (
-        db.query(MatrixInstance)
+        db.query(
+            MatrixInstance,
+            func.count(MatrixRow.id).label("matrix_row_count"),
+        )
         .join(Standard, Standard.id == MatrixInstance.standard_id)
+        .outerjoin(
+            MatrixRow,
+            (MatrixRow.instance_id == MatrixInstance.id)
+            & (MatrixRow.tenant_id == tenant_id),
+        )
         .filter(
             MatrixInstance.tenant_id == tenant_id,
             Standard.type != "MATURITY_BASED",
         )
-        .order_by(MatrixInstance.standard_id.asc(), MatrixInstance.id.desc())
+        .group_by(MatrixInstance.id)
+        .order_by(
+            MatrixInstance.standard_id.asc(),
+            func.count(MatrixRow.id).desc(),
+            MatrixInstance.id.desc(),
+        )
     )
 
     if standard_id is not None:
         query = query.filter(MatrixInstance.standard_id == standard_id)
 
-    instances = query.all()
+    instance_rows = query.all()
 
-    latest_by_standard: Dict[int, int] = {}
-    for instance in instances:
-        latest_by_standard.setdefault(
-            int(instance.standard_id),
-            int(instance.id),
-        )
+    selected_by_standard: Dict[int, int] = {}
+    for instance, matrix_row_count in instance_rows:
+        standard_key = int(instance.standard_id)
+        if standard_key not in selected_by_standard:
+            selected_by_standard[standard_key] = int(instance.id)
 
-    return list(latest_by_standard.values())
+    return list(selected_by_standard.values())
 
 
 # =====================================================
@@ -167,7 +185,7 @@ def build_matrix_rows(
     # CONTROL MODE — CANONICAL MATRIX INSTANCE
     # =================================================
     # The matrix is driven by matrix_rows, not by controls directly.
-    # This is what preserves clause-only rows (23 rows for clauses 4–10)
+    # This preserves clause-only rows (23 rows for clauses 4–10)
     # together with the 93 Annex A control rows: 116 rows in total.
     instance_ids = _latest_control_matrix_instance_ids(
         db=db,
