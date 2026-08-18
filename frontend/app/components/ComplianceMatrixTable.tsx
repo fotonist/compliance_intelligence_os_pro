@@ -4,46 +4,33 @@ import { useEffect, useMemo, useState } from "react";
 
 export interface MatrixRow {
   id?: number;
-
   standard_id?: number;
   standard_code?: string;
-
-  /* ===== NAVIGATION ===== */
   session_id?: number;
   matrix_instance_id?: number;
   clause_id?: number;
   requirement_id?: number;
   practice_id?: number;
   control_id?: number;
-
-  /* ===== MATURITY ===== */
   process_area_code?: string;
   process_area_title?: string;
-
   practice_code?: string;
   practice_title?: string;
   practice_description?: string;
-
   target_level?: number;
   achieved_level?: number;
   evidence_count?: number;
-
-  /* ===== CONTROL ===== */
   clause_code?: string;
   clause_title?: string;
   clause_description?: string;
-
   requirement_code?: string;
   requirement_title?: string;
   requirement_description?: string;
-
   control_code?: string;
   control_title?: string;
   control_description?: string;
-
   coverage_status?: string;
   approved_evidence_count?: number;
-
   risk_level?: string | null;
 }
 
@@ -53,11 +40,7 @@ interface Props {
   onView?: (row: MatrixRow) => void;
 }
 
-export default function ComplianceMatrixTable({
-  rows,
-  mode,
-  onView,
-}: Props) {
+export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
   const pageSize = 20;
   const [page, setPage] = useState(1);
 
@@ -67,7 +50,6 @@ export default function ComplianceMatrixTable({
 
   const totalRows = rows?.length || 0;
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-
   const startRow = (page - 1) * pageSize + 1;
   const endRow = Math.min(page * pageSize, totalRows);
 
@@ -128,16 +110,9 @@ export default function ComplianceMatrixTable({
   ) => (
     <div className="min-w-[180px] max-w-[320px]">
       <div className={codeClassName}>{code || "—"}</div>
-      {title && (
-        <div className="mt-0.5 text-xs text-slate-300 leading-5">
-          {title}
-        </div>
-      )}
+      {title && <div className="mt-0.5 text-xs text-slate-300 leading-5">{title}</div>}
       {description && (
-        <div
-          className="mt-1 text-[11px] leading-4 text-slate-500 line-clamp-2"
-          title={description}
-        >
+        <div className="mt-1 text-[11px] leading-4 text-slate-500 line-clamp-2" title={description}>
           {description}
         </div>
       )}
@@ -152,29 +127,17 @@ export default function ComplianceMatrixTable({
           (Rows {startRow}–{endRow} of {totalRows})
         </span>
       </span>
-
       <div className="flex gap-2">
-        <button
-          disabled={page === 1}
-          onClick={() => setPage((p) => p - 1)}
-          className="px-3 py-1 rounded bg-slate-800 disabled:opacity-40"
-        >
+        <button disabled={page === 1} onClick={() => setPage((p) => p - 1)} className="px-3 py-1 rounded bg-slate-800 disabled:opacity-40">
           Prev
         </button>
-        <button
-          disabled={page === totalPages}
-          onClick={() => setPage((p) => p + 1)}
-          className="px-3 py-1 rounded bg-slate-800 disabled:opacity-40"
-        >
+        <button disabled={page === totalPages} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 rounded bg-slate-800 disabled:opacity-40">
           Next
         </button>
       </div>
     </div>
   );
 
-  /* =========================================================
-     MATURITY TABLE
-     ========================================================= */
   if (mode === "maturity") {
     return (
       <div className="mt-6">
@@ -190,63 +153,31 @@ export default function ComplianceMatrixTable({
                 <th className="p-3 text-center">Evidence</th>
               </tr>
             </thead>
-
             <tbody className="divide-y divide-slate-700/40">
               {pagedRows.map((row, i) => (
-                <tr
-                  key={row.id ?? `${row.practice_id ?? "practice"}-${i}`}
-                  onClick={() => onView?.(row)}
-                  className="hover:bg-slate-800/40 cursor-pointer"
-                >
+                <tr key={row.id ?? `${row.practice_id ?? "practice"}-${i}`} onClick={() => onView?.(row)} className="hover:bg-slate-800/40 cursor-pointer">
                   <td className="p-3 font-medium">
                     {row.process_area_code}
-                    {row.process_area_title && (
-                      <span className="text-slate-400 ml-1">
-                        – {row.process_area_title}
-                      </span>
-                    )}
+                    {row.process_area_title && <span className="text-slate-400 ml-1">– {row.process_area_title}</span>}
                   </td>
-
                   <td className="p-3 font-medium">
                     {row.practice_code}
-                    {row.practice_title && (
-                      <div className="text-slate-400 text-xs">
-                        {row.practice_title}
-                      </div>
-                    )}
+                    {row.practice_title && <div className="text-slate-400 text-xs">{row.practice_title}</div>}
                   </td>
-
-                  <td className="p-3 text-slate-300 line-clamp-2">
-                    {row.practice_description ?? "-"}
-                  </td>
-
-                  <td className="p-3 text-center font-semibold">
-                    CL{row.target_level ?? 0}
-                  </td>
-
-                  <td className="p-3 text-center font-semibold">
-                    CL{row.achieved_level ?? 0}
-                  </td>
-
-                  <td className="p-3 text-center">
-                    <span className={`${badge} bg-slate-700/40`}>
-                      {row.evidence_count ?? 0}
-                    </span>
-                  </td>
+                  <td className="p-3 text-slate-300 line-clamp-2">{row.practice_description ?? "-"}</td>
+                  <td className="p-3 text-center font-semibold">CL{row.target_level ?? 0}</td>
+                  <td className="p-3 text-center font-semibold">CL{row.achieved_level ?? 0}</td>
+                  <td className="p-3 text-center"><span className={`${badge} bg-slate-700/40`}>{row.evidence_count ?? 0}</span></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-
         <PaginationFooter />
       </div>
     );
   }
 
-  /* =========================================================
-     CONTROL TABLE
-     ========================================================= */
   return (
     <div className="mt-6">
       <div className="overflow-x-auto rounded-xl bg-slate-900/70 p-4">
@@ -262,77 +193,31 @@ export default function ComplianceMatrixTable({
               <th className="p-3 text-center">Risk</th>
             </tr>
           </thead>
-
           <tbody className="divide-y divide-slate-700/40">
             {pagedRows.map((row, i) => (
-              <tr
-                key={row.id ?? `${row.row_key ?? "matrix-row"}-${i}`}
-                onClick={() => onView?.(row)}
-                className="hover:bg-slate-800/40 cursor-pointer align-top"
-              >
+              <tr key={row.id ?? `matrix-row-${row.matrix_instance_id ?? "instance"}-${row.clause_id ?? "clause"}-${row.requirement_id ?? "requirement"}-${row.control_id ?? "control"}-${i}`} onClick={() => onView?.(row)} className="hover:bg-slate-800/40 cursor-pointer align-top">
                 <td className="p-3">{row.standard_code ?? "—"}</td>
-
-                <td className="p-3">
-                  {hierarchyCell(
-                    row.clause_code,
-                    row.clause_title,
-                    row.clause_description
-                  )}
-                </td>
-
-                <td className="p-3">
-                  {hierarchyCell(
-                    row.requirement_code,
-                    row.requirement_title,
-                    row.requirement_description
-                  )}
-                </td>
-
-                <td className="p-3">
-                  {hierarchyCell(
-                    row.control_code,
-                    row.control_title,
-                    row.control_description,
-                    "font-semibold text-slate-100"
-                  )}
-                </td>
-
+                <td className="p-3">{hierarchyCell(row.clause_code, row.clause_title, row.clause_description)}</td>
+                <td className="p-3">{hierarchyCell(row.requirement_code, row.requirement_title, row.requirement_description)}</td>
+                <td className="p-3">{hierarchyCell(row.control_code, row.control_title, row.control_description, "font-semibold text-slate-100")}</td>
                 <td className="p-3 text-center">
-                  <span
-                    className={`${badge} ${coverageColor(
-                      row.coverage_status
-                    )}`}
-                  >
-                    {row.coverage_status ?? "UNKNOWN"}
-                  </span>
+                  <span className={`${badge} ${coverageColor(row.coverage_status)}`}>{row.coverage_status ?? "UNKNOWN"}</span>
                 </td>
-
                 <td className="p-3 text-center">
                   {row.evidence_count && row.evidence_count > 0 ? (
-                    <span className={`${badge} bg-blue-700/30 text-blue-300`}>
-                      {row.evidence_count} evidence
-                    </span>
+                    <span className={`${badge} bg-blue-700/30 text-blue-300`}>{row.evidence_count} evidence</span>
                   ) : (
                     <span className="italic text-slate-400">No evidence</span>
                   )}
                 </td>
-
                 <td className="p-3 text-center">
-                  <span
-                    title={riskTooltip(row.risk_level)}
-                    className={`${badge} ${riskColor(
-                      row.risk_level
-                    )} cursor-help`}
-                  >
-                    {row.risk_level ?? "—"}
-                  </span>
+                  <span title={riskTooltip(row.risk_level)} className={`${badge} ${riskColor(row.risk_level)} cursor-help`}>{row.risk_level ?? "—"}</span>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-
       <PaginationFooter />
     </div>
   );
