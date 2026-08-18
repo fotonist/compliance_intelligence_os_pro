@@ -1,4 +1,4 @@
-﻿import os
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +15,7 @@ from app.routes.roles import router as roles_router
 from app.api import auth, assessments
 from app.api.executive_summary import router as executive_summary_router
 from app.routes.matrix import router as matrix_router
+from app.routes.matrix_view import router as matrix_view_router
 from app.routes.risk import router as risk_router
 from app.routes.risk_create import router as risk_create_router
 from app.routes.evidence import router as evidence_router
@@ -136,6 +137,9 @@ def startup():
 # ==============================
 
 app.include_router(auth.router, tags=["auth"])
+# Matrix view must be registered before the legacy matrix router because both
+# expose GET /matrix/. The new endpoint reads the generated matrix_rows data.
+app.include_router(matrix_view_router)
 app.include_router(matrix_router)
 app.include_router(assessments.router)
 app.include_router(kpi_router)
