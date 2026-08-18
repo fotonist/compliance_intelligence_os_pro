@@ -14,10 +14,13 @@ from app.models.clauses import Clause
 from app.models.requirements import Requirement
 from app.models.controls import Control
 
+# MATRIX MODELS
+from app.models.matrix_instance import MatrixInstance
+from app.models.matrix_row import MatrixRow
+
 # EVIDENCE & RISK
 from app.models.evidences import Evidence
 from app.models.risks import Risk
-from app.models.risk_evidence_link import RiskEvidenceLink
 
 # MATURITY MODELS
 from app.models.standard_process_area import StandardProcessArea
@@ -39,24 +42,83 @@ def _normalize(value: Optional[str]) -> str:
     return (value or "").strip().upper()
 
 
+def _tenant_id(user: Any) -> int:
+    """Return the authenticated tenant id or fail closed."""
+    tenant_id = getattr(user, "tenant_id", None)
+    if tenant_id is None and isinstance(user, dict):
+        tenant_id = user.get("tenant_id")
+
+    if tenant_id is None:
+        raise ValueError("Authenticated user has no tenant context")
+
+    return int(tenant_id)
+
+
+def _latest_control_matrix_instance_ids(
+    db: Session,
+    tenant_id: int,
+    standard_id: Optional[int],
+) -> List[int]:
+    """Resolve the latest tenant-owned control matrix instance per standard."""
+    query = (
+        db.query(MatrixInstance)
+        .join(Standard, Standard.id == MatrixInstance.standard_id)
+        .filter(
+            MatrixInstance.tenant_id == tenant_id,
+            Standard.type != "MATURITY_BASED",
+        )
+        .order_by(MatrixInstance.standard_id.asc(), MatrixInstance.id.desc())
+    )
+
+    if standard_id is not None:
+        query = query.filter(MatrixInstance.standard_id == standard_id)
+
+    instances = query.all()
+
+    latest_by_standard: Dict[int, int] = {}
+    for instance in instances:
+        latest_by_standard.setdefault(
+            int(instance.standard_id),
+            int(instance.id),
+        )
+
+    return list(latest_by_standard.values())
+
+
 # =====================================================
 # CORE QUERY
 # =====================================================
 def build_matrix_rows(
     db: Session,
     standard_id: Optional[int],
+    tenant_id: int,
 ):
     selected_standard: Optional[Standard] = None
 
     # ---------------------------------------------
-    # Resolve standard
+    # Resolve standard inside tenant-owned matrix scope
     # ---------------------------------------------
     if standard_id is not None:
-        selected_standard = (
-            db.query(Standard)
-            .filter(Standard.id == standard_id)
+        instance = (
+            db.query(MatrixInstance)
+            .join(Standard, Standard.id == MatrixInstance.standard_id)
+            .filter(
+                MatrixInstance.tenant_id == tenant_id,
+                MatrixInstance.standard_id == standard_id,
+            )
+            .order_by(MatrixInstance.id.desc())
             .first()
         )
+
+        if not instance:
+            return "control", []
+
+        selected_standard = (
+            db.query(Standard)
+            .filter(Standard.id == instance.standard_id)
+            .first()
+        )
+
         if not selected_standard:
             return "control", []
 
@@ -102,10 +164,22 @@ def build_matrix_rows(
         return "maturity", rows
 
     # =================================================
-    # CONTROL MODE (EVIDENCE + RISK)
+    # CONTROL MODE — CANONICAL MATRIX INSTANCE
     # =================================================
+    # The matrix is driven by matrix_rows, not by controls directly.
+    # This is what preserves clause-only rows (23 rows for clauses 4–10)
+    # together with the 93 Annex A control rows: 116 rows in total.
+    instance_ids = _latest_control_matrix_instance_ids(
+        db=db,
+        tenant_id=tenant_id,
+        standard_id=standard_id,
+    )
 
-    # Risk severity ranking
+    if not instance_ids:
+        return "control", []
+
+    # Risk severity ranking. Risk is linked directly to the control in the
+    # current schema; risk_evidence_link is deliberately not used here.
     risk_rank = case(
         (func.lower(Risk.risk_level) == "critical", 4),
         (func.lower(Risk.risk_level) == "high", 3),
@@ -122,76 +196,111 @@ def build_matrix_rows(
         else_=literal(None),
     )
 
-    # Coverage calculation
+    approved_evidence_count = func.count(
+        func.distinct(
+            case(
+                (func.lower(Evidence.status) == "approved", Evidence.id),
+                else_=None,
+            )
+        )
+    )
+
+    evidence_count = func.count(func.distinct(Evidence.id))
+
     coverage_case = case(
-        (func.count(Evidence.id) == 0, literal("UNKNOWN")),
-        (
-            func.sum(
-                case(
-                    (func.lower(Evidence.status) == "approved", 1),
-                    else_=0,
-                )
-            ) > 0,
-            literal("ACHIEVED"),
-        ),
+        (evidence_count == 0, literal("NOT_COVERED")),
+        (approved_evidence_count > 0, literal("ACHIEVED")),
         else_=literal("PARTIAL"),
     )
 
     q = (
         db.query(
+            MatrixRow.id.label("id"),
+            MatrixRow.standard_id.label("standard_id"),
+            MatrixRow.instance_id.label("matrix_instance_id"),
+            MatrixRow.clause_id.label("clause_id"),
+            MatrixRow.requirement_id.label("requirement_id"),
+            MatrixRow.control_id.label("control_id"),
+            MatrixRow.row_key.label("row_key"),
+
             Standard.code.label("standard_code"),
+
             Clause.code.label("clause_code"),
+            Clause.title.label("clause_title"),
+            Clause.description.label("clause_description"),
+
             Requirement.code.label("requirement_code"),
+            Requirement.title.label("requirement_title"),
+            Requirement.description.label("requirement_description"),
+
             Control.code.label("control_code"),
+            Control.title.label("control_title"),
+            Control.description.label("control_description"),
 
-            func.count(Evidence.id).label("evidence_count"),
-            func.sum(
-                case(
-                    (func.lower(Evidence.status) == "approved", 1),
-                    else_=0,
-                )
-            ).label("approved_evidence_count"),
-
+            evidence_count.label("evidence_count"),
+            approved_evidence_count.label("approved_evidence_count"),
             coverage_case.label("coverage_status"),
             max_risk_level.label("risk_level"),
         )
-        .select_from(Control)
-        .join(Requirement, Requirement.id == Control.requirement_id)
-        .join(Clause, Clause.id == Requirement.clause_id)
-        .join(Standard, Standard.id == Clause.standard_id)
-
-        # Control → Evidence (DOĞRU FİLTRELER)
+        .select_from(MatrixRow)
+        .join(
+            MatrixInstance,
+            (MatrixInstance.id == MatrixRow.instance_id)
+            & (MatrixInstance.tenant_id == tenant_id),
+        )
+        .join(Standard, Standard.id == MatrixRow.standard_id)
+        .outerjoin(Clause, Clause.id == MatrixRow.clause_id)
+        .outerjoin(Requirement, Requirement.id == MatrixRow.requirement_id)
+        .outerjoin(Control, Control.id == MatrixRow.control_id)
         .outerjoin(
             Evidence,
-            (Evidence.control_id == Control.id)
+            (Evidence.control_id == MatrixRow.control_id)
+            & (Evidence.tenant_id == tenant_id)
             & (Evidence.is_deleted == False)
             & (
-                Evidence.standard_id == selected_standard.id
-                if selected_standard
-                else literal(True)
-            )
-        )
-
-        # Evidence → Risk (M2M ORM)
-        .outerjoin(
-            RiskEvidenceLink,
-            RiskEvidenceLink.evidence_id == Evidence.id,
+                Evidence.standard_version_id == MatrixInstance.standard_version_id
+            ),
         )
         .outerjoin(
             Risk,
-            Risk.id == RiskEvidenceLink.risk_id,
+            (Risk.control_id == MatrixRow.control_id)
+            & (Risk.tenant_id == tenant_id),
+        )
+        .filter(
+            MatrixRow.tenant_id == tenant_id,
+            MatrixRow.instance_id.in_(instance_ids),
         )
     )
 
     if selected_standard is not None:
-        q = q.filter(Standard.id == selected_standard.id)
+        q = q.filter(MatrixRow.standard_id == selected_standard.id)
 
     rows = (
         q.group_by(
+            MatrixRow.id,
+            MatrixRow.standard_id,
+            MatrixRow.instance_id,
+            MatrixRow.clause_id,
+            MatrixRow.requirement_id,
+            MatrixRow.control_id,
+            MatrixRow.row_key,
             Standard.code,
             Clause.code,
+            Clause.title,
+            Clause.description,
             Requirement.code,
+            Requirement.title,
+            Requirement.description,
             Control.code,
+            Control.title,
+            Control.description,
+        )
+        .order_by(
+            Standard.code.asc(),
+            Clause.code.asc(),
+            Requirement.code.asc().nullslast(),
+            Control.code.asc().nullslast(),
+            MatrixRow.id.asc(),
         )
         .all()
     )
@@ -209,7 +318,8 @@ def preview_matrix(
     user=Depends(get_current_user),
 ):
     logger.info("=== MATRIX PREVIEW HIT ===")
-    mode, rows = build_matrix_rows(db, standard_id)
+    tenant_id = _tenant_id(user)
+    mode, rows = build_matrix_rows(db, standard_id, tenant_id)
     return {"mode": mode, "rows": _rows_to_dict(rows)}
 
 
@@ -223,5 +333,6 @@ def get_matrix(
     user=Depends(get_current_user),
 ):
     logger.info("=== MATRIX ROOT HIT ===")
-    mode, rows = build_matrix_rows(db, standard_id)
+    tenant_id = _tenant_id(user)
+    mode, rows = build_matrix_rows(db, standard_id, tenant_id)
     return {"mode": mode, "rows": _rows_to_dict(rows)}
