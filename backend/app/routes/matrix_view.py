@@ -32,16 +32,6 @@ def get_matrix_view(
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
 
-    latest_instance = (
-        db.query(
-            MatrixInstance.standard_id.label("standard_id"),
-            func.max(MatrixInstance.id).label("instance_id"),
-        )
-        .filter(MatrixInstance.tenant_id == tenant_id)
-        .group_by(MatrixInstance.standard_id)
-        .subquery()
-    )
-
     evidence_agg = (
         db.query(
             Evidence.standard_id.label("standard_id"),
@@ -138,11 +128,6 @@ def get_matrix_view(
         .outerjoin(Requirement, MatrixRow.requirement_id == Requirement.id)
         .outerjoin(Control, MatrixRow.control_id == Control.id)
         .outerjoin(
-            latest_instance,
-            (latest_instance.c.standard_id == MatrixInstance.standard_id)
-            & (latest_instance.c.instance_id == MatrixInstance.id),
-        )
-        .outerjoin(
             evidence_agg,
             (evidence_agg.c.standard_id == MatrixRow.standard_id)
             & (evidence_agg.c.control_id == MatrixRow.control_id),
@@ -155,13 +140,26 @@ def get_matrix_view(
         .filter(
             MatrixRow.tenant_id == tenant_id,
             MatrixInstance.tenant_id == tenant_id,
-            latest_instance.c.instance_id.isnot(None),
             MatrixRow.control_id.isnot(None),
         )
     )
 
     if standard_id is not None:
-        query = query.filter(MatrixRow.standard_id == standard_id)
+        query = query.filter(
+            MatrixRow.standard_id == standard_id,
+            MatrixInstance.standard_id == standard_id,
+        )
+    else:
+        latest_instance_id = (
+            db.query(func.max(MatrixInstance.id))
+            .filter(
+                MatrixInstance.tenant_id == tenant_id,
+                MatrixInstance.standard_id == MatrixRow.standard_id,
+            )
+            .correlate(MatrixRow)
+            .scalar_subquery()
+        )
+        query = query.filter(MatrixInstance.id == latest_instance_id)
 
     rows = query.order_by(
         Standard.code,
