@@ -6,6 +6,7 @@ export interface MatrixRow {
   id?: number;
   standard_id?: number;
   standard_code?: string;
+  standard_title?: string;
   session_id?: number;
   matrix_instance_id?: number;
   clause_id?: number;
@@ -243,7 +244,12 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
                 onClick={() => onView?.(row)}
                 className="hover:bg-slate-800/40 cursor-pointer align-top"
               >
-                <td className="p-3">{row.standard_code ?? "—"}</td>
+                <td className="p-3">
+                  {hierarchyCell(
+                    row.standard_code,
+                    row.standard_title
+                  )}
+                </td>
                 <td className="p-3">
                   {hierarchyCell(
                     row.clause_code,
