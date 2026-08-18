@@ -4,7 +4,6 @@ from app.db.base import Base
 from app.schemas.requirement_schema import RequirementCreate
 
 
-
 class Requirement(Base):
     __tablename__ = "requirements"
 
@@ -12,6 +11,7 @@ class Requirement(Base):
     clause_id = Column(Integer, ForeignKey("clauses.id"))
     code = Column(String, nullable=False)
     title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
 
     # Clause ilişkisi
     clause = relationship("Clause", back_populates="requirements")
@@ -19,8 +19,5 @@ class Requirement(Base):
     # Control ilişkisi
     controls = relationship("Control", back_populates="requirement")
 
-    # 🔥 EKLENEN DOĞRU İLİŞKİ
-    # Evidence modelinde:
-    # requirement = relationship("Requirement", back_populates="evidences")
-    # olduğu için burası zorunludur.
+    # Evidence ilişkisi
     evidences = relationship("Evidence", back_populates="requirement")
