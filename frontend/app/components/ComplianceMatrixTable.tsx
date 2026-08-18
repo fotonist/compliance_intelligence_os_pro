@@ -10,6 +10,9 @@ export interface MatrixRow {
 
   /* ===== NAVIGATION ===== */
   session_id?: number;
+  matrix_instance_id?: number;
+  clause_id?: number;
+  requirement_id?: number;
   practice_id?: number;
   control_id?: number;
 
@@ -28,9 +31,15 @@ export interface MatrixRow {
   /* ===== CONTROL ===== */
   clause_code?: string;
   clause_title?: string;
+  clause_description?: string;
+
   requirement_code?: string;
   requirement_title?: string;
+  requirement_description?: string;
+
   control_code?: string;
+  control_title?: string;
+  control_description?: string;
 
   coverage_status?: string;
   approved_evidence_count?: number;
@@ -49,11 +58,9 @@ export default function ComplianceMatrixTable({
   mode,
   onView,
 }: Props) {
-  /* ================= PAGINATION ================= */
   const pageSize = 20;
   const [page, setPage] = useState(1);
 
-  /* 🔴 KRİTİK: DATA DEĞİŞİNCE SAYFAYI RESETLE */
   useEffect(() => {
     setPage(1);
   }, [rows, mode]);
@@ -86,6 +93,8 @@ export default function ComplianceMatrixTable({
         return "bg-green-700/30 text-green-300";
       case "PARTIAL":
         return "bg-amber-700/30 text-amber-300";
+      case "NOT_COVERED":
+        return "bg-red-700/20 text-red-300";
       default:
         return "bg-slate-700/40 text-slate-300";
     }
@@ -111,7 +120,30 @@ export default function ComplianceMatrixTable({
     return `Max risk severity: ${level}`;
   };
 
-  /* ================= PAGINATION FOOTER ================= */
+  const hierarchyCell = (
+    code?: string,
+    title?: string | null,
+    description?: string | null,
+    codeClassName = "font-medium"
+  ) => (
+    <div className="min-w-[180px] max-w-[320px]">
+      <div className={codeClassName}>{code || "—"}</div>
+      {title && (
+        <div className="mt-0.5 text-xs text-slate-300 leading-5">
+          {title}
+        </div>
+      )}
+      {description && (
+        <div
+          className="mt-1 text-[11px] leading-4 text-slate-500 line-clamp-2"
+          title={description}
+        >
+          {description}
+        </div>
+      )}
+    </div>
+  );
+
   const PaginationFooter = () => (
     <div className="flex items-center justify-between mt-3 text-sm text-slate-400">
       <span>
@@ -162,7 +194,7 @@ export default function ComplianceMatrixTable({
             <tbody className="divide-y divide-slate-700/40">
               {pagedRows.map((row, i) => (
                 <tr
-                  key={i}
+                  key={row.id ?? `${row.practice_id ?? "practice"}-${i}`}
                   onClick={() => onView?.(row)}
                   className="hover:bg-slate-800/40 cursor-pointer"
                 >
@@ -234,15 +266,35 @@ export default function ComplianceMatrixTable({
           <tbody className="divide-y divide-slate-700/40">
             {pagedRows.map((row, i) => (
               <tr
-                key={i}
+                key={row.id ?? `${row.row_key ?? "matrix-row"}-${i}`}
                 onClick={() => onView?.(row)}
-                className="hover:bg-slate-800/40 cursor-pointer"
+                className="hover:bg-slate-800/40 cursor-pointer align-top"
               >
-                <td className="p-3">{row.standard_code}</td>
-                <td className="p-3">{row.clause_code}</td>
-                <td className="p-3">{row.requirement_code}</td>
-                <td className="p-3 font-medium">
-                  {row.control_code}
+                <td className="p-3">{row.standard_code ?? "—"}</td>
+
+                <td className="p-3">
+                  {hierarchyCell(
+                    row.clause_code,
+                    row.clause_title,
+                    row.clause_description
+                  )}
+                </td>
+
+                <td className="p-3">
+                  {hierarchyCell(
+                    row.requirement_code,
+                    row.requirement_title,
+                    row.requirement_description
+                  )}
+                </td>
+
+                <td className="p-3">
+                  {hierarchyCell(
+                    row.control_code,
+                    row.control_title,
+                    row.control_description,
+                    "font-semibold text-slate-100"
+                  )}
                 </td>
 
                 <td className="p-3 text-center">
@@ -261,9 +313,7 @@ export default function ComplianceMatrixTable({
                       {row.evidence_count} evidence
                     </span>
                   ) : (
-                    <span className="italic text-slate-400">
-                      No evidence
-                    </span>
+                    <span className="italic text-slate-400">No evidence</span>
                   )}
                 </td>
 
