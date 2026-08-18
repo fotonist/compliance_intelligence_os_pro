@@ -219,6 +219,9 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
     );
   }
 
+  const isAnnexControl = (row: MatrixRow) =>
+    /^A\.[5-8]\.[0-9]+$/.test(row.control_code ?? "");
+
   return (
     <div className="mt-6">
       <div className="overflow-x-auto rounded-xl bg-slate-900/70 p-4">
@@ -265,11 +268,22 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
                   )}
                 </td>
                 <td className="p-3">
-                  {hierarchyCell(
-                    row.control_code,
-                    row.control_title,
-                    row.control_description,
-                    "font-semibold text-slate-100"
+                  {isAnnexControl(row) ? (
+                    <div className="min-w-[150px]">
+                      <div className="font-semibold text-slate-100">
+                        {row.control_code || "—"}
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-400">
+                        Annex A control
+                      </div>
+                    </div>
+                  ) : (
+                    hierarchyCell(
+                      row.control_code,
+                      row.control_title,
+                      row.control_description,
+                      "font-semibold text-slate-100"
+                    )
                   )}
                 </td>
                 <td className="p-3 text-center">
