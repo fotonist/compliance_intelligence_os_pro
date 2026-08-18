@@ -1,12 +1,7 @@
-\
 """Seed runner.
 
 Usage (from backend root):
     python -m app.seed.run_seed iso27001_2022
-
-Notes:
-- This file tries to import your SessionLocal from common locations.
-- If your project uses a different DB session factory module, update _import_session_local().
 """
 
 from __future__ import annotations
@@ -18,7 +13,6 @@ from sqlalchemy.orm import Session
 
 
 def _import_session_local() -> Callable[[], Session]:
-    """Try common locations for SessionLocal/get_db without breaking your project."""
     candidates = (
         "app.db.session:SessionLocal",
         "app.db.database:SessionLocal",
@@ -46,8 +40,8 @@ def _import_session_local() -> Callable[[], Session]:
             last_err = e
 
     raise RuntimeError(
-        "Could not import a DB session factory. Tried: " + ", ".join(candidates) +
-        (f". Last error: {last_err!r}" if last_err else "")
+        "Could not import a DB session factory. Tried: " + ", ".join(candidates)
+        + (f". Last error: {last_err!r}" if last_err else "")
     )
 
 
@@ -60,7 +54,8 @@ def main() -> int:
     session_factory = _import_session_local()
 
     if seed_name in ("iso27001_2022", "iso27001", "27001"):
-        from app.seed.iso27001_2022 import seed_iso27001_2022
+        from app.seed.iso27001_2022_clean import seed_iso27001_2022
+
         db = session_factory()
         try:
             result = seed_iso27001_2022(db)
