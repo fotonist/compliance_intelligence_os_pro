@@ -1,5 +1,3 @@
-# C:\Projects\compliance_app\backend\app\routes\kpi.py
-
 from __future__ import annotations
 
 from typing import Dict, Any
@@ -8,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user
 from app.db.session import get_db
 from app.services.uee_engine import UEEEngine
 
@@ -15,32 +14,37 @@ from app.services.uee_engine import UEEEngine
 router = APIRouter(prefix="/kpi", tags=["KPI"])
 
 
-# =====================================================
-# INTERNAL – UEE ACCESS
-# =====================================================
-
 def _get_uee_state(db: Session, tenant_id: int):
     engine = UEEEngine()
     return engine.compute_summary(db=db, tenant_id=tenant_id)
 
 
 # =====================================================
-# STRATEGIC KPI (UEE ONLY)
+# STRATEGIC KPI – TENANT SAFE UEE
 # =====================================================
 
 @router.get("/summary")
 def kpi_summary(
     tenant_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ) -> Dict[str, Any]:
+    """
+    Canonical strategic KPI endpoint.
 
-    tenant_id = tenant_id or 1
-    state = _get_uee_state(db, tenant_id)
+    The authenticated user's tenant is always the source of truth.
+    A tenant_id query parameter is accepted only for backward compatibility
+    and is never allowed to override the authenticated tenant.
+    """
+    authenticated_tenant_id = getattr(user, "tenant_id", None)
+    if not authenticated_tenant_id:
+        raise ValueError("Authenticated user has no tenant_id")
+
+    state = _get_uee_state(db, authenticated_tenant_id)
 
     return {
         "tenant_id": state.tenant_id,
         "computed_at": state.computed_at.isoformat(),
-
         "indices": {
             "risk": state.risk_index,
             "coverage": state.coverage_index,
@@ -48,12 +52,11 @@ def kpi_summary(
             "evidence": state.evidence_index,
             "task_pressure": state.task_pressure_index,
         },
-
         "unified_exposure_score": state.unified_exposure_score,
         "compliance_health_index": state.compliance_health_index,
-
         "weights": state.weights,
         "components": state.components,
+        "source_stats": state.source_stats,
         "warnings": list(state.warnings),
     }
 
@@ -62,10 +65,13 @@ def kpi_summary(
 def kpi_summary_status(
     tenant_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
+    authenticated_tenant_id = getattr(user, "tenant_id", None)
+    if not authenticated_tenant_id:
+        raise ValueError("Authenticated user has no tenant_id")
 
-    tenant_id = tenant_id or 1
-    state = _get_uee_state(db, tenant_id)
+    state = _get_uee_state(db, authenticated_tenant_id)
 
     def classify_high_good(value: float, ok: float, warn: float):
         if value >= ok:
@@ -106,7 +112,6 @@ def mttr_trend(
     range: int = Query(30),
     db: Session = Depends(get_db),
 ):
-
     rows = db.execute(
         text("""
         WITH fr AS (
@@ -131,13 +136,11 @@ def mttr_trend(
         """),
         {"range": range},
     ).mappings().all()
-
     return rows
 
 
 @router.get("/operations/mttr-details")
 def mttr_details(db: Session = Depends(get_db)):
-
     rows = db.execute(
         text("""
         WITH fr AS (
@@ -161,7 +164,6 @@ def mttr_details(db: Session = Depends(get_db)):
         ORDER BY recovery_hours DESC
         """)
     ).mappings().all()
-
     return rows
 
 
@@ -174,7 +176,6 @@ def rejected_trend(
     range: int = Query(30),
     db: Session = Depends(get_db),
 ):
-
     rows = db.execute(
         text("""
         SELECT DATE(rejected_at) AS date,
@@ -186,7 +187,6 @@ def rejected_trend(
         """),
         {"range": range},
     ).mappings().all()
-
     return rows
 
 
@@ -196,7 +196,6 @@ def rejected_trend(
 
 @router.get("/operations/pending-aging")
 def pending_aging(db: Session = Depends(get_db)):
-
     row = db.execute(
         text("""
         SELECT
