@@ -68,6 +68,15 @@ function buildTasks() {
   }));
 }
 
+function buildMatrixRows(coveredCount: number) {
+  return Array.from({ length: 100 }, (_, index) => ({
+    id: index + 1,
+    control_code: `CTRL-${String(index + 1).padStart(3, "0")}`,
+    coverage_status: index < coveredCount ? "ACHIEVED" : "NOT_ACHIEVED",
+    evidence_count: index < coveredCount ? 1 : 0,
+  }));
+}
+
 export async function companyHomeDemoFetch(path: string): Promise<Response | null> {
   if (path === "/matrix/kpi") {
     return jsonResponse({
@@ -182,6 +191,22 @@ export async function companyHomeDemoFetch(path: string): Promise<Response | nul
       { id: 4, code: "ISO 20000-1:2018", title: "Service Management System", type: "CONTROL_BASED" },
       { id: 5, code: "ISO 14001:2015", title: "Environmental Management System", type: "CONTROL_BASED" },
     ]);
+  }
+
+  const matrixMatch = path.match(/^\/matrix\?standard_id=(\d+)$/);
+  if (matrixMatch) {
+    const standardId = Number(matrixMatch[1]);
+    const scores: Record<number, number> = {
+      1: 78,
+      2: 85,
+      3: 72,
+      4: 68,
+      5: 80,
+    };
+    return jsonResponse({
+      mode: "control",
+      rows: buildMatrixRows(scores[standardId] ?? 0),
+    });
   }
 
   if (path === "/controls/?skip=0&limit=1000") {
