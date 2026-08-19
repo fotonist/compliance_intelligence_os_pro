@@ -35,6 +35,12 @@ def kpi_summary(
     The authenticated user's tenant is always the source of truth.
     A tenant_id query parameter is accepted only for backward compatibility
     and is never allowed to override the authenticated tenant.
+
+    The UEE engine stores component indices as exposure/pressure values
+    (higher is worse). The public KPI `indices` contract is health-oriented
+    because Company Home and executive dashboards display these as health,
+    coverage and strength percentages. Raw exposure values remain available
+    under `exposure_indices` and `components`.
     """
     authenticated_tenant_id = getattr(user, "tenant_id", None)
     if not authenticated_tenant_id:
@@ -42,16 +48,24 @@ def kpi_summary(
 
     state = _get_uee_state(db, authenticated_tenant_id)
 
+    exposure_indices = {
+        "risk": state.risk_index,
+        "coverage": state.coverage_index,
+        "maturity": state.maturity_index,
+        "evidence": state.evidence_index,
+        "task_pressure": state.task_pressure_index,
+    }
+
+    health_indices = {
+        name: max(0.0, min(100.0, 100.0 - value))
+        for name, value in exposure_indices.items()
+    }
+
     return {
         "tenant_id": state.tenant_id,
         "computed_at": state.computed_at.isoformat(),
-        "indices": {
-            "risk": state.risk_index,
-            "coverage": state.coverage_index,
-            "maturity": state.maturity_index,
-            "evidence": state.evidence_index,
-            "task_pressure": state.task_pressure_index,
-        },
+        "indices": health_indices,
+        "exposure_indices": exposure_indices,
         "unified_exposure_score": state.unified_exposure_score,
         "compliance_health_index": state.compliance_health_index,
         "weights": state.weights,
@@ -138,6 +152,10 @@ def mttr_trend(
     ).mappings().all()
     return rows
 
+
+# =====================================================
+# OPERATIONAL KPI – MTTR DETAILS
+# =====================================================
 
 @router.get("/operations/mttr-details")
 def mttr_details(db: Session = Depends(get_db)):
