@@ -35,6 +35,58 @@ def calculate_risk_level(score: int) -> str:
     return "VERY_LOW"
 
 
+def validate_source(
+    db: Session,
+    tenant_id: int,
+    source_type: str,
+    source_id: Optional[int],
+) -> tuple[Optional[int], Optional[int], Optional[int]]:
+    standard_id = None
+    requirement_id = None
+    control_id = None
+
+    if source_id is None:
+        return standard_id, requirement_id, control_id
+
+    source_type = source_type.upper()
+    source_tables = {
+        "STANDARD": ("standards", "standard_id"),
+        "REQUIREMENT": ("requirements", "requirement_id"),
+        "CONTROL": ("controls", "control_id"),
+    }
+
+    if source_type not in source_tables:
+        raise HTTPException(
+            status_code=400,
+            detail="source_type must be STANDARD, REQUIREMENT, or CONTROL",
+        )
+
+    table_name, target_name = source_tables[source_type]
+    exists = db.execute(
+        text(
+            f"""
+            SELECT id
+            FROM {table_name}
+            WHERE id = :source_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {"source_id": source_id, "tenant_id": tenant_id},
+    ).scalar()
+
+    if exists is None:
+        raise HTTPException(status_code=404, detail=f"{source_type.title()} not found")
+
+    if target_name == "standard_id":
+        standard_id = source_id
+    elif target_name == "requirement_id":
+        requirement_id = source_id
+    else:
+        control_id = source_id
+
+    return standard_id, requirement_id, control_id
+
+
 @router.post("/", status_code=201)
 def create_risk(
     payload: RiskCreateIn,
@@ -43,8 +95,6 @@ def create_risk(
 ):
     tenant_id = current_user.tenant_id
 
-    # Process is a separate tenant-scoped entity. Risks are linked to
-    # processes through process_risk_links; process_id is NOT a column on risks.
     process_exists = db.execute(
         text(
             """
@@ -54,77 +104,33 @@ def create_risk(
               AND tenant_id = :tenant_id
             """
         ),
-        {
-            "process_id": payload.process_id,
-            "tenant_id": tenant_id,
-        },
+        {"process_id": payload.process_id, "tenant_id": tenant_id},
     ).scalar()
 
     if process_exists is None:
         raise HTTPException(status_code=404, detail="Process not found")
 
+    source_type = (payload.source_type or "STANDARD").upper()
+    standard_id, requirement_id, control_id = validate_source(
+        db, tenant_id, source_type, payload.source_id
+    )
+
     score = payload.likelihood * payload.impact
     risk_level = calculate_risk_level(score)
 
-    # Source references map to the actual FK columns on risks.
-    standard_id = None
-    requirement_id = None
-    control_id = None
-
-    source_type = (payload.source_type or "STANDARD").upper()
-    if payload.source_id is not None:
-        if source_type == "STANDARD":
-            standard_id = payload.source_id
-        elif source_type == "REQUIREMENT":
-            requirement_id = payload.source_id
-        elif source_type == "CONTROL":
-            control_id = payload.source_id
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="source_type must be STANDARD, REQUIREMENT, or CONTROL",
-            )
-
     try:
-        # 1. Create the canonical risk row. Do NOT write process_id/source_type/
-        # source_id because the current risks schema models these relationships
-        # through FK columns and process_risk_links.
         result = db.execute(
             text(
                 """
                 INSERT INTO risks (
-                    tenant_id,
-                    title,
-                    description,
-                    impact,
-                    likelihood,
-                    score,
-                    risk_level,
-                    standard_id,
-                    requirement_id,
-                    control_id,
-                    status,
-                    treatment,
-                    action,
-                    created_at,
-                    updated_at
+                    tenant_id, title, description, impact, likelihood, score,
+                    risk_level, standard_id, requirement_id, control_id, status,
+                    treatment, action, created_at, updated_at
                 )
                 VALUES (
-                    :tenant_id,
-                    :title,
-                    :description,
-                    :impact,
-                    :likelihood,
-                    :score,
-                    :risk_level,
-                    :standard_id,
-                    :requirement_id,
-                    :control_id,
-                    'OPEN',
-                    NULL,
-                    :action,
-                    NOW(),
-                    NOW()
+                    :tenant_id, :title, :description, :impact, :likelihood, :score,
+                    :risk_level, :standard_id, :requirement_id, :control_id, 'OPEN',
+                    NULL, :action, NOW(), NOW()
                 )
                 RETURNING id
                 """
@@ -143,25 +149,15 @@ def create_risk(
                 "action": payload.action,
             },
         )
-
         new_risk_id = result.scalar_one()
 
-        # 2. Create the process relationship in the canonical link table.
         db.execute(
             text(
                 """
                 INSERT INTO process_risk_links (
-                    tenant_id,
-                    process_id,
-                    risk_id,
-                    created_at
+                    tenant_id, process_id, risk_id, created_at
                 )
-                VALUES (
-                    :tenant_id,
-                    :process_id,
-                    :risk_id,
-                    NOW()
-                )
+                VALUES (:tenant_id, :process_id, :risk_id, NOW())
                 ON CONFLICT (process_id, risk_id) DO NOTHING
                 """
             ),
@@ -172,35 +168,16 @@ def create_risk(
             },
         )
 
-        # 3. Create immutable RiskVersion v1.
         db.execute(
             text(
                 """
                 INSERT INTO risk_versions (
-                    tenant_id,
-                    risk_id,
-                    version_number,
-                    impact,
-                    likelihood,
-                    score,
-                    risk_level,
-                    status,
-                    treatment,
-                    action,
-                    created_at
+                    tenant_id, risk_id, version_number, impact, likelihood,
+                    score, risk_level, status, treatment, action, created_at
                 )
                 VALUES (
-                    :tenant_id,
-                    :risk_id,
-                    1,
-                    :impact,
-                    :likelihood,
-                    :score,
-                    :risk_level,
-                    'OPEN',
-                    NULL,
-                    :action,
-                    NOW()
+                    :tenant_id, :risk_id, 1, :impact, :likelihood,
+                    :score, :risk_level, 'OPEN', NULL, :action, NOW()
                 )
                 """
             ),
@@ -216,16 +193,12 @@ def create_risk(
         )
 
         db.commit()
-
     except HTTPException:
         db.rollback()
         raise
     except Exception as exc:
         db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Risk creation failed: {str(exc)}",
-        ) from exc
+        raise HTTPException(status_code=500, detail="Risk creation failed") from exc
 
     return {
         "id": new_risk_id,
