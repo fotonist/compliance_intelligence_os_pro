@@ -18,13 +18,15 @@ export async function apiFetch(
     ? path
     : `/${path}`;
 
-  // Company Home historically requested /matrix/kpi.
-  // Keep that client contract while routing strategic KPI reads
-  // through the canonical tenant-safe UEE endpoint.
+  // Company Home historically requested legacy KPI/trend endpoints.
+  // Keep those client contracts while routing strategic reads through
+  // the canonical tenant-safe KPI endpoints.
   const requestPath =
     safePath === "/matrix/kpi"
       ? "/kpi/summary"
-      : safePath;
+      : safePath === "/dashboard/trends"
+        ? "/kpi/trends"
+        : safePath;
 
   const headers: HeadersInit = {};
 
