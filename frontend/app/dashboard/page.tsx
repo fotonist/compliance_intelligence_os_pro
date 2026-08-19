@@ -6,12 +6,10 @@ import {
   Activity,
   AlertTriangle,
   ArrowUpRight,
-  BarChart3,
+  Bell,
   BookOpen,
   CheckCircle2,
-  ClipboardCheck,
   ClipboardList,
-  FileCheck2,
   FolderOpen,
   Gauge,
   Layers3,
@@ -20,15 +18,24 @@ import {
   ShieldAlert,
   ShieldCheck,
   Target,
-  TrendingUp,
-  TriangleAlert,
+  User,
 } from "lucide-react";
-import AIInsightBox from "../components/AIInsightBox";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { apiFetch } from "../lib/api";
 
-type Status = "ok" | "warning" | "critical";
+type Status = "good" | "warning" | "critical";
 
 type UeeSummary = {
+  unified_exposure_score: number;
+  compliance_health_index: number;
   indices?: {
     risk?: number;
     coverage?: number;
@@ -36,8 +43,6 @@ type UeeSummary = {
     evidence?: number;
     task_pressure?: number;
   };
-  unified_exposure_score: number;
-  compliance_health_index: number;
 };
 
 type Standard = {
@@ -54,11 +59,6 @@ type MatrixRow = {
   achieved_level?: number | null;
 };
 
-type MatrixResponse = {
-  mode?: "control" | "maturity";
-  rows?: MatrixRow[];
-};
-
 type IntelligenceOverview = {
   summary: {
     total_risks: number;
@@ -72,7 +72,6 @@ type IntelligenceOverview = {
     risk_id: number;
     title?: string | null;
     risk_level?: string | null;
-    current_score?: number | null;
     escalation_probability_30d: number;
     control_code?: string | null;
   }>;
@@ -101,11 +100,7 @@ type GapResponse = {
 };
 
 type ControlHealth = {
-  linked_risks?: number;
-  high_risks?: number;
-  critical_risks?: number;
   open_tasks?: number;
-  evidence_count?: number;
   health_index?: number;
 };
 
@@ -123,30 +118,22 @@ type Risk = {
   created_at?: string | null;
 };
 
-type AIInsight = {
-  summary: string;
-  root_causes: string[];
-  warnings: string[];
-  actions: string[];
+type TrendPoint = {
+  date: string;
+  risk_exposure_pct?: number;
+  approvals?: number;
+  compliance_health?: number;
+  control_coverage?: number;
+  evidence_strength?: number;
 };
 
-type StandardCoverage = {
-  id: number;
-  code: string;
-  title?: string;
-  type: Standard["type"];
-  score: number;
+type CurrentUser = {
+  full_name?: string | null;
+  username?: string | null;
+  role?: string | null;
 };
 
-type ActivityItem = {
-  id: string;
-  title: string;
-  meta: string;
-  time: string;
-  icon: "evidence" | "risk";
-};
-
-function safeNum(value: unknown, fallback = 0) {
+function num(value: unknown, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
@@ -155,57 +142,46 @@ function clamp(value: number) {
   return Math.max(0, Math.min(100, value));
 }
 
-function classifyHealth(value: number): Status {
-  if (value >= 75) return "ok";
+function healthStatus(value: number): Status {
+  if (value >= 75) return "good";
   if (value >= 50) return "warning";
   return "critical";
 }
 
-function classifyExposure(value: number): Status {
-  if (value <= 25) return "ok";
+function exposureStatus(value: number): Status {
+  if (value <= 25) return "good";
   if (value <= 50) return "warning";
   return "critical";
 }
 
-function statusClasses(status: Status) {
-  if (status === "critical") {
-    return "border-red-200 bg-red-50 text-red-700";
-  }
-  if (status === "warning") {
-    return "border-amber-200 bg-amber-50 text-amber-700";
-  }
-  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+function statusText(status: Status) {
+  if (status === "good") return "Good";
+  if (status === "warning") return "Warning";
+  return "Critical";
 }
 
-function progressClass(value: number) {
+function progressColor(value: number) {
   if (value >= 75) return "bg-emerald-500";
   if (value >= 50) return "bg-amber-500";
-  return "bg-red-500";
+  return "bg-orange-500";
 }
 
-function formatTime(value?: string | null) {
+function formatDate(value?: string | null) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function Donut({ value, label }: { value: number; label: string }) {
   const safe = clamp(value);
   return (
     <div
-      className="relative h-28 w-28 rounded-full"
-      style={{
-        background: `conic-gradient(#22c55e ${safe * 3.6}deg, #e5e7eb 0deg)`,
-      }}
+      className="relative h-28 w-28 shrink-0 rounded-full"
+      style={{ background: `conic-gradient(#22c55e ${safe * 3.6}deg, #e5e7eb 0deg)` }}
     >
-      <div className="absolute inset-[11px] flex flex-col items-center justify-center rounded-full bg-white">
-        <span className="text-xl font-bold text-slate-800">{Math.round(safe)}</span>
+      <div className="absolute inset-[10px] flex flex-col items-center justify-center rounded-full bg-white">
+        <span className="text-xl font-bold text-slate-900">{Math.round(safe)}</span>
         <span className="text-[10px] text-slate-500">{label}</span>
       </div>
     </div>
@@ -218,42 +194,30 @@ function KpiCard({
   subtitle,
   icon,
   href,
-  status,
-  accent,
+  tone,
 }: {
   title: string;
   value: string | number;
-  subtitle: string;
+  subtitle: React.ReactNode;
   icon: React.ReactNode;
   href?: string;
-  status?: Status;
-  accent: string;
+  tone: string;
 }) {
   const content = (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+    <div className="h-full rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
       <div className="flex items-start justify-between">
-        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${accent}`}>
-          {icon}
-        </div>
-        {status && (
-          <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase ${statusClasses(status)}`}>
-            {status}
-          </span>
-        )}
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${tone}`}>{icon}</div>
       </div>
-      <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        {title}
-      </div>
+      <div className="mt-4 text-[10px] font-bold uppercase tracking-wide text-slate-500">{title}</div>
       <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
-      <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
+      <div className="mt-1 min-h-8 text-[11px] text-slate-500">{subtitle}</div>
       {href && (
-        <div className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">
+        <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">
           View all <ArrowUpRight size={12} />
         </div>
       )}
     </div>
   );
-
   return href ? <Link href={href}>{content}</Link> : content;
 }
 
@@ -261,100 +225,104 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<UeeSummary | null>(null);
   const [overview, setOverview] = useState<IntelligenceOverview | null>(null);
   const [gaps, setGaps] = useState<GapResponse | null>(null);
-  const [controlHealth, setControlHealth] = useState<ControlHealth | null>(null);
+  const [health, setHealth] = useState<ControlHealth | null>(null);
   const [standards, setStandards] = useState<Standard[]>([]);
-  const [standardCoverage, setStandardCoverage] = useState<StandardCoverage[]>([]);
+  const [coverage, setCoverage] = useState<{ id: number; code: string; type: Standard["type"]; score: number }[]>([]);
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [risks, setRisks] = useState<Risk[]>([]);
-  const [aiInsight, setAiInsight] = useState<AIInsight | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
+  const [controlsCount, setControlsCount] = useState(0);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
 
     async function load() {
-      setLoading(true);
       try {
-        const [summaryRes, overviewRes, gapsRes, healthRes, standardsRes, evidenceRes, risksRes] =
-          await Promise.all([
-            apiFetch("/kpi/summary"),
-            apiFetch("/company/intelligence/overview"),
-            apiFetch("/company/intelligence/gaps"),
-            apiFetch("/company/intelligence/control-health"),
-            apiFetch("/standards/"),
-            apiFetch("/evidences"),
-            apiFetch("/risks?page=1&page_size=100&status=all"),
-          ]);
+        const responses = await Promise.all([
+          apiFetch("/kpi/summary"),
+          apiFetch("/company/intelligence/overview"),
+          apiFetch("/company/intelligence/gaps"),
+          apiFetch("/company/intelligence/control-health"),
+          apiFetch("/standards/"),
+          apiFetch("/evidences"),
+          apiFetch("/risks?page=1&page_size=100&status=all"),
+          apiFetch("/controls/?skip=0&limit=100"),
+          apiFetch("/dashboard/trends?days=180"),
+          apiFetch("/auth/me"),
+        ]);
 
-        const [summaryData, overviewData, gapsData, healthData, standardsData, evidenceData, risksData] =
-          await Promise.all([
-            summaryRes.json(),
-            overviewRes.json(),
-            gapsRes.json(),
-            healthRes.json(),
-            standardsRes.json(),
-            evidenceRes.json(),
-            risksRes.json(),
-          ]);
+        const [summaryRes, overviewRes, gapsRes, healthRes, standardsRes, evidenceRes, risksRes, controlsRes, trendRes, userRes] = responses;
+        const [summaryData, overviewData, gapsData, healthData, standardsData, evidenceData, risksData] = await Promise.all([
+          summaryRes.json(),
+          overviewRes.json(),
+          gapsRes.json(),
+          healthRes.json(),
+          standardsRes.json(),
+          evidenceRes.json(),
+          risksRes.json(),
+        ]);
 
         if (!mounted) return;
 
         setSummary(summaryData || null);
         setOverview(overviewData || null);
         setGaps(gapsData || null);
-        setControlHealth(healthData || null);
+        setHealth(healthData || null);
         setStandards(Array.isArray(standardsData) ? standardsData : []);
         setEvidences(Array.isArray(evidenceData) ? evidenceData : []);
         setRisks(Array.isArray(risksData?.items) ? risksData.items : []);
 
-        const loadedStandards: Standard[] = Array.isArray(standardsData) ? standardsData : [];
-        const coverage = await Promise.all(
-          loadedStandards.map(async (standard) => {
+        if (controlsRes.ok) {
+          const controlsData = await controlsRes.json();
+          setControlsCount(Array.isArray(controlsData) ? controlsData.length : 0);
+        }
+
+        if (trendRes.ok) {
+          const trendData = await trendRes.json();
+          const approvals = Array.isArray(trendData?.evidence_approvals_daily) ? trendData.evidence_approvals_daily : [];
+          const exposure = Array.isArray(trendData?.risk_exposure_trend) ? trendData.risk_exposure_trend : [];
+          const byDate = new Map<string, TrendPoint>();
+          for (const item of exposure) byDate.set(item.date, { date: item.date, risk_exposure_pct: num(item.risk_exposure_pct) });
+          for (const item of approvals) {
+            const existing = byDate.get(item.date) || { date: item.date };
+            existing.approvals = num(item.count);
+            byDate.set(item.date, existing);
+          }
+          setTrend(Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)));
+        }
+
+        if (userRes.ok) setUser(await userRes.json());
+
+        const loadedStandards = Array.isArray(standardsData) ? standardsData : [];
+        const result = await Promise.all(
+          loadedStandards.map(async (standard: Standard) => {
             try {
               const res = await apiFetch(`/matrix?standard_id=${standard.id}`);
               if (!res.ok) return null;
-              const data: MatrixResponse = await res.json();
-              const rows = Array.isArray(data.rows) ? data.rows : [];
-              if (!rows.length) {
-                return { id: standard.id, code: standard.code, title: standard.title, type: standard.type, score: 0 };
-              }
+              const data = await res.json();
+              const rows: MatrixRow[] = Array.isArray(data?.rows) ? data.rows : [];
+              if (!rows.length) return { id: standard.id, code: standard.code, type: standard.type, score: 0 };
 
-              if (data.mode === "maturity" || standard.type === "MATURITY_BASED") {
-                const valid = rows.filter(
-                  (row) => safeNum(row.target_level) > 0
-                );
+              if (data?.mode === "maturity" || standard.type === "MATURITY_BASED") {
+                const valid = rows.filter((row) => num(row.target_level) > 0);
                 const score = valid.length
-                  ? valid.reduce(
-                      (sum, row) =>
-                        sum + clamp((safeNum(row.achieved_level) / safeNum(row.target_level)) * 100),
-                      0
-                    ) / valid.length
+                  ? valid.reduce((sum, row) => sum + clamp((num(row.achieved_level) / num(row.target_level)) * 100), 0) / valid.length
                   : 0;
-                return { id: standard.id, code: standard.code, title: standard.title, type: standard.type, score: Math.round(score) };
+                return { id: standard.id, code: standard.code, type: standard.type, score: Math.round(score) };
               }
 
-              const covered = rows.filter((row) => {
-                const status = String(row.coverage_status || "").toUpperCase();
-                return status === "COVERED" || status === "ACHIEVED";
-              }).length;
-
-              return {
-                id: standard.id,
-                code: standard.code,
-                title: standard.title,
-                type: standard.type,
-                score: Math.round((covered / rows.length) * 100),
-              };
+              const covered = rows.filter((row) => ["COVERED", "ACHIEVED"].includes(String(row.coverage_status || "").toUpperCase())).length;
+              return { id: standard.id, code: standard.code, type: standard.type, score: Math.round((covered / rows.length) * 100) };
             } catch {
               return null;
             }
           })
         );
-
-        if (mounted) setStandardCoverage(coverage.filter(Boolean) as StandardCoverage[]);
+        if (mounted) setCoverage(result.filter(Boolean) as { id: number; code: string; type: Standard["type"]; score: number }[]);
       } catch (error) {
-        console.error("Company Home load failed:", error);
+        console.error("Company Home load failed", error);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -366,426 +334,128 @@ export default function DashboardPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!summary || !overview || !controlHealth) return;
-
-    let mounted = true;
-    setAiLoading(true);
-
-    apiFetch("/ai/dashboard/insights", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        period_days: 30,
-        uee: summary,
-        intelligence: overview,
-        gaps,
-        control_health: controlHealth,
-      }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (mounted) setAiInsight(data || null);
-      })
-      .catch((error) => console.error("AI dashboard insight failed:", error))
-      .finally(() => {
-        if (mounted) setAiLoading(false);
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, [summary, overview, gaps, controlHealth]);
-
   const evidenceStats = useMemo(() => {
-    const result = { approved: 0, pending: 0, rejected: 0, other: 0 };
+    const result = { approved: 0, pending: 0, rejected: 0, draft: 0 };
     for (const evidence of evidences) {
       const status = String(evidence.status || "").toLowerCase();
       if (status.includes("approved")) result.approved += 1;
       else if (status.includes("reject")) result.rejected += 1;
       else if (status.includes("pending") || status.includes("review") || status.includes("upload")) result.pending += 1;
-      else result.other += 1;
+      else result.draft += 1;
     }
     return result;
   }, [evidences]);
 
   const riskStats = useMemo(() => {
-    const result = { critical: 0, high: 0, other: 0 };
+    const result = { critical: 0, high: 0, medium: 0, low: 0 };
     for (const risk of risks) {
       const level = String(risk.risk_level || "").toLowerCase();
       if (level === "critical") result.critical += 1;
       else if (level === "high") result.high += 1;
-      else result.other += 1;
+      else if (level === "medium") result.medium += 1;
+      else result.low += 1;
     }
     return result;
   }, [risks]);
 
-  const activities = useMemo<ActivityItem[]>(() => {
-    const evidenceItems = evidences.slice(0, 5).map((item) => ({
+  const activities = useMemo(() => {
+    return [...evidences.slice(0, 4).map((item) => ({
       id: `e-${item.id}`,
       title: `Evidence ${item.title || `#${item.id}`} updated`,
       meta: "Evidence Management",
-      time: formatTime(item.created_at),
+      time: formatDate(item.created_at),
       icon: "evidence" as const,
-    }));
-
-    const riskItems = risks.slice(0, 5).map((item) => ({
+    })), ...risks.slice(0, 4).map((item) => ({
       id: `r-${item.id}`,
-      title: `Risk ${item.title || `#${item.id}`} updated`,
+      title: `Risk ${item.title || `#${item.id}`} was updated`,
       meta: `${item.risk_level || "Risk"} Risk`,
-      time: formatTime(item.created_at),
+      time: formatDate(item.created_at),
       icon: "risk" as const,
-    }));
-
-    return [...evidenceItems, ...riskItems]
-      .sort((a, b) => (a.time < b.time ? 1 : -1))
-      .slice(0, 7);
+    }))].slice(0, 7);
   }, [evidences, risks]);
 
   if (loading || !summary || !overview) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-6 text-slate-500">
-        Loading Company Home…
-      </div>
-    );
+    return <div className="min-h-screen bg-slate-50 p-8 text-sm text-slate-500">Loading Company Home...</div>;
   }
 
-  const health = safeNum(summary.compliance_health_index);
-  const exposure = safeNum(summary.unified_exposure_score);
-  const healthStatus = classifyHealth(health);
-  const exposureStatus = classifyExposure(exposure);
-  const totalRisks = safeNum(overview.summary.total_risks);
-  const openRisks = safeNum(overview.summary.open_risks);
-  const totalGaps = safeNum(gaps?.summary?.gaps_total);
-  const criticalActions = overview.executive_alerts?.length || 0;
-  const openTasks = safeNum(controlHealth?.open_tasks);
+  const complianceHealth = clamp(num(summary.compliance_health_index));
+  const exposure = clamp(num(summary.unified_exposure_score));
+  const health = healthStatus(complianceHealth);
+  const exposureState = exposureStatus(exposure);
+  const totalRisks = num(overview.summary.total_risks);
+  const openRisks = num(overview.summary.open_risks, totalRisks);
+  const totalGaps = num(gaps?.summary?.gaps_total);
+  const openTasks = num(health?.open_tasks);
+  const standardRows = coverage;
+  const avgCoverage = standardRows.length ? Math.round(standardRows.reduce((sum, item) => sum + item.score, 0) / standardRows.length) : 0;
+
+  const chartData = trend.map((item) => ({
+    ...item,
+    label: new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    compliance_health: complianceHealth,
+    control_coverage: num(summary.indices?.coverage),
+    evidence_strength: num(summary.indices?.evidence),
+    risk_exposure: num(item.risk_exposure_pct),
+  }));
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-[1600px] space-y-6 p-5 lg:p-7">
-        {/* HEADER */}
-        <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="mx-auto max-w-[1700px] p-5 lg:p-6">
+        <header className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-              <ShieldCheck size={15} /> Compliance Intelligence OS
-            </div>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Company Home</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Your compliance, risk, evidence and remediation overview.
-            </p>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Company Home</h1>
+            <p className="mt-1 text-sm text-slate-500">Welcome back, {user?.full_name || user?.username || "User"}! Here is your compliance overview.</p>
           </div>
-
           <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
-              Demo Company A.Ş.
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
-              Reporting Period: <span className="font-semibold text-slate-900">Current</span>
-            </div>
-            <Link href="/settings/scoring" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <Gauge size={15} /> Customize Dashboard
-            </Link>
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium">Demo Company A.Ş.</div>
+            <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Reporting Period <span className="ml-2 font-semibold">Aug 2026</span></button>
+            <Link href="/settings/scoring" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50"><Gauge size={15} /> Customize Dashboard</Link>
+            <button className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white"><Bell size={17} /><span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] text-white">{num(overview.summary.executive_alerts)}</span></button>
+            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"><div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100"><User size={14} /></div><div className="leading-tight"><div className="text-xs font-semibold">{user?.full_name || user?.username || "User"}</div><div className="text-[10px] text-slate-400">{user?.role || "User"}</div></div></div>
           </div>
         </header>
 
-        {/* HEALTH BANNER */}
-        <div className={`flex flex-col gap-2 rounded-xl border px-5 py-3 text-sm lg:flex-row lg:items-center lg:justify-between ${statusClasses(exposureStatus)}`}>
-          <div className="flex items-center gap-2 font-semibold">
-            {exposureStatus === "critical" ? <ShieldAlert size={17} /> : exposureStatus === "warning" ? <TriangleAlert size={17} /> : <CheckCircle2 size={17} />}
-            {exposureStatus === "critical"
-              ? "Unified exposure is critical. Immediate remediation is required."
-              : exposureStatus === "warning"
-                ? "Unified exposure is in the warning zone. Monitoring and remediation are recommended."
-                : "Key compliance indicators are within acceptable thresholds."}
-          </div>
-          <div className="text-xs font-medium opacity-80">
-            Exposure {exposure.toFixed(1)} · Health {health.toFixed(1)}
-          </div>
+        <div className={`mb-5 flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${exposureState === "critical" ? "border-red-200 bg-red-50 text-red-700" : exposureState === "warning" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+          <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} />{exposureState === "critical" ? "Unified exposure is in CRITICAL zone." : exposureState === "warning" ? "Unified exposure is in WARNING zone." : "Unified exposure is in an acceptable zone."} Monitoring and remediation are recommended.</div>
+          <div className="text-xs font-medium">Exposure {exposure.toFixed(1)} · Health {complianceHealth.toFixed(1)}</div>
         </div>
 
-        {/* KPI ROW */}
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
-          <KpiCard
-            title="Compliance Health"
-            value={`${Math.round(health)}%`}
-            subtitle="Unified compliance health index"
-            icon={<ShieldCheck size={20} className="text-emerald-600" />}
-            status={healthStatus}
-            accent="bg-emerald-50"
-          />
-          <KpiCard
-            title="Standards"
-            value={standards.length}
-            subtitle="Active standards"
-            icon={<BookOpen size={20} className="text-blue-600" />}
-            href="/standards"
-            accent="bg-blue-50"
-          />
-          <KpiCard
-            title="Controls"
-            value={standardCoverage.filter((x) => x.type === "CONTROL_BASED").reduce((sum, x) => sum + Math.round((x.score / 100) * 100), 0) || "—"}
-            subtitle="Control-based framework rows"
-            icon={<Layers3 size={20} className="text-violet-600" />}
-            href="/matrix"
-            accent="bg-violet-50"
-          />
-          <KpiCard
-            title="Risks"
-            value={totalRisks}
-            subtitle={`${openRisks} open · ${overview.summary.high_probability_risks} high probability`}
-            icon={<AlertTriangle size={20} className="text-amber-600" />}
-            href="/risks"
-            accent="bg-amber-50"
-          />
-          <KpiCard
-            title="Evidence"
-            value={evidences.length}
-            subtitle={`${evidenceStats.approved} approved · ${evidenceStats.pending} pending`}
-            icon={<FolderOpen size={20} className="text-cyan-600" />}
-            href="/evidences"
-            accent="bg-cyan-50"
-          />
-          <KpiCard
-            title="Gaps"
-            value={totalGaps}
-            subtitle={`${safeNum(gaps?.summary?.uncovered)} uncovered · ${safeNum(gaps?.summary?.partial)} partial`}
-            icon={<Target size={20} className="text-rose-600" />}
-            href="/intelligence/gaps"
-            accent="bg-rose-50"
-          />
+        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <KpiCard title="Compliance Health" value={`${Math.round(complianceHealth)}%`} subtitle={<><span className="font-semibold">{statusText(health)}</span><span className="ml-2 text-emerald-600">▲ Current</span></>} icon={<ShieldCheck size={21} className="text-emerald-600" />} tone="bg-emerald-50" />
+          <KpiCard title="Standards" value={standards.length} subtitle="Active Standards" icon={<BookOpen size={21} className="text-blue-600" />} href="/standards" tone="bg-blue-50" />
+          <KpiCard title="Controls" value={controlsCount || "—"} subtitle="Active Controls" icon={<Layers3 size={21} className="text-violet-600" />} href="/controls" tone="bg-violet-50" />
+          <KpiCard title="Risks" value={totalRisks} subtitle={<><span>{openRisks} Open Risks</span><span className="ml-2 font-semibold text-red-500">{riskStats.critical} Critical</span></>} icon={<AlertTriangle size={21} className="text-amber-600" />} href="/risks" tone="bg-amber-50" />
+          <KpiCard title="Evidence" value={evidences.length} subtitle={<><span>{evidenceStats.approved} Approved</span><span className="ml-2 font-semibold text-amber-600">{evidenceStats.pending} Pending</span></>} icon={<FolderOpen size={21} className="text-cyan-600" />} href="/evidences" tone="bg-cyan-50" />
+          <KpiCard title="Gaps" value={totalGaps} subtitle={<><span>Open Gaps</span><span className="ml-2 font-semibold text-red-500">{num(gaps?.summary?.uncovered)} High Priority</span></>} icon={<Target size={21} className="text-rose-600" />} href="/intelligence/gaps" tone="bg-rose-50" />
         </section>
 
-        {/* AI INSIGHTS */}
-        <section className="rounded-xl border border-indigo-200 bg-white shadow-sm">
-          <div className="flex items-center gap-3 border-b border-indigo-100 bg-indigo-50/60 px-5 py-3">
-            <BarChart3 size={17} className="text-indigo-600" />
-            <div>
-              <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">AI Executive Insights</div>
-              <div className="text-xs text-slate-500">Cross-module intelligence from risk, coverage, evidence and remediation signals.</div>
+        <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_0.95fr_1.15fr]">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between"><div><h2 className="font-bold">Compliance Health Trend</h2><div className="mt-2 flex flex-wrap gap-4 text-[10px] text-slate-500"><span>● Overall Compliance</span><span>● Control Coverage</span><span>● Evidence Strength</span><span>● Risk Exposure</span></div></div><button className="rounded-md border border-slate-200 px-3 py-1.5 text-[10px] text-slate-600">Last 6 Months⌄</button></div>
+            <div className="mt-4 h-[240px]">
+              {chartData.length > 1 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}><CartesianGrid stroke="#eef2f7" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} /><YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 9, fill: "#64748b" }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11 }} /><Line type="monotone" dataKey="compliance_health" name="Overall Compliance" stroke="#22c55e" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="control_coverage" name="Control Coverage" stroke="#3b82f6" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="evidence_strength" name="Evidence Strength" stroke="#8b5cf6" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="risk_exposure" name="Risk Exposure" stroke="#ef4444" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center rounded-lg bg-slate-50 text-xs text-slate-400">Historical trend data is not available yet.</div>}
             </div>
           </div>
-          <div className="p-5">
-            <AIInsightBox insight={aiInsight} loading={aiLoading} />
-          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-bold">Compliance by Standard</h2><Link href="/matrix" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-5 space-y-5">{standardRows.length ? standardRows.map((item) => <div key={item.id}><div className="mb-2 flex justify-between text-xs"><span className="font-semibold">{item.code}</span><span className="font-bold">{item.score}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${progressColor(item.score)}`} style={{ width: `${item.score}%` }} /></div></div>) : <div className="text-xs text-slate-400">No standard coverage data.</div>}</div></div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-bold">Critical Actions</h2><Link href="/intelligence" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-4 space-y-2">{(overview.executive_alerts || []).slice(0, 5).map((item) => <Link key={item.risk_id} href={`/risks/${item.risk_id}`} className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 hover:bg-slate-50"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-500"><AlertTriangle size={15} /></div><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{item.title || `Risk #${item.risk_id}`}</div><div className="mt-1 text-[10px] text-slate-400">{item.control_code || "Risk Intelligence"}</div></div><span className="whitespace-nowrap rounded bg-red-50 px-2 py-1 text-[9px] font-semibold text-red-500">{Math.max(1, Math.round(item.escalation_probability_30d * 100 / 10))} days</span></Link>)}{!overview.executive_alerts?.length && <div className="rounded-lg bg-emerald-50 p-4 text-xs text-emerald-700">No critical executive alerts.</div>}</div></div>
         </section>
 
-        {/* MAIN INTELLIGENCE GRID */}
-        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_0.9fr_1fr]">
-          {/* DRIVERS */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-slate-900">Compliance Intelligence Drivers</h2>
-                <p className="mt-1 text-xs text-slate-500">Current factors influencing the unified exposure score.</p>
-              </div>
-              <Link href="/intelligence" className="text-xs font-semibold text-blue-600">View intelligence</Link>
-            </div>
-
-            <div className="mt-6 space-y-5">
-              {[
-                ["Risk Pressure", safeNum(summary.indices?.risk)],
-                ["Control Coverage", safeNum(summary.indices?.coverage)],
-                ["Maturity Pressure", safeNum(summary.indices?.maturity)],
-                ["Evidence Pressure", safeNum(summary.indices?.evidence)],
-                ["Task Pressure", safeNum(summary.indices?.task_pressure)],
-              ].map(([label, value]) => (
-                <div key={String(label)}>
-                  <div className="mb-2 flex items-center justify-between text-xs">
-                    <span className="font-medium text-slate-600">{label}</span>
-                    <span className="font-bold text-slate-900">{safeNum(value).toFixed(1)}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div className={`h-full rounded-full ${progressClass(safeNum(value))}`} style={{ width: `${clamp(safeNum(value))}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* STANDARD COVERAGE */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-slate-900">Compliance by Standard</h2>
-                <p className="mt-1 text-xs text-slate-500">Calculated from the current compliance matrix.</p>
-              </div>
-              <Link href="/matrix" className="text-xs font-semibold text-blue-600">View all</Link>
-            </div>
-
-            <div className="mt-5 space-y-5">
-              {standardCoverage.length === 0 ? (
-                <div className="rounded-lg bg-slate-50 p-4 text-xs text-slate-500">No matrix coverage data available.</div>
-              ) : (
-                standardCoverage.map((item) => (
-                  <div key={item.id}>
-                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                      <span className="font-semibold text-slate-700">{item.code}</span>
-                      <span className="font-bold text-slate-900">{item.score}%</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div className={`h-full rounded-full ${progressClass(item.score)}`} style={{ width: `${item.score}%` }} />
-                    </div>
-                    <div className="mt-1 text-[10px] text-slate-400">{item.type === "MATURITY_BASED" ? "Maturity achievement" : "Control coverage"}</div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* CRITICAL ACTIONS */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-slate-900">Critical Actions</h2>
-                <p className="mt-1 text-xs text-slate-500">Executive alerts requiring attention.</p>
-              </div>
-              <Link href="/intelligence" className="text-xs font-semibold text-blue-600">View all</Link>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              {(overview.executive_alerts || []).slice(0, 5).map((alert) => (
-                <Link key={alert.risk_id} href={`/risks/${alert.risk_id}`} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-3 hover:bg-slate-50">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                    <AlertTriangle size={15} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-semibold text-slate-800">{alert.title || `Risk #${alert.risk_id}`}</div>
-                    <div className="mt-1 text-[10px] text-slate-500">
-                      {alert.control_code || "No linked control"} · {Math.round(alert.escalation_probability_30d * 100)}% escalation probability
-                    </div>
-                  </div>
-                  <ArrowUpRight size={13} className="text-slate-400" />
-                </Link>
-              ))}
-
-              {criticalActions === 0 && (
-                <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-xs text-emerald-700">No executive alerts currently require action.</div>
-              )}
-            </div>
-          </div>
+        <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr_1fr_0.75fr_1.2fr]">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="font-bold">Risk Summary</h3><div className="mt-4 flex items-center gap-4"><Donut value={totalRisks ? riskStats.critical / totalRisks * 100 : 0} label="Critical" /><div className="w-full space-y-2 text-[11px]"><div className="flex justify-between"><span>Critical</span><b>{riskStats.critical}</b></div><div className="flex justify-between"><span>High</span><b>{riskStats.high}</b></div><div className="flex justify-between"><span>Medium</span><b>{riskStats.medium}</b></div><div className="flex justify-between"><span>Low</span><b>{riskStats.low}</b></div></div></div><Link href="/risks" className="mt-3 inline-block text-[10px] font-semibold text-blue-600">View all risks</Link></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="font-bold">Evidence Status</h3><div className="mt-4 flex items-center gap-4"><Donut value={evidences.length ? evidenceStats.approved / evidences.length * 100 : 0} label="Approved" /><div className="w-full space-y-2 text-[11px]"><div className="flex justify-between"><span>Approved</span><b>{evidenceStats.approved}</b></div><div className="flex justify-between"><span>Pending</span><b>{evidenceStats.pending}</b></div><div className="flex justify-between"><span>Rejected</span><b>{evidenceStats.rejected}</b></div><div className="flex justify-between"><span>Draft</span><b>{evidenceStats.draft}</b></div></div></div><Link href="/evidences" className="mt-3 inline-block text-[10px] font-semibold text-blue-600">View all evidence</Link></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="font-bold">Remediation Status</h3><div className="mt-4 flex items-center gap-4"><Donut value={openTasks ? Math.max(0, 100 - openTasks * 5) : 100} label="Health" /><div className="w-full space-y-2 text-[11px]"><div className="flex justify-between"><span>Open Tasks</span><b>{openTasks}</b></div><div className="flex justify-between"><span>Open Gaps</span><b>{totalGaps}</b></div><div className="flex justify-between"><span>Completed</span><b>{Math.max(0, 100 - openTasks)}</b></div></div></div><Link href="/company/remediation" className="mt-3 inline-block text-[10px] font-semibold text-blue-600">View remediation center</Link></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 text-center shadow-sm"><h3 className="text-left font-bold">Overdue Tasks</h3><div className="mt-7 text-4xl font-bold text-red-500">{openTasks}</div><div className="mt-1 text-[11px] font-semibold text-red-500">High Priority</div><Link href="/company/tasks" className="mt-8 inline-block text-[10px] font-semibold text-blue-600">View tasks</Link></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><h3 className="font-bold">Recent Activities</h3><Link href="/admin/logs" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-2 divide-y divide-slate-100">{activities.length ? activities.map((item) => <div key={item.id} className="flex items-center gap-2 py-2.5"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">{item.icon === "evidence" ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}</div><div className="min-w-0 flex-1"><div className="truncate text-[10px] font-medium">{item.title}</div><div className="text-[9px] text-slate-400">{item.meta}</div></div><span className="text-[9px] text-slate-400">{item.time}</span></div>) : <div className="py-4 text-xs text-slate-400">No recent activities.</div>}</div></div>
         </section>
 
-        {/* LOWER SUMMARY */}
-        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1fr_1fr_0.7fr_1.2fr]">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="font-bold text-slate-900">Risk Summary</h3>
-            <div className="mt-5 flex items-center gap-5">
-              <Donut value={totalRisks ? (riskStats.critical / totalRisks) * 100 : 0} label="Critical" />
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Critical</span><b>{riskStats.critical}</b></div>
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">High</span><b>{riskStats.high}</b></div>
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Other</span><b>{riskStats.other}</b></div>
-              </div>
-            </div>
-            <Link href="/risks" className="mt-4 inline-flex text-xs font-semibold text-blue-600">View all risks</Link>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="font-bold text-slate-900">Evidence Status</h3>
-            <div className="mt-5 flex items-center gap-5">
-              <Donut value={evidences.length ? (evidenceStats.approved / evidences.length) * 100 : 0} label="Approved" />
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Approved</span><b>{evidenceStats.approved}</b></div>
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Pending</span><b>{evidenceStats.pending}</b></div>
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Rejected</span><b>{evidenceStats.rejected}</b></div>
-              </div>
-            </div>
-            <Link href="/evidences" className="mt-4 inline-flex text-xs font-semibold text-blue-600">View all evidence</Link>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="font-bold text-slate-900">Remediation Status</h3>
-            <div className="mt-5 flex items-center gap-5">
-              <Donut value={openTasks ? 100 - Math.min(100, openTasks * 5) : 100} label="Health" />
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Open tasks</span><b>{openTasks}</b></div>
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Open gaps</span><b>{totalGaps}</b></div>
-                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Worst gap</span><b>{safeNum(gaps?.summary?.worst_severity_score).toFixed(1)}</b></div>
-              </div>
-            </div>
-            <Link href="/company/remediation" className="mt-4 inline-flex text-xs font-semibold text-blue-600">View remediation center</Link>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="font-bold text-slate-900">Exposure</h3>
-            <div className="mt-5 flex flex-col items-center">
-              <Donut value={100 - exposure} label="Health" />
-              <div className={`mt-3 rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${statusClasses(exposureStatus)}`}>
-                {exposureStatus}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-slate-900">Recent Activities</h3>
-              <Link href="/admin/logs" className="text-xs font-semibold text-blue-600">View all</Link>
-            </div>
-            <div className="mt-4 divide-y divide-slate-100">
-              {activities.length === 0 ? (
-                <div className="py-4 text-xs text-slate-500">No recent activity available.</div>
-              ) : (
-                activities.map((activity) => (
-                  <div key={activity.id} className="flex items-center gap-3 py-3">
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
-                      {activity.icon === "evidence" ? <FileCheck2 size={14} /> : <AlertTriangle size={14} />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-medium text-slate-700">{activity.title}</div>
-                      <div className="text-[10px] text-slate-400">{activity.meta}</div>
-                    </div>
-                    <span className="whitespace-nowrap text-[10px] text-slate-400">{activity.time}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+        <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr]">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold">Quick Actions</h3><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">{[["New Risk", "/risks/create", <ShieldAlert size={18} />],["New Objective", "/company/objectives", <Target size={18} />],["New Process", "/company/processes", <Network size={18} />],["Add Standard", "/standards", <BookOpen size={18} />],["Add Evidence", "/evidences", <FolderOpen size={18} />],["Create Remediation", "/company/remediation", <Activity size={18} />],["New Task", "/company/tasks/create", <ListChecks size={18} />]].map(([label, href, icon]) => <Link key={String(label)} href={String(href)} className="flex min-h-24 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-center hover:border-blue-200 hover:bg-blue-50"><div className="mb-2 text-blue-600">{icon}</div><span className="text-[10px] font-semibold">{label}</span></Link>)}</div></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h3 className="font-bold">Foundation Snapshot</h3><Link href="/company/profile" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{[["Processes", "—", "/company/processes"],["Objectives", "—", "/company/objectives"],["Risks", totalRisks, "/risks"],["Standards", standards.length, "/standards"],["Controls", controlsCount || "—", "/controls"],["Locations", "—", "/company/locations"]].map(([label, value, href]) => <Link key={String(label)} href={String(href)} className="rounded-lg border border-slate-100 bg-slate-50 p-3 hover:bg-slate-100"><div className="text-[9px] text-slate-400">{label}</div><div className="mt-1 text-lg font-bold">{value}</div></Link>)}</div></div>
         </section>
 
-        {/* QUICK ACTIONS + FOUNDATION */}
-        <section className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="font-bold text-slate-900">Quick Actions</h2>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-              {[
-                ["New Risk", "/risks/create", <ShieldAlert size={18} />],
-                ["New Objective", "/company/objectives", <Target size={18} />],
-                ["New Process", "/company/processes", <Network size={18} />],
-                ["Add Standard", "/standards", <BookOpen size={18} />],
-                ["Add Evidence", "/evidences", <FolderOpen size={18} />],
-                ["Remediation", "/company/remediation", <Activity size={18} />],
-                ["New Task", "/company/tasks/create", <ListChecks size={18} />],
-              ].map(([label, href, icon]) => (
-                <Link key={String(label)} href={String(href)} className="flex min-h-24 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-2 text-center hover:border-blue-200 hover:bg-blue-50">
-                  <div className="mb-2 text-blue-600">{icon}</div>
-                  <span className="text-[11px] font-semibold text-slate-700">{label}</span>
-                </Link>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-slate-900">Foundation Snapshot</h2>
-                <p className="mt-1 text-xs text-slate-500">Core governance objects available to the company.</p>
-              </div>
-              <Link href="/company/profile" className="text-xs font-semibold text-blue-600">View all</Link>
-            </div>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Link href="/company/processes" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><Network size={15} className="text-emerald-600" /><div className="mt-2 text-lg font-bold">—</div><div className="text-[10px] text-slate-500">Processes</div></Link>
-              <Link href="/standards" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><BookOpen size={15} className="text-blue-600" /><div className="mt-2 text-lg font-bold">{standards.length}</div><div className="text-[10px] text-slate-500">Standards</div></Link>
-              <Link href="/risks" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><AlertTriangle size={15} className="text-amber-600" /><div className="mt-2 text-lg font-bold">{totalRisks}</div><div className="text-[10px] text-slate-500">Open risk universe</div></Link>
-              <Link href="/evidences" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><FolderOpen size={15} className="text-cyan-600" /><div className="mt-2 text-lg font-bold">{evidences.length}</div><div className="text-[10px] text-slate-500">Evidence</div></Link>
-              <Link href="/matrix" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><Layers3 size={15} className="text-violet-600" /><div className="mt-2 text-lg font-bold">{standardCoverage.length}</div><div className="text-[10px] text-slate-500">Frameworks evaluated</div></Link>
-              <Link href="/intelligence/gaps" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><TriangleAlert size={15} className="text-rose-600" /><div className="mt-2 text-lg font-bold">{totalGaps}</div><div className="text-[10px] text-slate-500">Open gaps</div></Link>
-            </div>
-          </div>
-        </section>
-
-        <footer className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-400">
-          © 2026 Compliance OS. All rights reserved.
-        </footer>
+        <footer className="mt-5 border-t border-slate-200 pt-4 text-center text-[10px] text-slate-400">© 2026 Compliance OS. All rights reserved.</footer>
       </div>
     </div>
   );
