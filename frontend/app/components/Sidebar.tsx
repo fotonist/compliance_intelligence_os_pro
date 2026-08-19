@@ -7,28 +7,20 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
-  Bell,
   BookOpen,
   Building2,
-  CheckSquare,
   ClipboardCheck,
   ClipboardList,
-  Database,
-  FileCheck2,
   FileText,
   Gauge,
-  Globe2,
   Layers3,
   LayoutDashboard,
   ListChecks,
   LogOut,
-  MapPin,
-  Network,
   Scale,
   Settings,
   Shield,
   ShieldCheck,
-  Target,
   TrendingUp,
   User,
   Users,
@@ -37,7 +29,7 @@ import {
 import PremiumMenuItem from "./PremiumMenuItem";
 import { apiFetch } from "../lib/api";
 
- type CurrentUser = {
+type CurrentUser = {
   id?: number | string;
   username?: string | null;
   full_name?: string | null;
@@ -127,8 +119,8 @@ export default function Sidebar() {
   function itemClass(href: string) {
     return `flex items-center gap-2 rounded-md px-3 py-1.5 text-[12px] transition ${
       isActive(href)
-        ? "bg-slate-800 font-semibold text-white"
-        : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+        ? "bg-[#eaf1fb] font-semibold text-[#0f2747]"
+        : "text-slate-600 hover:bg-slate-50 hover:text-[#0f2747]"
     }`;
   }
 
@@ -137,20 +129,20 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="flex min-h-screen w-64 shrink-0 flex-col border-r border-slate-800 bg-[#020817] px-3 py-4 text-slate-200">
+    <aside className="flex min-h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-3 py-4 text-slate-700">
       <div>
         <div className="mb-5 px-2">
-          <div className="flex items-center gap-2 text-lg font-bold tracking-tight">
-            <ShieldCheck size={21} className="text-emerald-400" />
+          <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-[#0f2747]">
+            <ShieldCheck size={21} className="text-emerald-500" />
             COMPLIANCE OS
           </div>
-          <div className="mt-1 text-[10px] text-slate-400">Governance &amp; Intelligence</div>
+          <div className="mt-1 text-[10px] text-slate-500">Governance &amp; Intelligence</div>
         </div>
 
         <Link
           href="/dashboard"
           className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
-            pathname === "/dashboard" ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-900"
+            pathname === "/dashboard" ? "bg-[#eaf1fb] text-[#0f2747]" : "text-slate-700 hover:bg-slate-50"
           }`}
         >
           <LayoutDashboard size={17} />
@@ -239,15 +231,15 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      <div className="mt-auto border-t border-slate-800 pt-3">
-        <div className="rounded-lg bg-slate-900/70 p-3">
+      <div className="mt-auto border-t border-slate-200 pt-3">
+        <div className="rounded-lg bg-slate-50 p-3">
           <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-slate-200">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaf1fb] text-[#0f2747]">
               <User size={15} />
             </div>
             <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-white">{currentUser?.full_name || currentUser?.username || "Logged in"}</div>
-              <div className="truncate text-[10px] text-slate-400">{currentUser?.role || "User"}</div>
+              <div className="truncate text-xs font-semibold text-[#0f2747]">{currentUser?.full_name || currentUser?.username || "Logged in"}</div>
+              <div className="truncate text-[10px] text-slate-500">{currentUser?.role || "User"}</div>
             </div>
           </div>
         </div>
@@ -260,7 +252,7 @@ export default function Sidebar() {
             sessionStorage.removeItem("token");
             router.replace("/login");
           }}
-          className="mt-3 flex items-center gap-2 px-2 text-xs text-red-400 hover:text-red-300"
+          className="mt-3 flex items-center gap-2 px-2 text-xs text-red-500 hover:text-red-600"
         >
           <LogOut size={14} /> Logout
         </button>
@@ -289,23 +281,23 @@ function Section({
   badge?: number;
 }) {
   return (
-    <div className="border-b border-slate-800/70 pb-1">
+    <div className="border-b border-slate-200/80 pb-1">
       <button
         type="button"
         onClick={() => toggle(id)}
-        className="flex w-full items-center justify-between px-2 py-2 text-left hover:text-white"
+        className="flex w-full items-center justify-between px-2 py-2 text-left hover:text-[#0f2747]"
       >
         <div className="flex min-w-0 items-center gap-2">
-          <span className="text-slate-400">{icon}</span>
+          <span className="text-slate-500">{icon}</span>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-slate-200">
+            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-[#0f2747]">
               {title}
               {!!badge && <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] text-white">{badge}</span>}
             </div>
             <div className="text-[9px] text-slate-500">{subtitle}</div>
           </div>
         </div>
-        <span className="text-slate-500">{open === id ? "⌄" : "›"}</span>
+        <span className="text-slate-400">{open === id ? "⌄" : "›"}</span>
       </button>
 
       {open === id && <div className="ml-3 space-y-0.5 pb-2">{children}</div>}
