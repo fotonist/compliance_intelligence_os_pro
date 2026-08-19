@@ -69,9 +69,20 @@ export default function Sidebar() {
 
   useEffect(() => {
     if (pathname.startsWith("/company") || pathname.startsWith("/standards")) setOpen("foundation");
-    else if (pathname.startsWith("/governance") || pathname.startsWith("/matrix") || pathname.startsWith("/clause-weights") || pathname.startsWith("/risk-appetite")) setOpen("governance");
+    else if (
+      pathname.startsWith("/governance") ||
+      pathname.startsWith("/matrix") ||
+      pathname.startsWith("/clause-weights") ||
+      pathname.startsWith("/risk-appetite")
+    ) setOpen("governance");
     else if (pathname.startsWith("/intelligence")) setOpen("intelligence");
-    else if (pathname.startsWith("/risks") || pathname.startsWith("/evidences") || pathname.startsWith("/controls") || pathname.startsWith("/requirements") || pathname.startsWith("/clauses")) setOpen("operation");
+    else if (
+      pathname.startsWith("/risks") ||
+      pathname.startsWith("/evidences") ||
+      pathname.startsWith("/controls") ||
+      pathname.startsWith("/requirements") ||
+      pathname.startsWith("/clauses")
+    ) setOpen("operation");
     else if (pathname.startsWith("/audit")) setOpen("audit");
     else if (pathname.startsWith("/admin") || pathname.startsWith("/settings")) setOpen("admin");
     else setOpen(null);
@@ -114,13 +125,20 @@ export default function Sidebar() {
   function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
     if (href === "/matrix") {
-      return pathname === "/matrix" || pathname === "/matrix/instances" || pathname.startsWith("/matrix/instances/") || pathname === "/matrix/builder";
+      return (
+        pathname === "/matrix" ||
+        pathname === "/matrix/instances" ||
+        pathname.startsWith("/matrix/instances/") ||
+        pathname === "/matrix/builder"
+      );
     }
     return pathname === href || pathname.startsWith(`${href}/`);
   }
 
-  function itemClass(href: string) {
-    return `flex items-center gap-2 rounded-md px-3 py-1.5 text-[12px] transition ${
+  function itemClass(href: string, nested = false) {
+    return `flex items-center gap-2 rounded-md py-1.5 text-[12px] transition ${
+      nested ? "pl-7 pr-3" : "px-3"
+    } ${
       isActive(href)
         ? "bg-[#eaf1fb] font-semibold text-[#0f2747]"
         : "text-slate-600 hover:bg-slate-50 hover:text-[#0f2747]"
@@ -148,7 +166,12 @@ export default function Sidebar() {
     >
       <div className="min-w-0">
         <div className={`mb-4 flex items-center ${collapsed ? "justify-center" : "justify-between px-2"}`}>
-          <div className={`flex items-center gap-2 text-lg font-bold tracking-tight text-[#0f2747] ${collapsed ? "justify-center" : ""}`} title="Compliance OS">
+          <div
+            className={`flex items-center gap-2 text-lg font-bold tracking-tight text-[#0f2747] ${
+              collapsed ? "justify-center" : ""
+            }`}
+            title="Compliance OS"
+          >
             <ShieldCheck size={21} className="shrink-0 text-emerald-500" />
             {!collapsed && <span>COMPLIANCE OS</span>}
           </div>
@@ -174,7 +197,9 @@ export default function Sidebar() {
           className={`mb-3 flex items-center rounded-lg py-2 text-sm font-semibold transition ${
             collapsed ? "justify-center px-2" : "gap-2 px-3"
           } ${
-            pathname === "/dashboard" ? "bg-[#eaf1fb] text-[#0f2747]" : "text-slate-700 hover:bg-slate-50"
+            pathname === "/dashboard"
+              ? "bg-[#eaf1fb] text-[#0f2747]"
+              : "text-slate-700 hover:bg-slate-50"
           }`}
         >
           <LayoutDashboard size={17} />
@@ -182,7 +207,15 @@ export default function Sidebar() {
         </Link>
 
         <nav className="space-y-1">
-          <Section title="FOUNDATION" subtitle="Şirket Temeli" icon={<Building2 size={16} />} id="foundation" open={open} toggle={sectionToggle} collapsed={collapsed}>
+          <Section
+            title="FOUNDATION"
+            subtitle="Şirket Temeli"
+            icon={<Building2 size={16} />}
+            id="foundation"
+            open={open}
+            toggle={sectionToggle}
+            collapsed={collapsed}
+          >
             <Link href="/company/profile" className={itemClass("/company/profile")}><Building2 size={14} />Company Profile</Link>
             <Link href="/company/processes" className={itemClass("/company/processes")}><Workflow size={14} />Processes</Link>
             <PremiumMenuItem label="Objectives" />
@@ -195,7 +228,15 @@ export default function Sidebar() {
             <PremiumMenuItem label="Policies" />
           </Section>
 
-          <Section title="GOVERNANCE" subtitle="Yönetişim" icon={<Scale size={16} />} id="governance" open={open} toggle={sectionToggle} collapsed={collapsed}>
+          <Section
+            title="GOVERNANCE"
+            subtitle="Yönetişim"
+            icon={<Scale size={16} />}
+            id="governance"
+            open={open}
+            toggle={sectionToggle}
+            collapsed={collapsed}
+          >
             <PremiumMenuItem label="Governance Dashboard" />
             <PremiumMenuItem label="Policies & Procedures" />
             <PremiumMenuItem label="Roles & Responsibilities" />
@@ -210,10 +251,22 @@ export default function Sidebar() {
             <Link href="/risk-appetite" className={itemClass("/risk-appetite")}><Shield size={14} />Risk Appetite</Link>
           </Section>
 
-          <Section title="INTELLIGENCE" subtitle="Zeka & Analitik" icon={<BarChart3 size={16} />} id="intelligence" open={open} toggle={sectionToggle} badge={alertCount} collapsed={collapsed}>
+          <Section
+            title="INTELLIGENCE"
+            subtitle="Zeka & Analitik"
+            icon={<BarChart3 size={16} />}
+            id="intelligence"
+            open={open}
+            toggle={sectionToggle}
+            badge={alertCount}
+            collapsed={collapsed}
+          >
             <Link href="/intelligence/executive" className={itemClass("/intelligence/executive")}><Gauge size={14} />Executive Intelligence</Link>
+            <Link href="/intelligence/readiness/processes" className={itemClass("/intelligence/readiness/processes")}><Gauge size={14} />Executive Readiness</Link>
+            <Link href="/intelligence/gaps" className={itemClass("/intelligence/gaps")}><AlertTriangle size={14} />Gap Intelligence</Link>
             <PremiumMenuItem label="Reports & Insights" />
             <Link href="/intelligence/risk" className={itemClass("/intelligence/risk")}><AlertTriangle size={14} />Risk Intelligence</Link>
+            <Link href="/intelligence/control/control-health" className={itemClass("/intelligence/control/control-health")}><ShieldCheck size={14} />Control Health</Link>
             <Link href="/intelligence" className={itemClass("/intelligence")}><BarChart3 size={14} />Compliance Analytics</Link>
             <PremiumMenuItem label="Trend Analysis" />
             <PremiumMenuItem label="Predictive Insights" />
@@ -222,7 +275,15 @@ export default function Sidebar() {
             <PremiumMenuItem label="Data Explorer" />
           </Section>
 
-          <Section title="OPERATION" subtitle="Operasyon" icon={<Activity size={16} />} id="operation" open={open} toggle={sectionToggle} collapsed={collapsed}>
+          <Section
+            title="OPERATION"
+            subtitle="Operasyon"
+            icon={<Activity size={16} />}
+            id="operation"
+            open={open}
+            toggle={sectionToggle}
+            collapsed={collapsed}
+          >
             <Link href="/matrix" className={itemClass("/matrix")}><Layers3 size={14} />Compliance Matrix</Link>
             <Link href="/controls" className={itemClass("/controls")}><ShieldCheck size={14} />Control Management</Link>
             <Link href="/requirements" className={itemClass("/requirements")}><ListChecks size={14} />Requirement Management</Link>
@@ -230,25 +291,42 @@ export default function Sidebar() {
             <Link href="/standards" className={itemClass("/standards")}><BookOpen size={14} />Standard Management</Link>
             <Link href="/risks" className={itemClass("/risks")}><AlertTriangle size={14} />Risk Management</Link>
             <Link href="/evidences" className={itemClass("/evidences")}><FolderIcon />Evidence Management</Link>
+            <Link href="/company/evidence/review" className={itemClass("/company/evidence/review", true)}><ClipboardCheck size={13} />Evidence Review</Link>
             <PremiumMenuItem label="Remediation Center" />
             <PremiumMenuItem label="Action Management" />
             <Link href="/company/tasks" className={itemClass("/company/tasks")}><ClipboardList size={14} />Task Management</Link>
           </Section>
 
-          <Section title="INTERNAL AUDIT" subtitle="İç Denetim" icon={<ClipboardCheck size={16} />} id="audit" open={open} toggle={sectionToggle} collapsed={collapsed}>
+          <Section
+            title="INTERNAL AUDIT"
+            subtitle="İç Denetim"
+            icon={<ClipboardCheck size={16} />}
+            id="audit"
+            open={open}
+            toggle={sectionToggle}
+            collapsed={collapsed}
+          >
             <PremiumMenuItem label="Audit Dashboard" />
             <Link href="/audit/planning" className={itemClass("/audit/planning")}><ClipboardList size={14} />Audit Planning</Link>
             <PremiumMenuItem label="Audit Programs" />
             <PremiumMenuItem label="Audit Checklists" />
             <PremiumMenuItem label="Audit Execution" />
-            <PremiumMenuItem label="Findings Management" />
+            <Link href="/audit/findings" className={itemClass("/audit/findings")}><AlertTriangle size={14} />Findings / Nonconformity Management</Link>
             <PremiumMenuItem label="Audit Reports" />
             <PremiumMenuItem label="Follow-up Actions" />
             <PremiumMenuItem label="Audit Analytics" />
             <PremiumMenuItem label="Auditor Management" />
           </Section>
 
-          <Section title="ADMINISTRATION" subtitle="Yönetim" icon={<Settings size={16} />} id="admin" open={open} toggle={sectionToggle} collapsed={collapsed}>
+          <Section
+            title="ADMINISTRATION"
+            subtitle="Yönetim"
+            icon={<Settings size={16} />}
+            id="admin"
+            open={open}
+            toggle={sectionToggle}
+            collapsed={collapsed}
+          >
             <Link href="/admin/users" className={itemClass("/admin/users")}><Users size={14} />Users</Link>
             <PremiumMenuItem label="Roles & Permissions" />
             <PremiumMenuItem label="Departments" />
@@ -264,7 +342,10 @@ export default function Sidebar() {
       </div>
 
       <div className="mt-auto border-t border-slate-200 pt-3">
-        <div className={`rounded-lg bg-slate-50 p-2 ${collapsed ? "flex justify-center" : "p-3"}`} title={collapsed ? (currentUser?.full_name || currentUser?.username || "Logged in") : undefined}>
+        <div
+          className={`rounded-lg bg-slate-50 p-2 ${collapsed ? "flex justify-center" : "p-3"}`}
+          title={collapsed ? (currentUser?.full_name || currentUser?.username || "Logged in") : undefined}
+        >
           <div className={`flex items-center ${collapsed ? "justify-center" : "gap-2"}`}>
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eaf1fb] text-[#0f2747]">
               <User size={15} />
@@ -332,14 +413,13 @@ function Section({
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-[#0f2747]">
                 {title}
-                {!!badge && <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] text-white">{badge}</span>}
+                {!!badge && <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[9px] font-bold text-white">{badge}</span>}
               </div>
               <div className="text-[9px] text-slate-500">{subtitle}</div>
             </div>
           )}
-          {collapsed && !!badge && <span className="ml-1 h-2 w-2 rounded-full bg-red-600" />}
         </div>
-        {!collapsed && <span className="text-slate-400">{open === id ? "⌄" : "›"}</span>}
+        {!collapsed && <span className="text-slate-400">{open === id ? "⌃" : "›"}</span>}
       </button>
 
       {!collapsed && open === id && <div className="ml-3 space-y-0.5 pb-2">{children}</div>}
