@@ -41,7 +41,6 @@ export default function LoginPage() {
       localStorage.setItem("token_type", data.token_type ?? "bearer");
       document.cookie = `access_token=${data.access_token}; path=/; SameSite=Lax`;
 
-      // Company Home is the authenticated landing page.
       router.replace("/dashboard");
     } catch (err) {
       console.error(err);
@@ -54,7 +53,6 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-[#102a43]">
       <div className="grid min-h-screen lg:grid-cols-[minmax(460px,0.95fr)_minmax(520px,1.05fr)]">
-        {/* BRAND PANEL */}
         <aside className="relative hidden overflow-hidden bg-[#061426] lg:flex lg:flex-col lg:justify-between">
           <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
           <div className="absolute -bottom-40 -left-32 h-96 w-96 rounded-full bg-emerald-400/10 blur-3xl" />
@@ -62,12 +60,12 @@ export default function LoginPage() {
           <div className="relative z-10 p-12 xl:p-16">
             <div className="mb-12 inline-flex rounded-2xl bg-white px-5 py-4 shadow-2xl shadow-black/20">
               <Image
-                src="/complianceos-logo.png"
+                src="/complianceos-logo.svg"
                 alt="ComplianceOS Pro"
-                width={210}
-                height={90}
+                width={260}
+                height={80}
                 priority
-                className="h-auto w-[190px] object-contain"
+                className="h-auto w-[230px] object-contain"
               />
             </div>
 
@@ -98,18 +96,17 @@ export default function LoginPage() {
           </div>
         </aside>
 
-        {/* LOGIN PANEL */}
         <main className="flex items-center justify-center px-5 py-10 sm:px-8 lg:px-12 xl:px-20">
           <div className="w-full max-w-[470px]">
             <div className="mb-8 lg:hidden">
               <div className="inline-flex rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
                 <Image
-                  src="/complianceos-logo.png"
+                  src="/complianceos-logo.svg"
                   alt="ComplianceOS Pro"
-                  width={170}
-                  height={72}
+                  width={220}
+                  height={70}
                   priority
-                  className="h-auto w-[155px] object-contain"
+                  className="h-auto w-[200px] object-contain"
                 />
               </div>
             </div>
