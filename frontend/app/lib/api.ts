@@ -18,6 +18,14 @@ export async function apiFetch(
     ? path
     : `/${path}`;
 
+  // Company Home historically requested /matrix/kpi.
+  // Keep that client contract while routing strategic KPI reads
+  // through the canonical tenant-safe UEE endpoint.
+  const requestPath =
+    safePath === "/matrix/kpi"
+      ? "/kpi/summary"
+      : safePath;
+
   const headers: HeadersInit = {};
 
   if (!(options.body instanceof FormData)) {
@@ -33,7 +41,7 @@ export async function apiFetch(
   }
 
   const res = await fetch(
-    `${API_BASE}${safePath}`,
+    `${API_BASE}${requestPath}`,
     {
       ...options,
       headers,
