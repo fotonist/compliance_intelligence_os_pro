@@ -58,6 +58,7 @@ from app.routes.audit import router as audit_router
 from app.routes.audit_findings import router as audit_findings_router
 from app.routes.audit_finding_workflow import router as audit_finding_workflow_router
 from app.routes.actions import router as actions_router
+from app.routes.company_home import router as company_home_router
 
 # ==============================
 # MODELS (metadata load safety)
@@ -148,6 +149,7 @@ app.include_router(matrix_view_router)
 app.include_router(matrix_router)
 app.include_router(assessments.router)
 app.include_router(kpi_router)
+app.include_router(company_home_router)
 app.include_router(control_assessments_router)
 app.include_router(evidence_files_router)
 app.include_router(user_router)
