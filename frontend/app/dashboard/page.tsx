@@ -9,7 +9,6 @@ import {
   Bell,
   BookOpen,
   CheckCircle2,
-  ClipboardList,
   FolderOpen,
   Gauge,
   Layers3,
@@ -68,19 +67,6 @@ type IntelligenceOverview = {
     executive_alerts: number;
     avg_escalation_probability: number;
   };
-  top_risks?: Array<{
-    risk_id: number;
-    title?: string | null;
-    risk_level?: string | null;
-    escalation_probability_30d: number;
-    control_code?: string | null;
-  }>;
-  top_controls?: Array<{
-    control_id: number;
-    control_code?: string | null;
-    control_title?: string | null;
-    ai_priority_score: number;
-  }>;
   executive_alerts?: Array<{
     risk_id: number;
     title?: string | null;
@@ -122,9 +108,6 @@ type TrendPoint = {
   date: string;
   risk_exposure_pct?: number;
   approvals?: number;
-  compliance_health?: number;
-  control_coverage?: number;
-  evidence_strength?: number;
 };
 
 type CurrentUser = {
@@ -225,7 +208,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<UeeSummary | null>(null);
   const [overview, setOverview] = useState<IntelligenceOverview | null>(null);
   const [gaps, setGaps] = useState<GapResponse | null>(null);
-  const [health, setHealth] = useState<ControlHealth | null>(null);
+  const [controlHealth, setControlHealth] = useState<ControlHealth | null>(null);
   const [standards, setStandards] = useState<Standard[]>([]);
   const [coverage, setCoverage] = useState<{ id: number; code: string; type: Standard["type"]; score: number }[]>([]);
   const [evidences, setEvidences] = useState<Evidence[]>([]);
@@ -269,7 +252,7 @@ export default function DashboardPage() {
         setSummary(summaryData || null);
         setOverview(overviewData || null);
         setGaps(gapsData || null);
-        setHealth(healthData || null);
+        setControlHealth(healthData || null);
         setStandards(Array.isArray(standardsData) ? standardsData : []);
         setEvidences(Array.isArray(evidenceData) ? evidenceData : []);
         setRisks(Array.isArray(risksData?.items) ? risksData.items : []);
@@ -380,14 +363,13 @@ export default function DashboardPage() {
 
   const complianceHealth = clamp(num(summary.compliance_health_index));
   const exposure = clamp(num(summary.unified_exposure_score));
-  const health = healthStatus(complianceHealth);
+  const complianceStatus = healthStatus(complianceHealth);
   const exposureState = exposureStatus(exposure);
   const totalRisks = num(overview.summary.total_risks);
   const openRisks = num(overview.summary.open_risks, totalRisks);
   const totalGaps = num(gaps?.summary?.gaps_total);
-  const openTasks = num(health?.open_tasks);
+  const openTasks = num(controlHealth?.open_tasks);
   const standardRows = coverage;
-  const avgCoverage = standardRows.length ? Math.round(standardRows.reduce((sum, item) => sum + item.score, 0) / standardRows.length) : 0;
 
   const chartData = trend.map((item) => ({
     ...item,
@@ -421,7 +403,7 @@ export default function DashboardPage() {
         </div>
 
         <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <KpiCard title="Compliance Health" value={`${Math.round(complianceHealth)}%`} subtitle={<><span className="font-semibold">{statusText(health)}</span><span className="ml-2 text-emerald-600">▲ Current</span></>} icon={<ShieldCheck size={21} className="text-emerald-600" />} tone="bg-emerald-50" />
+          <KpiCard title="Compliance Health" value={`${Math.round(complianceHealth)}%`} subtitle={<><span className="font-semibold">{statusText(complianceStatus)}</span><span className="ml-2 text-emerald-600">▲ Current</span></>} icon={<ShieldCheck size={21} className="text-emerald-600" />} tone="bg-emerald-50" />
           <KpiCard title="Standards" value={standards.length} subtitle="Active Standards" icon={<BookOpen size={21} className="text-blue-600" />} href="/standards" tone="bg-blue-50" />
           <KpiCard title="Controls" value={controlsCount || "—"} subtitle="Active Controls" icon={<Layers3 size={21} className="text-violet-600" />} href="/controls" tone="bg-violet-50" />
           <KpiCard title="Risks" value={totalRisks} subtitle={<><span>{openRisks} Open Risks</span><span className="ml-2 font-semibold text-red-500">{riskStats.critical} Critical</span></>} icon={<AlertTriangle size={21} className="text-amber-600" />} href="/risks" tone="bg-amber-50" />
