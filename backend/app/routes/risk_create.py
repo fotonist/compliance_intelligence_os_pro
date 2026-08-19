@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
+from app.models.evidences import Evidence
+from app.models.evidence_files import EvidenceFile
+from app.models.risk_evidence_link import RiskEvidenceLink
 
 
 router = APIRouter(prefix="/risks", tags=["Risks"])
@@ -390,4 +393,257 @@ def update_risk(
         "score": score,
         "risk_level": risk_level,
         "status": status,
+    }
+
+
+# ============================================================
+# CANONICAL RISK -> EVIDENCE
+# RiskVersion -> RiskEvidenceLink -> EvidenceFile -> Evidence
+# ============================================================
+
+def _latest_risk_version(
+    db: Session,
+    risk_id: int,
+    tenant_id: int,
+):
+    return (
+        db.query(
+            text("1")
+        )
+        if False
+        else db.execute(
+            text(
+                """
+                SELECT id, version_number, score, risk_level, status
+                FROM risk_versions
+                WHERE risk_id = :risk_id
+                  AND tenant_id = :tenant_id
+                ORDER BY version_number DESC, id DESC
+                LIMIT 1
+                """
+            ),
+            {"risk_id": risk_id, "tenant_id": tenant_id},
+        ).mappings().first()
+    )
+
+
+@router.get("/{risk_id}/evidence")
+def get_risk_evidence(
+    risk_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
+    risk_exists = db.execute(
+        text(
+            """
+            SELECT id
+            FROM risks
+            WHERE id = :risk_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {"risk_id": risk_id, "tenant_id": tenant_id},
+    ).scalar()
+
+    if risk_exists is None:
+        raise HTTPException(status_code=404, detail="Risk not found")
+
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT
+                e.id AS evidence_id,
+                e.title,
+                e.status,
+                ef.id AS evidence_file_id,
+                ef.file_name,
+                ef.version AS file_version,
+                ef.status AS file_status,
+                rel.risk_version_id,
+                rv.version_number AS risk_version
+            FROM risk_evidence_link rel
+            JOIN risk_versions rv
+              ON rv.id = rel.risk_version_id
+             AND rv.tenant_id = :tenant_id
+            JOIN evidence_files ef
+              ON ef.id = rel.evidence_file_id
+             AND ef.tenant_id = :tenant_id
+            JOIN evidences e
+              ON e.id = ef.evidence_id
+             AND e.tenant_id = :tenant_id
+            WHERE rv.risk_id = :risk_id
+              AND e.is_deleted = false
+            ORDER BY e.id DESC, ef.version DESC
+            """
+        ),
+        {"risk_id": risk_id, "tenant_id": tenant_id},
+    ).mappings().all()
+
+    return {
+        "risk_id": risk_id,
+        "items": [dict(row) for row in rows],
+        "total": len(rows),
+    }
+
+
+@router.post("/{risk_id}/evidence/{evidence_id}")
+def link_risk_evidence(
+    risk_id: int,
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
+    risk = db.execute(
+        text(
+            """
+            SELECT id
+            FROM risks
+            WHERE id = :risk_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {"risk_id": risk_id, "tenant_id": tenant_id},
+    ).scalar()
+
+    if risk is None:
+        raise HTTPException(status_code=404, detail="Risk not found")
+
+    evidence = db.execute(
+        text(
+            """
+            SELECT id
+            FROM evidences
+            WHERE id = :evidence_id
+              AND tenant_id = :tenant_id
+              AND is_deleted = false
+            """
+        ),
+        {"evidence_id": evidence_id, "tenant_id": tenant_id},
+    ).scalar()
+
+    if evidence is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    latest_version = _latest_risk_version(db, risk_id, tenant_id)
+    if latest_version is None:
+        raise HTTPException(status_code=409, detail="Risk has no version")
+
+    file_rows = db.execute(
+        text(
+            """
+            SELECT id, version
+            FROM evidence_files
+            WHERE evidence_id = :evidence_id
+              AND tenant_id = :tenant_id
+            ORDER BY version DESC, id DESC
+            """
+        ),
+        {"evidence_id": evidence_id, "tenant_id": tenant_id},
+    ).mappings().all()
+
+    if not file_rows:
+        raise HTTPException(status_code=400, detail="Evidence has no files")
+
+    inserted = 0
+    for file_row in file_rows:
+        exists = db.execute(
+            text(
+                """
+                SELECT id
+                FROM risk_evidence_link
+                WHERE tenant_id = :tenant_id
+                  AND risk_version_id = :risk_version_id
+                  AND evidence_file_id = :evidence_file_id
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "risk_version_id": latest_version["id"],
+                "evidence_file_id": file_row["id"],
+            },
+        ).scalar()
+
+        if exists is not None:
+            continue
+
+        db.add(
+            RiskEvidenceLink(
+                tenant_id=tenant_id,
+                risk_version_id=latest_version["id"],
+                evidence_file_id=file_row["id"],
+            )
+        )
+        inserted += 1
+
+    db.commit()
+
+    return {
+        "linked": True,
+        "risk_id": risk_id,
+        "evidence_id": evidence_id,
+        "risk_version_id": latest_version["id"],
+        "files_linked": inserted,
+    }
+
+
+@router.delete("/{risk_id}/evidence/{evidence_id}")
+def unlink_risk_evidence(
+    risk_id: int,
+    evidence_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
+    risk_exists = db.execute(
+        text(
+            """
+            SELECT id
+            FROM risks
+            WHERE id = :risk_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {"risk_id": risk_id, "tenant_id": tenant_id},
+    ).scalar()
+
+    if risk_exists is None:
+        raise HTTPException(status_code=404, detail="Risk not found")
+
+    deleted = db.execute(
+        text(
+            """
+            DELETE FROM risk_evidence_link rel
+            USING risk_versions rv, evidence_files ef
+            WHERE rel.risk_version_id = rv.id
+              AND rel.evidence_file_id = ef.id
+              AND rel.tenant_id = :tenant_id
+              AND rv.tenant_id = :tenant_id
+              AND ef.tenant_id = :tenant_id
+              AND rv.risk_id = :risk_id
+              AND ef.evidence_id = :evidence_id
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "risk_id": risk_id,
+            "evidence_id": evidence_id,
+        },
+    )
+
+    if deleted.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Risk-evidence link not found")
+
+    db.commit()
+
+    return {
+        "unlinked": True,
+        "risk_id": risk_id,
+        "evidence_id": evidence_id,
+        "links_removed": deleted.rowcount,
     }
