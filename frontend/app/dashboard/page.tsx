@@ -1,76 +1,126 @@
-﻿// C:\Projects\compliance_app\frontend\app\dashboard\page.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import AIInsightBox from "../components/AIInsightBox";
-import PremiumFeatureCard from "../components/PremiumFeatureCard";
-import { apiFetch } from "../lib/api";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import {
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-
-/* =====================================================
-   TYPES
-===================================================== */
+  Activity,
+  AlertTriangle,
+  ArrowUpRight,
+  BarChart3,
+  BookOpen,
+  CheckCircle2,
+  ClipboardCheck,
+  ClipboardList,
+  FileCheck2,
+  FolderOpen,
+  Gauge,
+  Layers3,
+  ListChecks,
+  Network,
+  ShieldAlert,
+  ShieldCheck,
+  Target,
+  TrendingUp,
+  TriangleAlert,
+} from "lucide-react";
+import AIInsightBox from "../components/AIInsightBox";
+import { apiFetch } from "../lib/api";
 
 type Status = "ok" | "warning" | "critical";
 
-type RejectedTrendItem = {
-  date: string;
-  rejected_count: number;
-};
-
-type MttrTrendItem = {
-  date: string;
-  avg_hours: number;
-};
-
-type MttrDetailRow = {
-  evidence_id: number;
-  first_rejected_at: string | null;
-  first_approved_at: string | null;
-  recovery_hours: number;
-};
-
-type PendingAging = {
-  avg_days: number;
-  oldest_days: number;
-};
-
 type UeeSummary = {
-  tenant_id: number;
-  computed_at: string;
-
-  indices: {
-    risk: number;
-    coverage: number;
-    maturity: number;
-    evidence: number;
-    task_pressure: number;
+  indices?: {
+    risk?: number;
+    coverage?: number;
+    maturity?: number;
+    evidence?: number;
+    task_pressure?: number;
   };
-
   unified_exposure_score: number;
   compliance_health_index: number;
-
-  weights?: Record<string, number>;
-  components?: Record<string, number>;
-  source_stats?: Record<string, any>;
-  warnings?: string[];
 };
 
-type KpiStatusMeta = {
-  exposure_status?: Status;
-  health_status?: Status;
+type Standard = {
+  id: number;
+  code: string;
+  title?: string;
+  type: "CONTROL_BASED" | "MATURITY_BASED";
+};
+
+type MatrixRow = {
+  coverage_status?: string | null;
+  evidence_count?: number | null;
+  target_level?: number | null;
+  achieved_level?: number | null;
+};
+
+type MatrixResponse = {
+  mode?: "control" | "maturity";
+  rows?: MatrixRow[];
+};
+
+type IntelligenceOverview = {
+  summary: {
+    total_risks: number;
+    open_risks?: number;
+    forecasted_risks: number;
+    high_probability_risks: number;
+    executive_alerts: number;
+    avg_escalation_probability: number;
+  };
+  top_risks?: Array<{
+    risk_id: number;
+    title?: string | null;
+    risk_level?: string | null;
+    current_score?: number | null;
+    escalation_probability_30d: number;
+    control_code?: string | null;
+  }>;
+  top_controls?: Array<{
+    control_id: number;
+    control_code?: string | null;
+    control_title?: string | null;
+    ai_priority_score: number;
+  }>;
+  executive_alerts?: Array<{
+    risk_id: number;
+    title?: string | null;
+    risk_level?: string | null;
+    escalation_probability_30d: number;
+    control_code?: string | null;
+  }>;
+};
+
+type GapResponse = {
+  summary?: {
+    gaps_total?: number;
+    uncovered?: number;
+    partial?: number;
+    worst_severity_score?: number;
+  };
+};
+
+type ControlHealth = {
+  linked_risks?: number;
+  high_risks?: number;
+  critical_risks?: number;
+  open_tasks?: number;
+  evidence_count?: number;
+  health_index?: number;
+};
+
+type Evidence = {
+  id: number;
+  title?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+};
+
+type Risk = {
+  id: number;
+  title?: string | null;
+  risk_level?: string | null;
+  created_at?: string | null;
 };
 
 type AIInsight = {
@@ -80,625 +130,663 @@ type AIInsight = {
   actions: string[];
 };
 
-type Toast = {
+type StandardCoverage = {
   id: number;
-  status: Status;
-  message: string;
+  code: string;
+  title?: string;
+  type: Standard["type"];
+  score: number;
 };
 
-/* ===========================================
-   KPI INFO (ICON + COLLAPSIBLE)  ✅ NEW
-=========================================== */
+type ActivityItem = {
+  id: string;
+  title: string;
+  meta: string;
+  time: string;
+  icon: "evidence" | "risk";
+};
 
-function KpiInfo({
-  title = "Explanation",
-  children,
-}: {
-  title?: string;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
+function safeNum(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
+function clamp(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function classifyHealth(value: number): Status {
+  if (value >= 75) return "ok";
+  if (value >= 50) return "warning";
+  return "critical";
+}
+
+function classifyExposure(value: number): Status {
+  if (value <= 25) return "ok";
+  if (value <= 50) return "warning";
+  return "critical";
+}
+
+function statusClasses(status: Status) {
+  if (status === "critical") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+  if (status === "warning") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
+}
+
+function progressClass(value: number) {
+  if (value >= 75) return "bg-emerald-500";
+  if (value >= 50) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function Donut({ value, label }: { value: number; label: string }) {
+  const safe = clamp(value);
   return (
-    <div className="mb-3">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-xs text-slate-400 hover:text-slate-200 inline-flex items-center gap-2"
-        aria-expanded={open}
-      >
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-600 bg-slate-900/40 text-slate-200">
-          i
-        </span>
-        <span>{title}</span>
-        <span className="text-slate-500">{open ? "▲" : "▼"}</span>
-      </button>
+    <div
+      className="relative h-28 w-28 rounded-full"
+      style={{
+        background: `conic-gradient(#22c55e ${safe * 3.6}deg, #e5e7eb 0deg)`,
+      }}
+    >
+      <div className="absolute inset-[11px] flex flex-col items-center justify-center rounded-full bg-white">
+        <span className="text-xl font-bold text-slate-800">{Math.round(safe)}</span>
+        <span className="text-[10px] text-slate-500">{label}</span>
+      </div>
+    </div>
+  );
+}
 
-      {open && (
-        <div className="mt-2 rounded border border-slate-700 bg-slate-900/50 p-3 text-xs text-slate-300 space-y-2">
-          {children}
+function KpiCard({
+  title,
+  value,
+  subtitle,
+  icon,
+  href,
+  status,
+  accent,
+}: {
+  title: string;
+  value: string | number;
+  subtitle: string;
+  icon: React.ReactNode;
+  href?: string;
+  status?: Status;
+  accent: string;
+}) {
+  const content = (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
+      <div className="flex items-start justify-between">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${accent}`}>
+          {icon}
+        </div>
+        {status && (
+          <span className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase ${statusClasses(status)}`}>
+            {status}
+          </span>
+        )}
+      </div>
+      <div className="mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        {title}
+      </div>
+      <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
+      <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
+      {href && (
+        <div className="mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">
+          View all <ArrowUpRight size={12} />
         </div>
       )}
     </div>
   );
+
+  return href ? <Link href={href}>{content}</Link> : content;
 }
-
-/* ===========================================
-   API
-=========================================== */
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://compliance-intelligence-os-pro-2.onrender.com";
-
-/* ===========================================
-   TOOLTIP (DB + FORMULA)
-=========================================== */
-
-function DbTooltip({
-  active,
-  payload,
-  title,
-  total,
-  formula,
-}: {
-  active?: boolean;
-  payload?: any[];
-  title: string;
-  total?: number;
-  formula: string;
-}) {
-  if (!active || !payload || !payload.length) return null;
-  const { name, value } = payload[0];
-  const pct = total && total > 0 ? Math.round((value / total) * 100) : null;
-
-  return (
-    <div className="rounded-md border border-slate-600 bg-slate-900/95 p-3 text-sm shadow-lg">
-      <div className="font-semibold text-slate-100 mb-1">{title}</div>
-      <div className="text-slate-300 space-y-1">
-        <div>
-          <b>{name}:</b> {value}
-        </div>
-        {total !== undefined && (
-          <div>
-            <b>Total:</b> {total}
-          </div>
-        )}
-        {pct !== null && (
-          <div>
-            <b>Rate:</b> {pct}%
-          </div>
-        )}
-      </div>
-      <div className="mt-2 pt-2 border-t border-slate-700 text-xs text-slate-400">
-        {formula}
-      </div>
-    </div>
-  );
-}
-
-/* ===========================================
-   HELPERS
-=========================================== */
-
-function fmtHours(hours: number) {
-  if (!Number.isFinite(hours)) return "-";
-  if (hours < 24) return `${hours.toFixed(1)} hrs`;
-  return `${(hours / 24).toFixed(1)} days`;
-}
-
-function fmtDateTime(iso: string | null) {
-  if (!iso) return "-";
-  return new Date(iso).toLocaleString();
-}
-
-function bannerStyle(status: Status) {
-  switch (status) {
-    case "critical":
-      return "border-red-500 bg-red-950/40 text-red-200";
-    case "warning":
-      return "border-yellow-500 bg-yellow-950/40 text-yellow-200";
-    default:
-      return "border-green-500 bg-green-950/40 text-green-200";
-  }
-}
-
-function bannerText(meta: KpiStatusMeta) {
-  if (meta.exposure_status === "critical") {
-    return "Unified exposure is CRITICAL. Immediate action is required.";
-  }
-  if (meta.health_status === "critical") {
-    return "Compliance health is CRITICAL. Immediate action is required.";
-  }
-  if (meta.exposure_status === "warning") {
-    return "Unified exposure is in WARNING zone. Monitoring and remediation are recommended.";
-  }
-  if (meta.health_status === "warning") {
-    return "Compliance health is in WARNING zone. Monitoring and remediation are recommended.";
-  }
-  return "All key compliance indicators are within acceptable thresholds.";
-}
-
-function toastStyle(status: Status) {
-  switch (status) {
-    case "critical":
-      return "border-red-500 bg-red-950/90 text-red-100";
-    case "warning":
-      return "border-yellow-500 bg-yellow-950/90 text-yellow-100";
-    default:
-      return "border-green-500 bg-green-950/90 text-green-100";
-  }
-}
-
-function safeNum(v: any, fallback = 0) {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-/* ===========================================
-   PAGE
-=========================================== */
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<UeeSummary | null>(null);
-  const [statusMeta, setStatusMeta] = useState<KpiStatusMeta>({});
-
-  const [rejectedTrend, setRejectedTrend] = useState<RejectedTrendItem[]>([]);
-  const [mttrTrend, setMttrTrend] = useState<MttrTrendItem[]>([]);
-  const [mttrDetails, setMttrDetails] = useState<MttrDetailRow[]>([]);
-  const [pendingAging, setPendingAging] = useState<PendingAging | null>(null);
-  const [premiumModules, setPremiumModules] = useState<Record<string, boolean>>({});
+  const [overview, setOverview] = useState<IntelligenceOverview | null>(null);
+  const [gaps, setGaps] = useState<GapResponse | null>(null);
+  const [controlHealth, setControlHealth] = useState<ControlHealth | null>(null);
+  const [standards, setStandards] = useState<Standard[]>([]);
+  const [standardCoverage, setStandardCoverage] = useState<StandardCoverage[]>([]);
+  const [evidences, setEvidences] = useState<Evidence[]>([]);
+  const [risks, setRisks] = useState<Risk[]>([]);
   const [aiInsight, setAiInsight] = useState<AIInsight | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
-
-  /* ===== TOAST STATE ===== */
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const toastIdRef = useRef(0);
-  const lastStatusRef = useRef<KpiStatusMeta>({});
-
-  function pushToast(status: Status, message: string) {
-    const id = ++toastIdRef.current;
-    setToasts((prev) => [...prev, { id, status, message }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 6000);
-  }
-
-  /* ================= FETCH ================= */
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-   const token =
-  localStorage.getItem("access_token") ||
-  sessionStorage.getItem("access_token");
+    let mounted = true;
 
-const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    async function load() {
+      setLoading(true);
+      try {
+        const [summaryRes, overviewRes, gapsRes, healthRes, standardsRes, evidenceRes, risksRes] =
+          await Promise.all([
+            apiFetch("/kpi/summary"),
+            apiFetch("/company/intelligence/overview"),
+            apiFetch("/company/intelligence/gaps"),
+            apiFetch("/company/intelligence/control-health"),
+            apiFetch("/standards/"),
+            apiFetch("/evidences"),
+            apiFetch("/risks?page=1&page_size=100&status=all"),
+          ]);
 
-fetch(`${API_URL}/kpi/summary`, { headers })
-  .then((r) => r.json())
-  .then((data) => setSummary(data));
+        const [summaryData, overviewData, gapsData, healthData, standardsData, evidenceData, risksData] =
+          await Promise.all([
+            summaryRes.json(),
+            overviewRes.json(),
+            gapsRes.json(),
+            healthRes.json(),
+            standardsRes.json(),
+            evidenceRes.json(),
+            risksRes.json(),
+          ]);
 
-fetch(`${API_URL}/kpi/summary/status`, { headers })
-  .then((r) => r.json())
-  .then((r) => setStatusMeta(r?.meta || {}));
+        if (!mounted) return;
 
-apiFetch("/company/license/modules")
-  .then((r) => r.json())
-  .then((data) => {
-    setPremiumModules(data || {});
-  })
-  .catch((err) => {
-    console.error("License modules fetch failed:", err);
-    setPremiumModules({});
-  });
-    fetch(`${API_URL}/kpi/operations/rejected-trend?range=30`, { headers })
-      .then((r) => r.json())
-      .then((rows) => setRejectedTrend(Array.isArray(rows) ? rows : []));
+        setSummary(summaryData || null);
+        setOverview(overviewData || null);
+        setGaps(gapsData || null);
+        setControlHealth(healthData || null);
+        setStandards(Array.isArray(standardsData) ? standardsData : []);
+        setEvidences(Array.isArray(evidenceData) ? evidenceData : []);
+        setRisks(Array.isArray(risksData?.items) ? risksData.items : []);
 
-    fetch(`${API_URL}/kpi/operations/mttr-trend?range=30`, { headers })
-      .then((r) => r.json())
-      .then((rows) => setMttrTrend(Array.isArray(rows) ? rows : []));
+        const loadedStandards: Standard[] = Array.isArray(standardsData) ? standardsData : [];
+        const coverage = await Promise.all(
+          loadedStandards.map(async (standard) => {
+            try {
+              const res = await apiFetch(`/matrix?standard_id=${standard.id}`);
+              if (!res.ok) return null;
+              const data: MatrixResponse = await res.json();
+              const rows = Array.isArray(data.rows) ? data.rows : [];
+              if (!rows.length) {
+                return { id: standard.id, code: standard.code, title: standard.title, type: standard.type, score: 0 };
+              }
 
-    fetch(`${API_URL}/kpi/operations/mttr-details?limit=25`, { headers })
-      .then((r) => r.json())
-      .then((rows) => {
-        const arr = Array.isArray(rows) ? rows : [];
-        // Backend keys may be: rejected_at / approved_at
-        const mapped: MttrDetailRow[] = arr.map((x: any) => ({
-          evidence_id: safeNum(x.evidence_id),
-          first_rejected_at: (x.first_rejected_at ?? x.rejected_at ?? null) as
-            | string
-            | null,
-          first_approved_at: (x.first_approved_at ?? x.approved_at ?? null) as
-            | string
-            | null,
-          recovery_hours: safeNum(x.recovery_hours),
-        }));
-        setMttrDetails(mapped);
-      });
+              if (data.mode === "maturity" || standard.type === "MATURITY_BASED") {
+                const valid = rows.filter(
+                  (row) => safeNum(row.target_level) > 0
+                );
+                const score = valid.length
+                  ? valid.reduce(
+                      (sum, row) =>
+                        sum + clamp((safeNum(row.achieved_level) / safeNum(row.target_level)) * 100),
+                      0
+                    ) / valid.length
+                  : 0;
+                return { id: standard.id, code: standard.code, title: standard.title, type: standard.type, score: Math.round(score) };
+              }
 
-    fetch(`${API_URL}/kpi/operations/pending-aging`, { headers })
-      .then((r) => r.json())
-      .then((x) => {
-        if (!x || typeof x !== "object") return setPendingAging(null);
-        setPendingAging({
-          avg_days: safeNum((x as any).avg_days),
-          oldest_days: safeNum((x as any).oldest_days),
-        });
-      });
+              const covered = rows.filter((row) => {
+                const status = String(row.coverage_status || "").toUpperCase();
+                return status === "COVERED" || status === "ACHIEVED";
+              }).length;
+
+              return {
+                id: standard.id,
+                code: standard.code,
+                title: standard.title,
+                type: standard.type,
+                score: Math.round((covered / rows.length) * 100),
+              };
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        if (mounted) setStandardCoverage(coverage.filter(Boolean) as StandardCoverage[]);
+      } catch (error) {
+        console.error("Company Home load failed:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  /* ===== TOAST TRIGGERS ===== */
   useEffect(() => {
-    const prev = lastStatusRef.current;
+    if (!summary || !overview || !controlHealth) return;
 
-    if (
-      statusMeta.exposure_status === "critical" &&
-      prev.exposure_status !== "critical"
-    ) {
-      pushToast("critical", "Unified exposure is CRITICAL. Immediate action required.");
-    }
-    if (
-      statusMeta.health_status === "critical" &&
-      prev.health_status !== "critical"
-    ) {
-      pushToast("critical", "Compliance health is CRITICAL. Immediate action required.");
-    }
-    if (
-      statusMeta.exposure_status === "warning" &&
-      prev.exposure_status !== "warning"
-    ) {
-      pushToast("warning", "Unified exposure is in WARNING zone.");
-    }
-    if (
-      statusMeta.health_status === "warning" &&
-      prev.health_status !== "warning"
-    ) {
-      pushToast("warning", "Compliance health is in WARNING zone.");
-    }
-
-    lastStatusRef.current = statusMeta;
-  }, [statusMeta]);
-
-  useEffect(() => {
-    if (!summary) return;
-
+    let mounted = true;
     setAiLoading(true);
-    fetch(`${API_URL}/ai/dashboard/insights`, {
+
+    apiFetch("/ai/dashboard/insights", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         period_days: 30,
         uee: summary,
-        operations: {
-          rejected_trend: rejectedTrend,
-          mttr_trend: mttrTrend,
-          pending_aging: pendingAging,
-        },
-        meta: statusMeta,
+        intelligence: overview,
+        gaps,
+        control_health: controlHealth,
       }),
     })
-      .then((r) => r.json())
-      .then(setAiInsight)
-      .finally(() => setAiLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summary, statusMeta]);
+      .then((res) => res.json())
+      .then((data) => {
+        if (mounted) setAiInsight(data || null);
+      })
+      .catch((error) => console.error("AI dashboard insight failed:", error))
+      .finally(() => {
+        if (mounted) setAiLoading(false);
+      });
 
-  if (!summary) return <div className="p-6 text-slate-400">Loading…</div>;
+    return () => {
+      mounted = false;
+    };
+  }, [summary, overview, gaps, controlHealth]);
 
-  const overallStatus: Status =
-    statusMeta.exposure_status === "critical" ||
-    statusMeta.health_status === "critical"
-      ? "critical"
-      : statusMeta.exposure_status === "warning" ||
-        statusMeta.health_status === "warning"
-      ? "warning"
-      : "ok";
+  const evidenceStats = useMemo(() => {
+    const result = { approved: 0, pending: 0, rejected: 0, other: 0 };
+    for (const evidence of evidences) {
+      const status = String(evidence.status || "").toLowerCase();
+      if (status.includes("approved")) result.approved += 1;
+      else if (status.includes("reject")) result.rejected += 1;
+      else if (status.includes("pending") || status.includes("review") || status.includes("upload")) result.pending += 1;
+      else result.other += 1;
+    }
+    return result;
+  }, [evidences]);
 
-  /* ================= DATA ================= */
+  const riskStats = useMemo(() => {
+    const result = { critical: 0, high: 0, other: 0 };
+    for (const risk of risks) {
+      const level = String(risk.risk_level || "").toLowerCase();
+      if (level === "critical") result.critical += 1;
+      else if (level === "high") result.high += 1;
+      else result.other += 1;
+    }
+    return result;
+  }, [risks]);
 
-  const STATUS_COLORS = ["#ef4444", "#f59e0b", "#3b82f6", "#22c55e", "#a855f7"];
+  const activities = useMemo<ActivityItem[]>(() => {
+    const evidenceItems = evidences.slice(0, 5).map((item) => ({
+      id: `e-${item.id}`,
+      title: `Evidence ${item.title || `#${item.id}`} updated`,
+      meta: "Evidence Management",
+      time: formatTime(item.created_at),
+      icon: "evidence" as const,
+    }));
 
-  const pressureBreakdownData = [
-    { name: "Risk", value: safeNum(summary.indices?.risk) },
-    { name: "Coverage", value: safeNum(summary.indices?.coverage) },
-    { name: "Maturity", value: safeNum(summary.indices?.maturity) },
-    { name: "Evidence", value: safeNum(summary.indices?.evidence) },
-    { name: "Task Pressure", value: safeNum(summary.indices?.task_pressure) },
-  ];
+    const riskItems = risks.slice(0, 5).map((item) => ({
+      id: `r-${item.id}`,
+      title: `Risk ${item.title || `#${item.id}`} updated`,
+      meta: `${item.risk_level || "Risk"} Risk`,
+      time: formatTime(item.created_at),
+      icon: "risk" as const,
+    }));
 
-  const pendingAgingData = pendingAging
-    ? [
-        { name: "Avg Days", value: pendingAging.avg_days },
-        { name: "Oldest Days", value: pendingAging.oldest_days },
-      ]
-    : [];
+    return [...evidenceItems, ...riskItems]
+      .sort((a, b) => (a.time < b.time ? 1 : -1))
+      .slice(0, 7);
+  }, [evidences, risks]);
 
-  const avgMttrHours =
-    mttrTrend.length > 0
-      ? mttrTrend.reduce((acc, x) => acc + safeNum(x.avg_hours), 0) /
-        mttrTrend.length
-      : 0;
+  if (loading || !summary || !overview) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 text-slate-500">
+        Loading Company Home…
+      </div>
+    );
+  }
+
+  const health = safeNum(summary.compliance_health_index);
+  const exposure = safeNum(summary.unified_exposure_score);
+  const healthStatus = classifyHealth(health);
+  const exposureStatus = classifyExposure(exposure);
+  const totalRisks = safeNum(overview.summary.total_risks);
+  const openRisks = safeNum(overview.summary.open_risks);
+  const totalGaps = safeNum(gaps?.summary?.gaps_total);
+  const criticalActions = overview.executive_alerts?.length || 0;
+  const openTasks = safeNum(controlHealth?.open_tasks);
 
   return (
-    <div className="p-6 space-y-10">
-      {/* ===== TOASTS ===== */}
-      <div className="fixed top-4 right-4 z-50 space-y-2">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`rounded border p-3 text-sm shadow-lg ${toastStyle(
-              t.status
-            )}`}
-          >
-            {t.message}
-          </div>
-        ))}
-      </div>
-
-      {/* STATUS BANNER */}
-      <div className={`rounded border p-3 text-sm ${bannerStyle(overallStatus)}`}>
-        {bannerText(statusMeta)}
-      </div>
-	  {/* DEMO WORKSPACE */}
-<div
-  className="
-    rounded
-    border
-    border-indigo-500/30
-    bg-indigo-500/10
-    p-4
-  "
->
-  <div className="flex items-center justify-between">
-
-    <div>
-      <div className="text-sm font-semibold text-indigo-300">
-        Demo Workspace
-      </div>
-
-      <div className="text-xs text-slate-400 mt-1">
-        Core compliance monitoring capabilities are active.
-        Advanced intelligence modules require activation.
-      </div>
-    </div>
-
-
-    <div
-      className="
-        text-xs
-        px-3
-        py-1
-        rounded-full
-        bg-indigo-500/20
-        text-indigo-300
-      "
-    >
-      TRIAL
-    </div>
-
-  </div>
-</div>
-
-      {/* AI INSIGHT */}
-      <div className="border border-indigo-500 bg-indigo-950/40 rounded p-4">
-        <div className="text-xs uppercase tracking-wide text-indigo-300 mb-2">
-          AI Dashboard Insights
-        </div>
-        <AIInsightBox insight={aiInsight} loading={aiLoading} />
-      </div>
-	  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-
-  <PremiumFeatureCard
-  feature="aiRiskForecast"
-  title="AI Risk Forecasting"
-  description="Predictive compliance intelligence and executive risk forecasting."
-  features={[
-    "30-day risk escalation prediction",
-    "AI priority scoring",
-    "Executive alerts",
-  ]}
-  active={premiumModules["AI_RISK_FORECAST"]}
-/>
-
-
- <PremiumFeatureCard
-  feature="evidenceIntelligence"
-  title="Evidence Intelligence"
-  description="Advanced evidence analysis and audit readiness automation."
-  features={[
-    "Evidence quality scoring",
-    "Weak evidence detection",
-    "Audit readiness analysis",
-  ]}
-  active={premiumModules["EVIDENCE_INTELLIGENCE"]}
-/>
-
-
-  <PremiumFeatureCard
-  feature="operationalIntelligence"
-  title="Operational Intelligence"
-  description="Advanced operational analytics for continuous improvement."
-  features={[
-    "MTTR analytics",
-    "SLA risk prediction",
-    "Recovery optimization",
-  ]}
-  active={premiumModules["OPERATIONAL_INTELLIGENCE"]}
-/>
-
-</div>
-
-      {/* KPI CARDS (UEE) */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-slate-800 rounded p-4">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-slate-400">Unified Exposure Score</div>
-          </div>
-
-          <KpiInfo title="How is Unified Exposure calculated?">
-            <div>Source: UEE summary endpoint.</div>
-            <div>
-              Formula: weighted average of indices (risk, coverage, maturity,
-              evidence, task pressure).
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mx-auto max-w-[1600px] space-y-6 p-5 lg:p-7">
+        {/* HEADER */}
+        <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+              <ShieldCheck size={15} /> Compliance Intelligence OS
             </div>
-            <div>Interpretation (lower is better): 0–25 ok, 26–50 warning, 51+ critical.</div>
-          </KpiInfo>
+            <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">Company Home</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Your compliance, risk, evidence and remediation overview.
+            </p>
+          </div>
 
-          <div className="text-2xl font-semibold text-red-200">
-            {safeNum(summary.unified_exposure_score).toFixed(1)}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
+              Demo Company A.Ş.
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600">
+              Reporting Period: <span className="font-semibold text-slate-900">Current</span>
+            </div>
+            <Link href="/settings/scoring" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <Gauge size={15} /> Customize Dashboard
+            </Link>
+          </div>
+        </header>
+
+        {/* HEALTH BANNER */}
+        <div className={`flex flex-col gap-2 rounded-xl border px-5 py-3 text-sm lg:flex-row lg:items-center lg:justify-between ${statusClasses(exposureStatus)}`}>
+          <div className="flex items-center gap-2 font-semibold">
+            {exposureStatus === "critical" ? <ShieldAlert size={17} /> : exposureStatus === "warning" ? <TriangleAlert size={17} /> : <CheckCircle2 size={17} />}
+            {exposureStatus === "critical"
+              ? "Unified exposure is critical. Immediate remediation is required."
+              : exposureStatus === "warning"
+                ? "Unified exposure is in the warning zone. Monitoring and remediation are recommended."
+                : "Key compliance indicators are within acceptable thresholds."}
+          </div>
+          <div className="text-xs font-medium opacity-80">
+            Exposure {exposure.toFixed(1)} · Health {health.toFixed(1)}
           </div>
         </div>
 
-        <div className="bg-slate-800 rounded p-4">
-          <div className="text-sm text-slate-400">Compliance Health Index</div>
+        {/* KPI ROW */}
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
+          <KpiCard
+            title="Compliance Health"
+            value={`${Math.round(health)}%`}
+            subtitle="Unified compliance health index"
+            icon={<ShieldCheck size={20} className="text-emerald-600" />}
+            status={healthStatus}
+            accent="bg-emerald-50"
+          />
+          <KpiCard
+            title="Standards"
+            value={standards.length}
+            subtitle="Active standards"
+            icon={<BookOpen size={20} className="text-blue-600" />}
+            href="/standards"
+            accent="bg-blue-50"
+          />
+          <KpiCard
+            title="Controls"
+            value={standardCoverage.filter((x) => x.type === "CONTROL_BASED").reduce((sum, x) => sum + Math.round((x.score / 100) * 100), 0) || "—"}
+            subtitle="Control-based framework rows"
+            icon={<Layers3 size={20} className="text-violet-600" />}
+            href="/matrix"
+            accent="bg-violet-50"
+          />
+          <KpiCard
+            title="Risks"
+            value={totalRisks}
+            subtitle={`${openRisks} open · ${overview.summary.high_probability_risks} high probability`}
+            icon={<AlertTriangle size={20} className="text-amber-600" />}
+            href="/risks"
+            accent="bg-amber-50"
+          />
+          <KpiCard
+            title="Evidence"
+            value={evidences.length}
+            subtitle={`${evidenceStats.approved} approved · ${evidenceStats.pending} pending`}
+            icon={<FolderOpen size={20} className="text-cyan-600" />}
+            href="/evidences"
+            accent="bg-cyan-50"
+          />
+          <KpiCard
+            title="Gaps"
+            value={totalGaps}
+            subtitle={`${safeNum(gaps?.summary?.uncovered)} uncovered · ${safeNum(gaps?.summary?.partial)} partial`}
+            icon={<Target size={20} className="text-rose-600" />}
+            href="/intelligence/gaps"
+            accent="bg-rose-50"
+          />
+        </section>
 
-          <KpiInfo title="What is Compliance Health Index?">
-            <div>Source: UEE summary endpoint.</div>
-            <div>Formula: 100 - unified_exposure_score.</div>
-            <div>Interpretation (higher is better): 75+ ok, 50–74 warning, &lt;50 critical.</div>
-          </KpiInfo>
-
-          <div className="text-2xl font-semibold text-green-200">
-            {safeNum(summary.compliance_health_index).toFixed(1)}
+        {/* AI INSIGHTS */}
+        <section className="rounded-xl border border-indigo-200 bg-white shadow-sm">
+          <div className="flex items-center gap-3 border-b border-indigo-100 bg-indigo-50/60 px-5 py-3">
+            <BarChart3 size={17} className="text-indigo-600" />
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">AI Executive Insights</div>
+              <div className="text-xs text-slate-500">Cross-module intelligence from risk, coverage, evidence and remediation signals.</div>
+            </div>
           </div>
-        </div>
-
-        <div className="bg-slate-800 rounded p-4">
-          <div className="text-sm text-slate-400">Risk Pressure</div>
-
-          <KpiInfo title="What is Risk Pressure?">
-            <div>Normalized 0..100 pressure score coming from UEE risk index.</div>
-            <div>Higher means risk posture is contributing more to exposure.</div>
-          </KpiInfo>
-
-          <div className="text-2xl font-semibold">
-            {safeNum(summary.indices?.risk).toFixed(1)}
+          <div className="p-5">
+            <AIInsightBox insight={aiInsight} loading={aiLoading} />
           </div>
-        </div>
+        </section>
 
-        <div className="bg-slate-800 rounded p-4">
-          <div className="text-sm text-slate-400">Average MTTR (Trend Avg)</div>
+        {/* MAIN INTELLIGENCE GRID */}
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.35fr_0.9fr_1fr]">
+          {/* DRIVERS */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-900">Compliance Intelligence Drivers</h2>
+                <p className="mt-1 text-xs text-slate-500">Current factors influencing the unified exposure score.</p>
+              </div>
+              <Link href="/intelligence" className="text-xs font-semibold text-blue-600">View intelligence</Link>
+            </div>
 
-          <KpiInfo title="How is Average MTTR computed here?">
-            <div>Client-side average of mttrTrend points.</div>
-            <div>Backend: /kpi/operations/mttr-trend (avg(approved_at - rejected_at) hours).</div>
-          </KpiInfo>
+            <div className="mt-6 space-y-5">
+              {[
+                ["Risk Pressure", safeNum(summary.indices?.risk)],
+                ["Control Coverage", safeNum(summary.indices?.coverage)],
+                ["Maturity Pressure", safeNum(summary.indices?.maturity)],
+                ["Evidence Pressure", safeNum(summary.indices?.evidence)],
+                ["Task Pressure", safeNum(summary.indices?.task_pressure)],
+              ].map(([label, value]) => (
+                <div key={String(label)}>
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-600">{label}</span>
+                    <span className="font-bold text-slate-900">{safeNum(value).toFixed(1)}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                    <div className={`h-full rounded-full ${progressClass(safeNum(value))}`} style={{ width: `${clamp(safeNum(value))}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
-          <div className="text-2xl font-semibold">{fmtHours(avgMttrHours)}</div>
-        </div>
+          {/* STANDARD COVERAGE */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-900">Compliance by Standard</h2>
+                <p className="mt-1 text-xs text-slate-500">Calculated from the current compliance matrix.</p>
+              </div>
+              <Link href="/matrix" className="text-xs font-semibold text-blue-600">View all</Link>
+            </div>
+
+            <div className="mt-5 space-y-5">
+              {standardCoverage.length === 0 ? (
+                <div className="rounded-lg bg-slate-50 p-4 text-xs text-slate-500">No matrix coverage data available.</div>
+              ) : (
+                standardCoverage.map((item) => (
+                  <div key={item.id}>
+                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                      <span className="font-semibold text-slate-700">{item.code}</span>
+                      <span className="font-bold text-slate-900">{item.score}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full rounded-full ${progressClass(item.score)}`} style={{ width: `${item.score}%` }} />
+                    </div>
+                    <div className="mt-1 text-[10px] text-slate-400">{item.type === "MATURITY_BASED" ? "Maturity achievement" : "Control coverage"}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* CRITICAL ACTIONS */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-900">Critical Actions</h2>
+                <p className="mt-1 text-xs text-slate-500">Executive alerts requiring attention.</p>
+              </div>
+              <Link href="/intelligence" className="text-xs font-semibold text-blue-600">View all</Link>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {(overview.executive_alerts || []).slice(0, 5).map((alert) => (
+                <Link key={alert.risk_id} href={`/risks/${alert.risk_id}`} className="flex items-center gap-3 rounded-lg border border-slate-100 px-3 py-3 hover:bg-slate-50">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                    <AlertTriangle size={15} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold text-slate-800">{alert.title || `Risk #${alert.risk_id}`}</div>
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      {alert.control_code || "No linked control"} · {Math.round(alert.escalation_probability_30d * 100)}% escalation probability
+                    </div>
+                  </div>
+                  <ArrowUpRight size={13} className="text-slate-400" />
+                </Link>
+              ))}
+
+              {criticalActions === 0 && (
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-xs text-emerald-700">No executive alerts currently require action.</div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* LOWER SUMMARY */}
+        <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1fr_1fr_0.7fr_1.2fr]">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="font-bold text-slate-900">Risk Summary</h3>
+            <div className="mt-5 flex items-center gap-5">
+              <Donut value={totalRisks ? (riskStats.critical / totalRisks) * 100 : 0} label="Critical" />
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Critical</span><b>{riskStats.critical}</b></div>
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">High</span><b>{riskStats.high}</b></div>
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Other</span><b>{riskStats.other}</b></div>
+              </div>
+            </div>
+            <Link href="/risks" className="mt-4 inline-flex text-xs font-semibold text-blue-600">View all risks</Link>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="font-bold text-slate-900">Evidence Status</h3>
+            <div className="mt-5 flex items-center gap-5">
+              <Donut value={evidences.length ? (evidenceStats.approved / evidences.length) * 100 : 0} label="Approved" />
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Approved</span><b>{evidenceStats.approved}</b></div>
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Pending</span><b>{evidenceStats.pending}</b></div>
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Rejected</span><b>{evidenceStats.rejected}</b></div>
+              </div>
+            </div>
+            <Link href="/evidences" className="mt-4 inline-flex text-xs font-semibold text-blue-600">View all evidence</Link>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="font-bold text-slate-900">Remediation Status</h3>
+            <div className="mt-5 flex items-center gap-5">
+              <Donut value={openTasks ? 100 - Math.min(100, openTasks * 5) : 100} label="Health" />
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Open tasks</span><b>{openTasks}</b></div>
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Open gaps</span><b>{totalGaps}</b></div>
+                <div className="flex items-center justify-between gap-5"><span className="text-slate-500">Worst gap</span><b>{safeNum(gaps?.summary?.worst_severity_score).toFixed(1)}</b></div>
+              </div>
+            </div>
+            <Link href="/company/remediation" className="mt-4 inline-flex text-xs font-semibold text-blue-600">View remediation center</Link>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="font-bold text-slate-900">Exposure</h3>
+            <div className="mt-5 flex flex-col items-center">
+              <Donut value={100 - exposure} label="Health" />
+              <div className={`mt-3 rounded-full border px-3 py-1 text-[10px] font-bold uppercase ${statusClasses(exposureStatus)}`}>
+                {exposureStatus}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">Recent Activities</h3>
+              <Link href="/admin/logs" className="text-xs font-semibold text-blue-600">View all</Link>
+            </div>
+            <div className="mt-4 divide-y divide-slate-100">
+              {activities.length === 0 ? (
+                <div className="py-4 text-xs text-slate-500">No recent activity available.</div>
+              ) : (
+                activities.map((activity) => (
+                  <div key={activity.id} className="flex items-center gap-3 py-3">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
+                      {activity.icon === "evidence" ? <FileCheck2 size={14} /> : <AlertTriangle size={14} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium text-slate-700">{activity.title}</div>
+                      <div className="text-[10px] text-slate-400">{activity.meta}</div>
+                    </div>
+                    <span className="whitespace-nowrap text-[10px] text-slate-400">{activity.time}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* QUICK ACTIONS + FOUNDATION */}
+        <section className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="font-bold text-slate-900">Quick Actions</h2>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+              {[
+                ["New Risk", "/risks/create", <ShieldAlert size={18} />],
+                ["New Objective", "/company/objectives", <Target size={18} />],
+                ["New Process", "/company/processes", <Network size={18} />],
+                ["Add Standard", "/standards", <BookOpen size={18} />],
+                ["Add Evidence", "/evidences", <FolderOpen size={18} />],
+                ["Remediation", "/company/remediation", <Activity size={18} />],
+                ["New Task", "/company/tasks/create", <ListChecks size={18} />],
+              ].map(([label, href, icon]) => (
+                <Link key={String(label)} href={String(href)} className="flex min-h-24 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 px-2 text-center hover:border-blue-200 hover:bg-blue-50">
+                  <div className="mb-2 text-blue-600">{icon}</div>
+                  <span className="text-[11px] font-semibold text-slate-700">{label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-slate-900">Foundation Snapshot</h2>
+                <p className="mt-1 text-xs text-slate-500">Core governance objects available to the company.</p>
+              </div>
+              <Link href="/company/profile" className="text-xs font-semibold text-blue-600">View all</Link>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <Link href="/company/processes" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><Network size={15} className="text-emerald-600" /><div className="mt-2 text-lg font-bold">—</div><div className="text-[10px] text-slate-500">Processes</div></Link>
+              <Link href="/standards" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><BookOpen size={15} className="text-blue-600" /><div className="mt-2 text-lg font-bold">{standards.length}</div><div className="text-[10px] text-slate-500">Standards</div></Link>
+              <Link href="/risks" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><AlertTriangle size={15} className="text-amber-600" /><div className="mt-2 text-lg font-bold">{totalRisks}</div><div className="text-[10px] text-slate-500">Open risk universe</div></Link>
+              <Link href="/evidences" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><FolderOpen size={15} className="text-cyan-600" /><div className="mt-2 text-lg font-bold">{evidences.length}</div><div className="text-[10px] text-slate-500">Evidence</div></Link>
+              <Link href="/matrix" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><Layers3 size={15} className="text-violet-600" /><div className="mt-2 text-lg font-bold">{standardCoverage.length}</div><div className="text-[10px] text-slate-500">Frameworks evaluated</div></Link>
+              <Link href="/intelligence/gaps" className="rounded-lg border border-slate-100 bg-slate-50 p-3"><TriangleAlert size={15} className="text-rose-600" /><div className="mt-2 text-lg font-bold">{totalGaps}</div><div className="text-[10px] text-slate-500">Open gaps</div></Link>
+            </div>
+          </div>
+        </section>
+
+        <footer className="border-t border-slate-200 pt-4 text-center text-[10px] text-slate-400">
+          © 2026 Compliance OS. All rights reserved.
+        </footer>
       </div>
-
-      {/* 1) UEE Pressure Breakdown */}
-      <section className="bg-slate-800 rounded p-6">
-       <h3 className="font-semibold mb-1">
-  Compliance Exposure Drivers
-</h3>
-
-<div className="text-xs text-slate-400 mb-4">
-  Key factors influencing current compliance exposure.
-</div>
-
-        <p className="text-xs text-slate-400 mb-2">
-          Strategic posture components (0..100). Higher = more pressure.
-        </p>
-        <div className="h-64">
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie
-                data={pressureBreakdownData}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={55}
-                outerRadius={85}
-              >
-                {pressureBreakdownData.map((_, i) => (
-                  <Cell key={i} fill={STATUS_COLORS[i % STATUS_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip
-                content={
-                  <DbTooltip
-                    title="UEE Pressure Breakdown"
-                    formula="UEE indices (0..100): higher means higher pressure"
-                  />
-                }
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
-     
-     {/* PREMIUM - Evidence Analytics */}
-
-<section className="bg-slate-800 rounded p-6">
-
-  <div className="mb-4 text-sm text-slate-400">
-    Advanced Analytics
-  </div>
-
- <PremiumFeatureCard
-  feature="evidenceIntelligence"
-  title="Evidence Lifecycle Analytics"
-  description="Advanced evidence monitoring and audit readiness intelligence."
-  features={[
-    "Evidence rejection trend analysis",
-    "Evidence recovery performance",
-    "Audit readiness scoring",
-  ]}
-  active={premiumModules["EVIDENCE_INTELLIGENCE"]}
-/>
-
-</section>
-
-      {/* 3) Pending Aging (SLA) */}
-     <section className="bg-slate-800 rounded p-6">
-
-  <PremiumFeatureCard
-  feature="operationalIntelligence"
-  title="SLA Monitoring Intelligence"
-  description="Continuous monitoring of compliance workload and SLA risks."
-  features={[
-    "Pending item aging analysis",
-    "SLA breach prediction",
-    "Ownership escalation",
-  ]}
-  active={premiumModules["OPERATIONAL_INTELLIGENCE"]}
-/>
-
-</section>
-
-      {/* 4) MTTR Trend */}
-    <section className="bg-slate-800 rounded p-6">
-
-  <PremiumFeatureCard
-    feature="operationalIntelligence"
-    title="Operational Recovery Intelligence"
-    description="Advanced operational performance analytics."
-    features={[
-      "MTTR analytics",
-      "Recovery optimization",
-      "Process improvement insights",
-    ]}
-	active={premiumModules["OPERATIONAL_INTELLIGENCE"]}
-  />
-
-</section>
-
-      {/* 5) MTTR TABLE */}
-     <section className="bg-slate-800 rounded p-6">
-
-  <PremiumFeatureCard
-     feature="executiveAnalytics"
-     title="Executive Analytics Center"
-     description="Board-level compliance intelligence and predictive analytics."
-     features={[
-      "Executive dashboards",
-      "Risk forecasting",
-      "Strategic recommendations",
-    ]}
-	active={premiumModules["EXECUTIVE_ANALYTICS"]}
-  />
-
-</section>
     </div>
   );
 }
