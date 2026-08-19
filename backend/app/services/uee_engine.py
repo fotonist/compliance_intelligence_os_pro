@@ -76,12 +76,14 @@ class UEEEngine:
         task_index, task_stats, w5, task_available = self._compute_task_pressure_index(db, tenant_id)
         warnings.extend(w1 + w2 + w3 + w4 + w5)
 
-        # Compliance Health has a hard control-coverage gate. If controls are not
-        # implemented, the organization cannot report a positive compliance health.
-        control_health = self._clamp_0_100(100.0 - coverage_index)
+        total_controls = int(coverage_stats.get("total_controls", 0) or 0)
+        covered_controls = int(coverage_stats.get("covered_controls", 0) or 0)
+        control_health = (
+            0.0
+            if total_controls <= 0
+            else (covered_controls / float(total_controls)) * 100.0
+        )
 
-        # Exposure components. Maturity/task are excluded from the composite when
-        # their source does not exist; their weights are redistributed deterministically.
         active_weights: Dict[str, float] = {
             "risk": weights.risk,
             "coverage": weights.coverage,
@@ -107,12 +109,9 @@ class UEEEngine:
             sum(components[name] * weight for name, weight in active_weights.items())
         )
 
-        # The composite exposure describes the enterprise pressure, while the
-        # control-health gate prevents missing/unimplemented controls from being
-        # masked by zero risk or zero task counts.
         composite_health = self._clamp_0_100(100.0 - unified_exposure_score)
         compliance_health_index = self._clamp_0_100(
-            composite_health * (control_health / 100.0)
+            min(composite_health, control_health)
         )
 
         state = UEEState(
@@ -171,18 +170,13 @@ class UEEEngine:
         warnings: list[str] = []
         stats: Dict[str, Any] = {}
         try:
-            row = db.execute(
-                text(
-                    """
-                    SELECT COUNT(*)::bigint AS n,
-                           AVG(score)::numeric AS avg_score,
-                           SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'open' THEN 1 ELSE 0 END)::bigint AS open_n
-                    FROM risks
-                    WHERE tenant_id = :tenant_id
-                    """
-                ),
-                {"tenant_id": tenant_id},
-            ).mappings().first()
+            row = db.execute(text("""
+                SELECT COUNT(*)::bigint AS n,
+                       AVG(score)::numeric AS avg_score,
+                       SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'open' THEN 1 ELSE 0 END)::bigint AS open_n
+                FROM risks
+                WHERE tenant_id = :tenant_id
+            """), {"tenant_id": tenant_id}).mappings().first()
             n = int(row["n"] or 0)
             open_n = int(row["open_n"] or 0)
             stats.update({"row_count": n, "open_count": open_n})
@@ -193,7 +187,6 @@ class UEEEngine:
             if avg_score is None:
                 warnings.append("risk:missing_scores")
                 return 0.0, stats, warnings
-            # Current project risk scoring uses a 1..25 score for normalization.
             risk_pressure = self._clamp_0_100(float(avg_score) * 4.0)
             stats["avg_score"] = float(avg_score)
             return risk_pressure, stats, warnings
@@ -205,19 +198,14 @@ class UEEEngine:
         warnings: list[str] = []
         stats: Dict[str, Any] = {}
         try:
-            row = db.execute(
-                text(
-                    """
-                    SELECT COUNT(*)::bigint AS total_controls,
-                           SUM(CASE WHEN coverage_status = 'covered' THEN 1 ELSE 0 END)::bigint AS covered_controls,
-                           SUM(CASE WHEN coverage_status = 'partial' THEN 1 ELSE 0 END)::bigint AS partial_controls,
-                           SUM(CASE WHEN coverage_status = 'uncovered' OR coverage_status IS NULL THEN 1 ELSE 0 END)::bigint AS uncovered_controls
-                    FROM analytics.v_control_coverage_uee
-                    WHERE tenant_id = :tenant_id
-                    """
-                ),
-                {"tenant_id": tenant_id},
-            ).mappings().first()
+            row = db.execute(text("""
+                SELECT COUNT(*)::bigint AS total_controls,
+                       SUM(CASE WHEN coverage_status = 'covered' THEN 1 ELSE 0 END)::bigint AS covered_controls,
+                       SUM(CASE WHEN coverage_status = 'partial' THEN 1 ELSE 0 END)::bigint AS partial_controls,
+                       SUM(CASE WHEN coverage_status = 'uncovered' OR coverage_status IS NULL THEN 1 ELSE 0 END)::bigint AS uncovered_controls
+                FROM analytics.v_control_coverage_uee
+                WHERE tenant_id = :tenant_id
+            """), {"tenant_id": tenant_id}).mappings().first()
             total = int(row["total_controls"] or 0)
             covered = int(row["covered_controls"] or 0)
             partial = int(row["partial_controls"] or 0)
@@ -242,19 +230,14 @@ class UEEEngine:
         warnings: list[str] = []
         stats: Dict[str, Any] = {}
         try:
-            row = db.execute(
-                text(
-                    """
-                    SELECT COUNT(*)::bigint AS total_files,
-                           SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END)::bigint AS approved_files,
-                           SUM(CASE WHEN status = 'waiting_approval' THEN 1 ELSE 0 END)::bigint AS pending_files,
-                           SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)::bigint AS rejected_files
-                    FROM evidence_files
-                    WHERE tenant_id = :tenant_id
-                    """
-                ),
-                {"tenant_id": tenant_id},
-            ).mappings().first()
+            row = db.execute(text("""
+                SELECT COUNT(*)::bigint AS total_files,
+                       SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END)::bigint AS approved_files,
+                       SUM(CASE WHEN status = 'waiting_approval' THEN 1 ELSE 0 END)::bigint AS pending_files,
+                       SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)::bigint AS rejected_files
+                FROM evidence_files
+                WHERE tenant_id = :tenant_id
+            """), {"tenant_id": tenant_id}).mappings().first()
             total = int(row["total_files"] or 0)
             approved = int(row["approved_files"] or 0)
             pending = int(row["pending_files"] or 0)
@@ -274,18 +257,13 @@ class UEEEngine:
         warnings: list[str] = []
         stats: Dict[str, Any] = {}
         try:
-            row = db.execute(
-                text(
-                    """
-                    SELECT COUNT(*)::bigint AS n,
-                           AVG(achieved_level)::numeric AS avg_achieved,
-                           AVG(target_level)::numeric AS avg_target
-                    FROM analytics.v_maturity_progress
-                    WHERE tenant_id = :tenant_id
-                    """
-                ),
-                {"tenant_id": tenant_id},
-            ).mappings().first()
+            row = db.execute(text("""
+                SELECT COUNT(*)::bigint AS n,
+                       AVG(achieved_level)::numeric AS avg_achieved,
+                       AVG(target_level)::numeric AS avg_target
+                FROM analytics.v_maturity_progress
+                WHERE tenant_id = :tenant_id
+            """), {"tenant_id": tenant_id}).mappings().first()
             n = int(row["n"] or 0)
             if n == 0 or row["avg_target"] is None or float(row["avg_target"]) <= 0:
                 warnings.append("maturity:no_source")
@@ -302,18 +280,13 @@ class UEEEngine:
         warnings: list[str] = []
         stats: Dict[str, Any] = {}
         try:
-            row = db.execute(
-                text(
-                    """
-                    SELECT COUNT(*)::bigint AS n,
-                           SUM(CASE WHEN status IN ('open','todo','in_progress') THEN 1 ELSE 0 END)::bigint AS open_n,
-                           SUM(CASE WHEN due_date IS NOT NULL AND due_date < NOW() AND status NOT IN ('done','closed') THEN 1 ELSE 0 END)::bigint AS overdue_n
-                    FROM compliance_tasks
-                    WHERE tenant_id = :tenant_id
-                    """
-                ),
-                {"tenant_id": tenant_id},
-            ).mappings().first()
+            row = db.execute(text("""
+                SELECT COUNT(*)::bigint AS n,
+                       SUM(CASE WHEN status IN ('open','todo','in_progress') THEN 1 ELSE 0 END)::bigint AS open_n,
+                       SUM(CASE WHEN due_date IS NOT NULL AND due_date < NOW() AND status NOT IN ('done','closed') THEN 1 ELSE 0 END)::bigint AS overdue_n
+                FROM compliance_tasks
+                WHERE tenant_id = :tenant_id
+            """), {"tenant_id": tenant_id}).mappings().first()
             n = int(row["n"] or 0)
             if n == 0:
                 warnings.append("task:no_rows")
