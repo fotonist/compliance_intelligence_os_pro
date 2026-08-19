@@ -1,1 +1,1 @@
-﻿--
+"""Audit plan model module."""
