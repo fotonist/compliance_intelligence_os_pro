@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Corporate light dashboard shell. */
-.min-h-screen.bg-slate-950 {
+/* Corporate light dashboard shell only. */
+.min-h-screen.bg-slate-950:has(> aside.bg-white) {
   background-color: #f7f9fc !important;
   color: #0f2747 !important;
 }
