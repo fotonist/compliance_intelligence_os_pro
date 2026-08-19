@@ -104,10 +104,8 @@ app = FastAPI()
 # CORS
 # ==============================
 
-# Vercel creates a new preview hostname for deployments. Keep the known
-# production/preview origins and explicitly allow all preview hostnames for
-# this application. The regex is intentionally anchored to the application
-# hostname so unrelated origins are not accepted.
+# Vercel preview URLs are generated dynamically. Allow only this application's
+# Vercel hostname family instead of maintaining a hard-coded preview list.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -117,7 +115,7 @@ app.add_middleware(
         "https://compliance-intelligence-os-d3ot6ocmd-hasans-projects-b02466bd.vercel.app",
         "https://compliance-intelligence-os-pro-u6yj-q2oqjkxyo.vercel.app",
     ],
-    allow_origin_regex=r"^https://compliance-intelligence-os-pro-[a-z0-9-]+\.vercel\.app$",
+    allow_origin_regex=r"^https://compliance-intelligence-os-[a-z0-9-]+\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
