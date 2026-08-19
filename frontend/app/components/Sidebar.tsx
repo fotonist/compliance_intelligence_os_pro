@@ -29,6 +29,7 @@ import {
   Shield,
   ShieldCheck,
   Target,
+  TrendingUp,
   User,
   Users,
   Workflow,
