@@ -21,11 +21,12 @@ export async function apiFetch(
   // Company Home historically requested legacy KPI/trend endpoints.
   // Keep those client contracts while routing strategic reads through
   // the canonical tenant-safe KPI endpoints.
+  const pathOnly = safePath.split("?", 1)[0];
   const requestPath =
-    safePath === "/matrix/kpi"
+    pathOnly === "/matrix/kpi"
       ? "/kpi/summary"
-      : safePath === "/dashboard/trends"
-        ? "/kpi/trends"
+      : pathOnly === "/dashboard/trends"
+        ? `/kpi/trends${safePath.includes("?") ? `?${safePath.split("?").slice(1).join("?")}` : ""}`
         : safePath;
 
   const headers: HeadersInit = {};
