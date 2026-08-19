@@ -1,6 +1,5 @@
 import { DEMO_MODE } from "./demo";
 import { mockApiFetch } from "./mock-api";
-import { companyHomeDemoFetch } from "./company-home-demo";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
@@ -16,15 +15,7 @@ export async function apiFetch(
   // DEMO MODE
   // =============================
   // Authentication must always use the real backend.
-  // Company Home uses a dedicated deterministic demo-data layer
-  // so the executive dashboard remains populated and internally consistent.
   if (DEMO_MODE && path !== "/auth/me") {
-    const companyHomeResponse = await companyHomeDemoFetch(path);
-
-    if (companyHomeResponse) {
-      return companyHomeResponse;
-    }
-
     const mockResponse = await mockApiFetch(path);
 
     if (mockResponse) {
