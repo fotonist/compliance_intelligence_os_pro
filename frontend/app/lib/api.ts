@@ -1,6 +1,3 @@
-import { DEMO_MODE } from "./demo";
-import { mockApiFetch } from "./mock-api";
-
 const API_BASE = process.env.NEXT_PUBLIC_API_URL;
 
 if (!API_BASE) {
@@ -11,18 +8,6 @@ export async function apiFetch(
   path: string,
   options: RequestInit = {}
 ) {
-  // =============================
-  // DEMO MODE
-  // =============================
-  // Authentication must always use the real backend.
-  if (DEMO_MODE && path !== "/auth/me") {
-    const mockResponse = await mockApiFetch(path);
-
-    if (mockResponse) {
-      return mockResponse;
-    }
-  }
-
   const token =
     typeof window !== "undefined"
       ? localStorage.getItem("access_token") ||
@@ -40,8 +25,7 @@ export async function apiFetch(
   }
 
   if (token) {
-    headers["Authorization"] =
-      `Bearer ${token}`;
+    headers["Authorization"] = `Bearer ${token}`;
   }
 
   if (options.headers) {
@@ -58,9 +42,7 @@ export async function apiFetch(
 
   if (!res.ok) {
     if (res.status === 401) {
-      console.warn(
-        "Session expired — redirecting to login"
-      );
+      console.warn("Session expired — redirecting to login");
 
       if (typeof window !== "undefined") {
         localStorage.removeItem("access_token");
