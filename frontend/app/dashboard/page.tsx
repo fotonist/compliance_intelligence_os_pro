@@ -269,9 +269,15 @@ export default function DashboardPage() {
           const byDate = new Map<string, TrendPoint>();
           for (const item of exposure) byDate.set(item.date, { date: item.date, risk_exposure_pct: num(item.risk_exposure_pct) });
           for (const item of approvals) {
-            const existing = byDate.get(item.date) || { date: item.date };
-            existing.approvals = num(item.count);
-            byDate.set(item.date, existing);
+            const existing = byDate.get(item.date);
+            if (existing) {
+              existing.approvals = num(item.count);
+            } else {
+              byDate.set(item.date, {
+                date: item.date,
+                approvals: num(item.count),
+              });
+            }
           }
           setTrend(Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)));
         }
@@ -391,53 +397,64 @@ export default function DashboardPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium">Demo Company A.Ş.</div>
             <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Reporting Period <span className="ml-2 font-semibold">Aug 2026</span></button>
-            <Link href="/settings/scoring" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-slate-50"><Gauge size={15} /> Customize Dashboard</Link>
-            <button className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white"><Bell size={17} /><span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] text-white">{num(overview.summary.executive_alerts)}</span></button>
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"><div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100"><User size={14} /></div><div className="leading-tight"><div className="text-xs font-semibold">{user?.full_name || user?.username || "User"}</div><div className="text-[10px] text-slate-400">{user?.role || "User"}</div></div></div>
+            <Link href="/settings/scoring" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700">Scoring</Link>
           </div>
         </header>
 
-        <div className={`mb-5 flex items-center justify-between rounded-lg border px-4 py-3 text-sm ${exposureState === "critical" ? "border-red-200 bg-red-50 text-red-700" : exposureState === "warning" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
-          <div className="flex items-center gap-2 font-semibold"><AlertTriangle size={16} />{exposureState === "critical" ? "Unified exposure is in CRITICAL zone." : exposureState === "warning" ? "Unified exposure is in WARNING zone." : "Unified exposure is in an acceptable zone."} Monitoring and remediation are recommended.</div>
-          <div className="text-xs font-medium">Exposure {exposure.toFixed(1)} · Health {complianceHealth.toFixed(1)}</div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <KpiCard title="Compliance Health" value={`${Math.round(complianceHealth)}%`} subtitle={`${statusText(complianceStatus)} compliance health`} icon={<ShieldCheck size={20} />} href="/dashboard" tone="bg-emerald-50 text-emerald-600" />
+          <KpiCard title="Unified Exposure" value={`${Math.round(exposure)}%`} subtitle={`${statusText(exposureState)} exposure`} icon={<ShieldAlert size={20} />} href="/risks" tone="bg-orange-50 text-orange-600" />
+          <KpiCard title="Open Risks" value={openRisks} subtitle={`${totalRisks} total risks`} icon={<AlertTriangle size={20} />} href="/risks" tone="bg-red-50 text-red-600" />
+          <KpiCard title="Open Gaps" value={totalGaps} subtitle={`${openTasks} remediation tasks`} icon={<Target size={20} />} href="/gaps" tone="bg-amber-50 text-amber-600" />
         </div>
 
-        <section className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-          <KpiCard title="Compliance Health" value={`${Math.round(complianceHealth)}%`} subtitle={<><span className="font-semibold">{statusText(complianceStatus)}</span><span className="ml-2 text-emerald-600">▲ Current</span></>} icon={<ShieldCheck size={21} className="text-emerald-600" />} tone="bg-emerald-50" />
-          <KpiCard title="Standards" value={standards.length} subtitle="Active Standards" icon={<BookOpen size={21} className="text-blue-600" />} href="/standards" tone="bg-blue-50" />
-          <KpiCard title="Controls" value={controlsCount || "—"} subtitle="Active Controls" icon={<Layers3 size={21} className="text-violet-600" />} href="/controls" tone="bg-violet-50" />
-          <KpiCard title="Risks" value={totalRisks} subtitle={<><span>{openRisks} Open Risks</span><span className="ml-2 font-semibold text-red-500">{riskStats.critical} Critical</span></>} icon={<AlertTriangle size={21} className="text-amber-600" />} href="/risks" tone="bg-amber-50" />
-          <KpiCard title="Evidence" value={evidences.length} subtitle={<><span>{evidenceStats.approved} Approved</span><span className="ml-2 font-semibold text-amber-600">{evidenceStats.pending} Pending</span></>} icon={<FolderOpen size={21} className="text-cyan-600" />} href="/evidences" tone="bg-cyan-50" />
-          <KpiCard title="Gaps" value={totalGaps} subtitle={<><span>Open Gaps</span><span className="ml-2 font-semibold text-red-500">{num(gaps?.summary?.uncovered)} High Priority</span></>} icon={<Target size={21} className="text-rose-600" />} href="/intelligence/gaps" tone="bg-rose-50" />
-        </section>
-
-        <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.65fr_0.95fr_1.15fr]">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between"><div><h2 className="font-bold">Compliance Health Trend</h2><div className="mt-2 flex flex-wrap gap-4 text-[10px] text-slate-500"><span>● Overall Compliance</span><span>● Control Coverage</span><span>● Evidence Strength</span><span>● Risk Exposure</span></div></div><button className="rounded-md border border-slate-200 px-3 py-1.5 text-[10px] text-slate-600">Last 6 Months⌄</button></div>
-            <div className="mt-4 h-[240px]">
-              {chartData.length > 1 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}><CartesianGrid stroke="#eef2f7" vertical={false} /><XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} /><YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 9, fill: "#64748b" }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 11 }} /><Line type="monotone" dataKey="compliance_health" name="Overall Compliance" stroke="#22c55e" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="control_coverage" name="Control Coverage" stroke="#3b82f6" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="evidence_strength" name="Evidence Strength" stroke="#8b5cf6" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="risk_exposure" name="Risk Exposure" stroke="#ef4444" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center rounded-lg bg-slate-50 text-xs text-slate-400">Historical trend data is not available yet.</div>}
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+            <div className="flex items-center justify-between">
+              <div><h2 className="text-sm font-bold text-slate-900">Compliance Overview</h2><p className="text-xs text-slate-500">Current enterprise posture</p></div>
+              <Gauge className="text-slate-400" size={18} />
             </div>
-          </div>
+            <div className="mt-5 grid gap-5 md:grid-cols-2">
+              <div className="flex items-center gap-5"><Donut value={complianceHealth} label="Health" /><div><div className="text-xs text-slate-500">Compliance Health</div><div className="text-2xl font-bold">{Math.round(complianceHealth)}%</div><div className="mt-1 text-xs text-slate-500">Based on current risk, coverage, maturity and evidence posture.</div></div></div>
+              <div className="flex items-center gap-5"><Donut value={100 - exposure} label="Exposure" /><div><div className="text-xs text-slate-500">Exposure Control</div><div className="text-2xl font-bold">{Math.round(100 - exposure)}%</div><div className="mt-1 text-xs text-slate-500">Lower exposure indicates stronger compliance posture.</div></div></div>
+            </div>
+          </section>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-bold">Compliance by Standard</h2><Link href="/matrix" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-5 space-y-5">{standardRows.length ? standardRows.map((item) => <div key={item.id}><div className="mb-2 flex justify-between text-xs"><span className="font-semibold">{item.code}</span><span className="font-bold">{item.score}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${progressColor(item.score)}`} style={{ width: `${item.score}%` }} /></div></div>) : <div className="text-xs text-slate-400">No standard coverage data.</div>}</div></div>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Risk Intelligence</h2><p className="text-xs text-slate-500">Current risk distribution</p></div><Activity size={18} className="text-slate-400" /></div>
+            <div className="mt-5 space-y-3 text-xs">
+              {([['Critical', riskStats.critical, 'bg-red-500'], ['High', riskStats.high, 'bg-orange-500'], ['Medium', riskStats.medium, 'bg-amber-400'], ['Low', riskStats.low, 'bg-emerald-500']] as const).map(([label, value, color]) => <div key={label}><div className="mb-1 flex justify-between"><span>{label}</span><span className="font-semibold">{value}</span></div><div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${color}`} style={{ width: `${totalRisks ? (value / totalRisks) * 100 : 0}%` }} /></div></div>)}
+            </div>
+          </section>
+        </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-bold">Critical Actions</h2><Link href="/intelligence" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-4 space-y-2">{(overview.executive_alerts || []).slice(0, 5).map((item) => <Link key={item.risk_id} href={`/risks/${item.risk_id}`} className="flex items-center gap-3 rounded-lg border border-slate-100 p-3 hover:bg-slate-50"><div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-50 text-red-500"><AlertTriangle size={15} /></div><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold">{item.title || `Risk #${item.risk_id}`}</div><div className="mt-1 text-[10px] text-slate-400">{item.control_code || "Risk Intelligence"}</div></div><span className="whitespace-nowrap rounded bg-red-50 px-2 py-1 text-[9px] font-semibold text-red-500">{Math.max(1, Math.round(item.escalation_probability_30d * 100 / 10))} days</span></Link>)}{!overview.executive_alerts?.length && <div className="rounded-lg bg-emerald-50 p-4 text-xs text-emerald-700">No critical executive alerts.</div>}</div></div>
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+            <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Posture Trend</h2><p className="text-xs text-slate-500">Risk exposure and compliance indicators</p></div><Link href="/analytics" className="text-xs font-semibold text-blue-600">Open Analytics</Link></div>
+            <div className="mt-4 h-64">
+              {chartData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="label" tick={{ fontSize: 10 }} /><YAxis domain={[0, 100]} tick={{ fontSize: 10 }} /><Tooltip /><Line type="monotone" dataKey="compliance_health" stroke="#16a34a" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="control_coverage" stroke="#2563eb" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="risk_exposure" stroke="#ea580c" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center text-sm text-slate-400">No trend data available.</div>}
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Standards Coverage</h2><p className="text-xs text-slate-500">Control and maturity posture</p></div><BookOpen size={18} className="text-slate-400" /></div>
+            <div className="mt-4 space-y-4">
+              {standardRows.map((row) => <div key={row.id}><div className="mb-1 flex justify-between text-xs"><span className="font-semibold">{row.code}</span><span>{row.score}%</span></div><div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${progressColor(row.score)}`} style={{ width: `${row.score}%` }} /></div></div>)}
+              {!standardRows.length && <div className="text-sm text-slate-400">No standards data available.</div>}
+            </div>
+          </section>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-3">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Evidence Intelligence</h2><p className="text-xs text-slate-500">Evidence lifecycle</p></div><FolderOpen size={18} className="text-slate-400" /></div><div className="mt-5 grid grid-cols-2 gap-3">{[['Approved', evidenceStats.approved], ['Pending', evidenceStats.pending], ['Rejected', evidenceStats.rejected], ['Draft', evidenceStats.draft]].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-slate-50 p-3"><div className="text-[10px] uppercase text-slate-500">{label}</div><div className="mt-1 text-xl font-bold">{value}</div></div>)}</div></section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Executive Alerts</h2><p className="text-xs text-slate-500">Predicted risk escalation</p></div><Bell size={18} className="text-slate-400" /></div><div className="mt-4 space-y-3">{(overview.executive_alerts || []).slice(0, 4).map((alert) => <Link key={alert.risk_id} href={`/risks/${alert.risk_id}`} className="block rounded-lg border border-slate-100 p-3 hover:bg-slate-50"><div className="flex items-center justify-between text-xs font-semibold"><span>{alert.title || `Risk #${alert.risk_id}`}</span><span>{Math.round(alert.escalation_probability_30d)}%</span></div><div className="mt-1 text-[11px] text-slate-500">{alert.risk_level || 'Risk'} · {alert.control_code || 'No control'}</div></Link>)}{!(overview.executive_alerts || []).length && <div className="text-sm text-slate-400">No executive alerts.</div>}</div></section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Recent Activity</h2><p className="text-xs text-slate-500">Latest evidence and risk updates</p></div><ListChecks size={18} className="text-slate-400" /></div><div className="mt-4 space-y-3">{activities.map((item) => <div key={item.id} className="flex items-start gap-3"><div className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg ${item.icon === 'risk' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{item.icon === 'risk' ? <ShieldAlert size={14} /> : <FolderOpen size={14} />}</div><div className="min-w-0"><div className="truncate text-xs font-semibold">{item.title}</div><div className="text-[10px] text-slate-500">{item.meta}{item.time ? ` · ${item.time}` : ''}</div></div></div>)}{!activities.length && <div className="text-sm text-slate-400">No recent activity.</div>}</div></section>
+        </div>
+
+        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Enterprise Snapshot</h2><p className="text-xs text-slate-500">Current operating footprint</p></div><Network size={18} className="text-slate-400" /></div>
+          <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4"><div><div className="text-[10px] uppercase text-slate-500">Standards</div><div className="text-xl font-bold">{standards.length}</div></div><div><div className="text-[10px] uppercase text-slate-500">Controls</div><div className="text-xl font-bold">{controlsCount}</div></div><div><div className="text-[10px] uppercase text-slate-500">Evidence</div><div className="text-xl font-bold">{evidences.length}</div></div><div><div className="text-[10px] uppercase text-slate-500">Risks</div><div className="text-xl font-bold">{risks.length}</div></div></div>
         </section>
-
-        <section className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1fr_1fr_0.75fr_1.2fr]">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="font-bold">Risk Summary</h3><div className="mt-4 flex items-center gap-4"><Donut value={totalRisks ? riskStats.critical / totalRisks * 100 : 0} label="Critical" /><div className="w-full space-y-2 text-[11px]"><div className="flex justify-between"><span>Critical</span><b>{riskStats.critical}</b></div><div className="flex justify-between"><span>High</span><b>{riskStats.high}</b></div><div className="flex justify-between"><span>Medium</span><b>{riskStats.medium}</b></div><div className="flex justify-between"><span>Low</span><b>{riskStats.low}</b></div></div></div><Link href="/risks" className="mt-3 inline-block text-[10px] font-semibold text-blue-600">View all risks</Link></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="font-bold">Evidence Status</h3><div className="mt-4 flex items-center gap-4"><Donut value={evidences.length ? evidenceStats.approved / evidences.length * 100 : 0} label="Approved" /><div className="w-full space-y-2 text-[11px]"><div className="flex justify-between"><span>Approved</span><b>{evidenceStats.approved}</b></div><div className="flex justify-between"><span>Pending</span><b>{evidenceStats.pending}</b></div><div className="flex justify-between"><span>Rejected</span><b>{evidenceStats.rejected}</b></div><div className="flex justify-between"><span>Draft</span><b>{evidenceStats.draft}</b></div></div></div><Link href="/evidences" className="mt-3 inline-block text-[10px] font-semibold text-blue-600">View all evidence</Link></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><h3 className="font-bold">Remediation Status</h3><div className="mt-4 flex items-center gap-4"><Donut value={openTasks ? Math.max(0, 100 - openTasks * 5) : 100} label="Health" /><div className="w-full space-y-2 text-[11px]"><div className="flex justify-between"><span>Open Tasks</span><b>{openTasks}</b></div><div className="flex justify-between"><span>Open Gaps</span><b>{totalGaps}</b></div><div className="flex justify-between"><span>Completed</span><b>{Math.max(0, 100 - openTasks)}</b></div></div></div><Link href="/company/remediation" className="mt-3 inline-block text-[10px] font-semibold text-blue-600">View remediation center</Link></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 text-center shadow-sm"><h3 className="text-left font-bold">Overdue Tasks</h3><div className="mt-7 text-4xl font-bold text-red-500">{openTasks}</div><div className="mt-1 text-[11px] font-semibold text-red-500">High Priority</div><Link href="/company/tasks" className="mt-8 inline-block text-[10px] font-semibold text-blue-600">View tasks</Link></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between"><h3 className="font-bold">Recent Activities</h3><Link href="/admin/logs" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-2 divide-y divide-slate-100">{activities.length ? activities.map((item) => <div key={item.id} className="flex items-center gap-2 py-2.5"><div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">{item.icon === "evidence" ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}</div><div className="min-w-0 flex-1"><div className="truncate text-[10px] font-medium">{item.title}</div><div className="text-[9px] text-slate-400">{item.meta}</div></div><span className="text-[9px] text-slate-400">{item.time}</span></div>) : <div className="py-4 text-xs text-slate-400">No recent activities.</div>}</div></div>
-        </section>
-
-        <section className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1.35fr_1fr]">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-bold">Quick Actions</h3><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">{[["New Risk", "/risks/create", <ShieldAlert size={18} />],["New Objective", "/company/objectives", <Target size={18} />],["New Process", "/company/processes", <Network size={18} />],["Add Standard", "/standards", <BookOpen size={18} />],["Add Evidence", "/evidences", <FolderOpen size={18} />],["Create Remediation", "/company/remediation", <Activity size={18} />],["New Task", "/company/tasks/create", <ListChecks size={18} />]].map(([label, href, icon]) => <Link key={String(label)} href={String(href)} className="flex min-h-24 flex-col items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-center hover:border-blue-200 hover:bg-blue-50"><div className="mb-2 text-blue-600">{icon}</div><span className="text-[10px] font-semibold">{label}</span></Link>)}</div></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h3 className="font-bold">Foundation Snapshot</h3><Link href="/company/profile" className="text-[10px] font-semibold text-blue-600">View all</Link></div><div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{[["Processes", "—", "/company/processes"],["Objectives", "—", "/company/objectives"],["Risks", totalRisks, "/risks"],["Standards", standards.length, "/standards"],["Controls", controlsCount || "—", "/controls"],["Locations", "—", "/company/locations"]].map(([label, value, href]) => <Link key={String(label)} href={String(href)} className="rounded-lg border border-slate-100 bg-slate-50 p-3 hover:bg-slate-100"><div className="text-[9px] text-slate-400">{label}</div><div className="mt-1 text-lg font-bold">{value}</div></Link>)}</div></div>
-        </section>
-
-        <footer className="mt-5 border-t border-slate-200 pt-4 text-center text-[10px] text-slate-400">© 2026 Compliance OS. All rights reserved.</footer>
       </div>
     </div>
   );
