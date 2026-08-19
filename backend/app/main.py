@@ -116,7 +116,7 @@ app.add_middleware(
         "https://compliance-intelligence-os-d3ot6ocmd-hasans-projects-b02466bd.vercel.app",
         "https://compliance-intelligence-os-pro-u6yj-q2oqjkxyo.vercel.app",
     ],
-    allow_origin_regex=r"^https://compliance-intelligence-os-pro-[a-z0-9-]+\.vercel\.app$",
+    allow_origin_regex=r"^https://compliance-intelligence-os-[a-z0-9-]+\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
