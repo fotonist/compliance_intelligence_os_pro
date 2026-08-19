@@ -2,25 +2,41 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { apiFetch } from "../lib/api";
+import { useEffect, useState, type ReactNode } from "react";
 import {
-  LayoutDashboard,
-  Building2,
-  ShieldCheck,
-  Brain,
   Activity,
-  Settings,
-  User,
-  LogOut,
   AlertTriangle,
-  PlusCircle,
-  ClipboardList,
+  BarChart3,
+  Bell,
+  BookOpen,
+  Building2,
+  CheckSquare,
   ClipboardCheck,
+  ClipboardList,
+  Database,
+  FileCheck2,
+  FileText,
+  Gauge,
+  Globe2,
+  Layers3,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  MapPin,
+  Network,
+  Scale,
+  Settings,
+  Shield,
+  ShieldCheck,
+  Target,
+  User,
+  Users,
+  Workflow,
 } from "lucide-react";
 import PremiumMenuItem from "./PremiumMenuItem";
+import { apiFetch } from "../lib/api";
 
-type CurrentUser = {
+ type CurrentUser = {
   id?: number | string;
   username?: string | null;
   full_name?: string | null;
@@ -35,10 +51,14 @@ function safeParseJwt(token?: string | null): any | null {
   if (parts.length !== 3) return null;
   try {
     const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const json = decodeURIComponent(
-      atob(base64).split("").map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2)).join("")
+    return JSON.parse(
+      decodeURIComponent(
+        atob(base64)
+          .split("")
+          .map((c) => `%${("00" + c.charCodeAt(0).toString(16)).slice(-2)}`)
+          .join("")
+      )
     );
-    return JSON.parse(json);
   } catch {
     return null;
   }
@@ -48,81 +68,67 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState<string | null>(null);
-  const [alertCount, setAlertCount] = useState<number>(0);
+  const [alertCount, setAlertCount] = useState(0);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   useEffect(() => {
-    if (pathname.startsWith("/company/profile") || pathname.startsWith("/company/processes")) {
-      setOpen("foundation");
-    } else if (pathname.startsWith("/matrix") || pathname.startsWith("/clause-weights") || pathname.startsWith("/risk-appetite")) {
-      setOpen("governance");
-    } else if (pathname.startsWith("/company/tasks") || pathname.startsWith("/evidences") || pathname.startsWith("/company/evidence") || pathname.startsWith("/risks")) {
-      setOpen("execution");
-    } else if (pathname.startsWith("/intelligence")) {
-      setOpen("intelligence");
-    } else if (pathname.startsWith("/audit")) {
-      setOpen("audit");
-    } else if (pathname.startsWith("/admin")) {
-      setOpen("admin");
-    } else {
-      setOpen(null);
-    }
+    if (pathname.startsWith("/company") || pathname.startsWith("/standards")) setOpen("foundation");
+    else if (pathname.startsWith("/governance") || pathname.startsWith("/matrix") || pathname.startsWith("/clause-weights") || pathname.startsWith("/risk-appetite")) setOpen("governance");
+    else if (pathname.startsWith("/intelligence")) setOpen("intelligence");
+    else if (pathname.startsWith("/risks") || pathname.startsWith("/evidences") || pathname.startsWith("/controls") || pathname.startsWith("/requirements") || pathname.startsWith("/clauses")) setOpen("operation");
+    else if (pathname.startsWith("/audit")) setOpen("audit");
+    else if (pathname.startsWith("/admin") || pathname.startsWith("/settings")) setOpen("admin");
+    else setOpen(null);
   }, [pathname]);
 
   useEffect(() => {
-    async function loadAlertCount() {
+    async function load() {
       try {
-        const res = await apiFetch("/company/intelligence/overview");
-        const data = await res.json();
-        setAlertCount(data?.summary?.executive_alerts || 0);
-      } catch {
-        setAlertCount(0);
+        const [overviewRes, meRes] = await Promise.all([
+          apiFetch("/company/intelligence/overview"),
+          apiFetch("/auth/me"),
+        ]);
+
+        if (overviewRes.ok) {
+          const data = await overviewRes.json();
+          setAlertCount(Number(data?.summary?.executive_alerts || 0));
+        }
+
+        if (meRes.ok) {
+          setCurrentUser(await meRes.json());
+          return;
+        }
+      } catch {}
+
+      const token = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
+      const payload = safeParseJwt(token);
+      if (payload) {
+        setCurrentUser({
+          username: payload.username ?? payload.sub ?? null,
+          email: payload.email ?? null,
+          role: payload.role ?? null,
+          tenant_id: payload.tenant_id ?? null,
+        });
       }
     }
-    loadAlertCount();
+
+    load();
   }, []);
 
-  useEffect(() => {
-    async function loadUser() {
-      try {
-        const res = await apiFetch("/auth/me");
-        if (res.ok) {
-          setCurrentUser(await res.json());
-          return;
-        }
-      } catch {}
-
-      try {
-        const token = localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
-        const payload = safeParseJwt(token);
-        if (payload) {
-          setCurrentUser({
-            username: payload.username ?? payload.sub ?? null,
-            email: payload.email ?? null,
-            role: payload.role ?? null,
-            tenant_id: payload.tenant_id ?? null,
-          });
-          return;
-        }
-      } catch {}
-      setCurrentUser(null);
-    }
-    loadUser();
-  }, []);
-
-  function isItemActive(href: string) {
-    if (href === "/matrix") {
-      return pathname === "/matrix" || pathname === "/matrix/instances" || pathname.startsWith("/matrix/instances/") || pathname === "/matrix/builder" || pathname.startsWith("/matrix/builder/");
-    }
-    if (href === "/matrix/intelligence") {
-      return pathname === "/matrix/intelligence" || pathname.startsWith("/matrix/intelligence/");
-    }
+  function isActive(href: string) {
     if (href === "/dashboard") return pathname === "/dashboard";
+    if (href === "/matrix") {
+      return pathname === "/matrix" || pathname === "/matrix/instances" || pathname.startsWith("/matrix/instances/") || pathname === "/matrix/builder";
+    }
     return pathname === href || pathname.startsWith(`${href}/`);
   }
 
   function itemClass(href: string) {
-    return `flex items-center gap-2 px-4 py-2 rounded text-sm hover:bg-slate-800 ${isItemActive(href) ? "bg-slate-800 font-medium text-slate-100" : ""}`;
+    return `flex items-center gap-2 rounded-md px-3 py-1.5 text-[12px] transition ${
+      isActive(href)
+        ? "bg-slate-800 font-semibold text-white"
+        : "text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+    }`;
   }
 
   function toggle(section: string) {
@@ -130,106 +136,119 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 bg-[#020817] border-r border-slate-800 min-h-screen px-3 py-4 text-slate-200 flex flex-col">
+    <aside className="flex min-h-screen w-64 shrink-0 flex-col border-r border-slate-800 bg-[#020817] px-3 py-4 text-slate-200">
       <div>
-        <div className="mb-6 px-2">
-          <div className="text-lg font-bold">Compliance OS</div>
-          <div className="text-xs text-slate-400">Governance & Intelligence Engine</div>
+        <div className="mb-5 px-2">
+          <div className="flex items-center gap-2 text-lg font-bold tracking-tight">
+            <ShieldCheck size={21} className="text-emerald-400" />
+            COMPLIANCE OS
+          </div>
+          <div className="mt-1 text-[10px] text-slate-400">Governance &amp; Intelligence</div>
         </div>
 
-        <nav className="space-y-3">
-          <Link href="/dashboard" className={itemClass("/dashboard")}><LayoutDashboard size={16} />Dashboard</Link>
+        <Link
+          href="/dashboard"
+          className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+            pathname === "/dashboard" ? "bg-slate-800 text-white" : "text-slate-200 hover:bg-slate-900"
+          }`}
+        >
+          <LayoutDashboard size={17} />
+          Company Home
+        </Link>
 
-          <Section title="Foundation" icon={<Building2 size={18} />} id="foundation" open={open} toggle={toggle}>
-            <Link href="/company/profile" className={itemClass("/company/profile")}>Company Profile</Link>
-            <Link href="/company/processes" className={itemClass("/company/processes")}>Processes</Link>
-            <Link href="/standards" className={itemClass("/standards")}>Standards</Link>
+        <nav className="space-y-1">
+          <Section title="FOUNDATION" subtitle="Şirket Temeli" icon={<Building2 size={16} />} id="foundation" open={open} toggle={toggle}>
+            <Link href="/company/profile" className={itemClass("/company/profile")}><Building2 size={14} />Company Profile</Link>
+            <Link href="/company/processes" className={itemClass("/company/processes")}><Workflow size={14} />Processes</Link>
+            <PremiumMenuItem label="Objectives" />
+            <Link href="/risks" className={itemClass("/risks")}><AlertTriangle size={14} />Risks</Link>
+            <Link href="/standards" className={itemClass("/standards")}><BookOpen size={14} />Standards</Link>
+            <PremiumMenuItem label="Assets & Resources" />
+            <PremiumMenuItem label="Organization" />
+            <PremiumMenuItem label="Locations" />
+            <PremiumMenuItem label="Stakeholders" />
+            <PremiumMenuItem label="Policies" />
           </Section>
 
-          <Section title="Governance" icon={<ShieldCheck size={18} />} id="governance" open={open} toggle={toggle}>
-            <Link href="/matrix" className={itemClass("/matrix")}>Control Matrix</Link>
-            <Link href="/matrix/intelligence" className={itemClass("/matrix/intelligence")}>Control Analytics</Link>
-            <Link href="/clause-weights" className={itemClass("/clause-weights")}>Clause Weights</Link>
-            <Link href="/risk-appetite" className={itemClass("/risk-appetite")}>Risk Appetite</Link>
+          <Section title="GOVERNANCE" subtitle="Yönetişim" icon={<Scale size={16} />} id="governance" open={open} toggle={toggle}>
+            <PremiumMenuItem label="Governance Dashboard" />
+            <PremiumMenuItem label="Policies & Procedures" />
+            <PremiumMenuItem label="Roles & Responsibilities" />
+            <PremiumMenuItem label="Compliance Obligations" />
+            <PremiumMenuItem label="Decision Registers" />
+            <PremiumMenuItem label="Governance Meetings" />
+            <PremiumMenuItem label="Committees" />
+            <PremiumMenuItem label="Approvals & Delegations" />
+            <PremiumMenuItem label="Document Control" />
+            <Link href="/matrix" className={itemClass("/matrix")}><Layers3 size={14} />Control Matrix</Link>
+            <Link href="/clause-weights" className={itemClass("/clause-weights")}><Scale size={14} />Clause Weights</Link>
+            <Link href="/risk-appetite" className={itemClass("/risk-appetite")}><Shield size={14} />Risk Appetite</Link>
           </Section>
 
-          <Section title="Intelligence" icon={<Brain size={18} />} id="intelligence" open={open} toggle={toggle} badge={alertCount}>
-            <Link href="/intelligence/executive" className={itemClass("/intelligence/executive")}>Executive Intelligence</Link>
-            <Link href="/intelligence/risk" className={itemClass("/intelligence/risk")}>Risk Intelligence</Link>
-            <Link href="/intelligence/readiness/processes" className={itemClass("/intelligence/readiness/processes")}>Executive Readiness</Link>
-            <Link href="/intelligence/gaps" className={itemClass("/intelligence/gaps")}>GAP Intelligence</Link>
-            <Link href="/intelligence/control/control-health" className={itemClass("/intelligence/control/control-health")}>Control Health</Link>
+          <Section title="INTELLIGENCE" subtitle="Zeka & Analitik" icon={<BarChart3 size={16} />} id="intelligence" open={open} toggle={toggle} badge={alertCount}>
+            <Link href="/intelligence/executive" className={itemClass("/intelligence/executive")}><Gauge size={14} />Executive Intelligence</Link>
+            <PremiumMenuItem label="Reports & Insights" />
+            <Link href="/intelligence/risk" className={itemClass("/intelligence/risk")}><AlertTriangle size={14} />Risk Intelligence</Link>
+            <Link href="/intelligence" className={itemClass("/intelligence")}><BarChart3 size={14} />Compliance Analytics</Link>
+            <PremiumMenuItem label="Trend Analysis" />
+            <PremiumMenuItem label="Predictive Insights" />
+            <PremiumMenuItem label="Benchmarking" />
+            <Link href="/dashboard" className={itemClass("/dashboard")}><TrendingUp size={14} />KPI & Metrics</Link>
+            <PremiumMenuItem label="Data Explorer" />
           </Section>
 
-          <Section title="Maturity" icon={<ClipboardList size={18} />} id="maturity" open={open} toggle={toggle}>
-            <Link href="/maturity/workspace" className={itemClass("/maturity/workspace")}>Maturity Workspace</Link>
-          </Section>
-
-          <Section title="Execution" icon={<Activity size={18} />} id="execution" open={open} toggle={toggle}>
-            <div className="rounded-md border border-slate-800/80 bg-slate-900/20 p-1">
-              <div className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-200">
-                <AlertTriangle size={16} />
-                Risk Management
-              </div>
-
-              <div className="ml-3 border-l border-slate-700 pl-2">
-                <Link
-                  href="/risks"
-                  className={itemClass("/risks")}
-                >
-                  <ClipboardList size={15} />
-                  Risk Register
-                </Link>
-
-                <Link
-                  href="/risks/create"
-                  className={itemClass("/risks/create")}
-                >
-                  <PlusCircle size={15} />
-                  Create Risk
-                </Link>
-              </div>
-            </div>
-
+          <Section title="OPERATION" subtitle="Operasyon" icon={<Activity size={16} />} id="operation" open={open} toggle={toggle}>
+            <Link href="/matrix" className={itemClass("/matrix")}><Layers3 size={14} />Compliance Matrix</Link>
+            <Link href="/controls" className={itemClass("/controls")}><ShieldCheck size={14} />Control Management</Link>
+            <Link href="/requirements" className={itemClass("/requirements")}><ListChecks size={14} />Requirement Management</Link>
+            <Link href="/clauses" className={itemClass("/clauses")}><FileText size={14} />Clause Management</Link>
+            <Link href="/standards" className={itemClass("/standards")}><BookOpen size={14} />Standard Management</Link>
+            <Link href="/risks" className={itemClass("/risks")}><AlertTriangle size={14} />Risk Management</Link>
+            <Link href="/evidences" className={itemClass("/evidences")}><FolderIcon />Evidence Management</Link>
             <PremiumMenuItem label="Remediation Center" />
-            <Link href="/company/tasks" className={itemClass("/company/tasks")}><ClipboardList size={16} />My Tasks</Link>
-            <PremiumMenuItem label="Evidence Library" />
-            <PremiumMenuItem label="Evidence Review" />
+            <PremiumMenuItem label="Action Management" />
+            <Link href="/company/tasks" className={itemClass("/company/tasks")}><ClipboardList size={14} />Task Management</Link>
           </Section>
 
-          <Section title="Internal Audit" icon={<ClipboardCheck size={18} />} id="audit" open={open} toggle={toggle}>
-            <Link href="/audit/planning" className={itemClass("/audit/planning")}>Audit Planning</Link>
+          <Section title="INTERNAL AUDIT" subtitle="İç Denetim" icon={<ClipboardCheck size={16} />} id="audit" open={open} toggle={toggle}>
+            <PremiumMenuItem label="Audit Dashboard" />
+            <Link href="/audit/planning" className={itemClass("/audit/planning")}><ClipboardList size={14} />Audit Planning</Link>
+            <PremiumMenuItem label="Audit Programs" />
+            <PremiumMenuItem label="Audit Checklists" />
             <PremiumMenuItem label="Audit Execution" />
-            <PremiumMenuItem label="Findings" />
-            <PremiumMenuItem label="Corrective Actions" />
+            <PremiumMenuItem label="Findings Management" />
             <PremiumMenuItem label="Audit Reports" />
+            <PremiumMenuItem label="Follow-up Actions" />
+            <PremiumMenuItem label="Audit Analytics" />
+            <PremiumMenuItem label="Auditor Management" />
           </Section>
 
-          <Section title="Administration" icon={<Settings size={18} />} id="admin" open={open} toggle={toggle}>
-            <Link href="/admin/users" className={itemClass("/admin/users")}>Users</Link>
-            <Link href="/admin/licenses" className={itemClass("/admin/licenses")}>License Management</Link>
-            <Link href="/admin/logs" className={itemClass("/admin/logs")}>Audit Logs</Link>
+          <Section title="ADMINISTRATION" subtitle="Yönetim" icon={<Settings size={16} />} id="admin" open={open} toggle={toggle}>
+            <Link href="/admin/users" className={itemClass("/admin/users")}><Users size={14} />Users</Link>
+            <PremiumMenuItem label="Roles & Permissions" />
+            <PremiumMenuItem label="Departments" />
+            <Link href="/settings/scoring" className={itemClass("/settings/scoring")}><Settings size={14} />Settings</Link>
+            <PremiumMenuItem label="Integrations" />
+            <PremiumMenuItem label="Notifications" />
+            <Link href="/admin/logs" className={itemClass("/admin/logs")}><ClipboardCheck size={14} />Audit Logs</Link>
+            <PremiumMenuItem label="Data Management" />
+            <PremiumMenuItem label="Backup & Restore" />
+            <Link href="/admin/licenses" className={itemClass("/admin/licenses")}><Shield size={14} />License Management</Link>
           </Section>
         </nav>
       </div>
 
-      <div className="mt-auto px-2 pt-4 border-t border-slate-800">
-        <div className="mb-3 bg-slate-800/60 rounded p-3">
-          <div className="mb-3 flex items-center justify-between rounded bg-indigo-500/10 border border-indigo-500/30 px-3 py-2">
-            <span className="text-xs text-indigo-300 font-medium">Demo Workspace</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">TRIAL</span>
-          </div>
+      <div className="mt-auto border-t border-slate-800 pt-3">
+        <div className="rounded-lg bg-slate-900/70 p-3">
           <div className="flex items-center gap-2">
-            <User size={16} />
-            <span className="text-sm font-semibold">{currentUser?.full_name || currentUser?.username || "Logged in"}</span>
-          </div>
-          {(currentUser?.email || currentUser?.role || currentUser?.tenant_id != null) && (
-            <div className="mt-1 text-xs text-slate-300 space-y-0.5">
-              {currentUser?.email && <div>{currentUser.email}</div>}
-              {currentUser?.role && <div className="text-slate-400">Role: {currentUser.role}</div>}
-              {currentUser?.tenant_id != null && <div className="text-slate-500">Tenant: {currentUser.tenant_id}</div>}
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-slate-200">
+              <User size={15} />
             </div>
-          )}
+            <div className="min-w-0">
+              <div className="truncate text-xs font-semibold text-white">{currentUser?.full_name || currentUser?.username || "Logged in"}</div>
+              <div className="truncate text-[10px] text-slate-400">{currentUser?.role || "User"}</div>
+            </div>
+          </div>
         </div>
 
         <button
@@ -240,27 +259,63 @@ export default function Sidebar() {
             sessionStorage.removeItem("token");
             router.replace("/login");
           }}
-          className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300"
+          className="mt-3 flex items-center gap-2 px-2 text-xs text-red-400 hover:text-red-300"
         >
-          <LogOut size={14} />Logout
+          <LogOut size={14} /> Logout
         </button>
       </div>
     </aside>
   );
 }
 
-function Section({ title, icon, id, open, toggle, children, badge }: { title: string; icon: React.ReactNode; id: string; open: string | null; toggle: (section: string) => void; children: React.ReactNode; badge?: number }) {
+function Section({
+  title,
+  subtitle,
+  icon,
+  id,
+  open,
+  toggle,
+  children,
+  badge,
+}: {
+  title: string;
+  subtitle: string;
+  icon: ReactNode;
+  id: string;
+  open: string | null;
+  toggle: (section: string) => void;
+  children: ReactNode;
+  badge?: number;
+}) {
   return (
-    <div>
-      <button onClick={() => toggle(id)} className="w-full flex items-center justify-between px-3 py-2 text-base font-semibold hover:text-white">
-        <div className="flex items-center gap-2">
-          {icon}
-          <span>{title}</span>
-          {!!badge && badge > 0 && <span className="bg-red-600 text-white text-xs px-2 py-0.5 rounded-full animate-pulse">{badge}</span>}
+    <div className="border-b border-slate-800/70 pb-1">
+      <button
+        type="button"
+        onClick={() => toggle(id)}
+        className="flex w-full items-center justify-between px-2 py-2 text-left hover:text-white"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-slate-400">{icon}</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-slate-200">
+              {title}
+              {!!badge && <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] text-white">{badge}</span>}
+            </div>
+            <div className="text-[9px] text-slate-500">{subtitle}</div>
+          </div>
         </div>
-        <span className="text-slate-500 text-sm">{open === id ? "▾" : "▸"}</span>
+        <span className="text-slate-500">{open === id ? "⌄" : "›"}</span>
       </button>
-      {open === id && <div className="space-y-1 ml-6 mt-1 text-sm text-slate-400">{children}</div>}
+
+      {open === id && <div className="ml-3 space-y-0.5 pb-2">{children}</div>}
     </div>
   );
+}
+
+function FolderIcon() {
+  return <span className="inline-flex h-3.5 w-3.5 items-center justify-center"><FolderOpenIcon /></span>;
+}
+
+function FolderOpenIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3.5 w-3.5"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /></svg>;
 }
