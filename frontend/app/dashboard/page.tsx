@@ -8,16 +8,13 @@ import {
   ArrowUpRight,
   Bell,
   BookOpen,
-  CheckCircle2,
   FolderOpen,
   Gauge,
-  Layers3,
   ListChecks,
   Network,
   ShieldAlert,
   ShieldCheck,
   Target,
-  User,
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -194,11 +191,7 @@ function KpiCard({
       <div className="mt-4 text-[10px] font-bold uppercase tracking-wide text-slate-500">{title}</div>
       <div className="mt-1 text-2xl font-bold text-slate-900">{value}</div>
       <div className="mt-1 min-h-8 text-[11px] text-slate-500">{subtitle}</div>
-      {href && (
-        <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">
-          View all <ArrowUpRight size={12} />
-        </div>
-      )}
+      {href && <div className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600">View all <ArrowUpRight size={12} /></div>}
     </div>
   );
   return href ? <Link href={href}>{content}</Link> : content;
@@ -221,75 +214,87 @@ export default function DashboardPage() {
   useEffect(() => {
     let mounted = true;
 
+    async function safeFetch(path: string): Promise<Response | null> {
+      try {
+        return await apiFetch(path);
+      } catch (error) {
+        console.warn(`Company Home optional request failed: ${path}`, error);
+        return null;
+      }
+    }
+
+    async function readJson<T = any>(res: Response | null): Promise<T | null> {
+      if (!res || !res.ok) return null;
+      try {
+        return (await res.json()) as T;
+      } catch {
+        return null;
+      }
+    }
+
     async function load() {
       try {
-        const responses = await Promise.all([
-          apiFetch("/kpi/summary"),
-          apiFetch("/company/intelligence/overview"),
-          apiFetch("/company/intelligence/gaps"),
-          apiFetch("/company/intelligence/control-health"),
-          apiFetch("/standards/"),
-          apiFetch("/evidences"),
-          apiFetch("/risks?page=1&page_size=100&status=all"),
-          apiFetch("/controls/?skip=0&limit=100"),
-          apiFetch("/dashboard/trends?days=180"),
-          apiFetch("/auth/me"),
+        const [summaryRes, overviewRes, gapsRes, healthRes, standardsRes, evidenceRes, risksRes, controlsRes, trendRes, userRes] = await Promise.all([
+          safeFetch("/matrix/kpi"),
+          safeFetch("/company/intelligence/overview"),
+          safeFetch("/company/intelligence/gaps"),
+          safeFetch("/company/intelligence/control-health"),
+          safeFetch("/standards/"),
+          safeFetch("/evidences"),
+          safeFetch("/risks?page=1&page_size=100&status=all"),
+          safeFetch("/controls/?skip=0&limit=100"),
+          safeFetch("/dashboard/trends?days=180"),
+          safeFetch("/auth/me"),
         ]);
 
-        const [summaryRes, overviewRes, gapsRes, healthRes, standardsRes, evidenceRes, risksRes, controlsRes, trendRes, userRes] = responses;
-        const [summaryData, overviewData, gapsData, healthData, standardsData, evidenceData, risksData] = await Promise.all([
-          summaryRes.json(),
-          overviewRes.json(),
-          gapsRes.json(),
-          healthRes.json(),
-          standardsRes.json(),
-          evidenceRes.json(),
-          risksRes.json(),
+        const [summaryData, overviewData, gapsData, healthData, standardsData, evidenceData, risksData, controlsData, trendData, userData] = await Promise.all([
+          readJson<UeeSummary>(summaryRes),
+          readJson<IntelligenceOverview>(overviewRes),
+          readJson<GapResponse>(gapsRes),
+          readJson<ControlHealth>(healthRes),
+          readJson<Standard[]>(standardsRes),
+          readJson<Evidence[]>(evidenceRes),
+          readJson<{ items?: Risk[] }>(risksRes),
+          readJson<any>(controlsRes),
+          readJson<any>(trendRes),
+          readJson<CurrentUser>(userRes),
         ]);
 
         if (!mounted) return;
 
-        setSummary(summaryData || null);
-        setOverview(overviewData || null);
-        setGaps(gapsData || null);
-        setControlHealth(healthData || null);
+        // /matrix/kpi is the live KPI endpoint in the current backend.
+        if (summaryData) setSummary(summaryData);
+        if (overviewData) setOverview(overviewData);
+        if (gapsData) setGaps(gapsData);
+        if (healthData) setControlHealth(healthData);
         setStandards(Array.isArray(standardsData) ? standardsData : []);
         setEvidences(Array.isArray(evidenceData) ? evidenceData : []);
         setRisks(Array.isArray(risksData?.items) ? risksData.items : []);
 
-        if (controlsRes.ok) {
-          const controlsData = await controlsRes.json();
-          setControlsCount(Array.isArray(controlsData) ? controlsData.length : 0);
-        }
+        if (Array.isArray(controlsData)) setControlsCount(controlsData.length);
+        else if (Array.isArray(controlsData?.items)) setControlsCount(controlsData.items.length);
 
-        if (trendRes.ok) {
-          const trendData = await trendRes.json();
-          const approvals = Array.isArray(trendData?.evidence_approvals_daily) ? trendData.evidence_approvals_daily : [];
-          const exposure = Array.isArray(trendData?.risk_exposure_trend) ? trendData.risk_exposure_trend : [];
+        if (trendData) {
+          const approvals = Array.isArray(trendData.evidence_approvals_daily) ? trendData.evidence_approvals_daily : [];
+          const exposure = Array.isArray(trendData.risk_exposure_trend) ? trendData.risk_exposure_trend : [];
           const byDate = new Map<string, TrendPoint>();
           for (const item of exposure) byDate.set(item.date, { date: item.date, risk_exposure_pct: num(item.risk_exposure_pct) });
           for (const item of approvals) {
             const existing = byDate.get(item.date);
-            if (existing) {
-              existing.approvals = num(item.count);
-            } else {
-              byDate.set(item.date, {
-                date: item.date,
-                approvals: num(item.count),
-              });
-            }
+            if (existing) existing.approvals = num(item.count);
+            else byDate.set(item.date, { date: item.date, approvals: num(item.count) });
           }
           setTrend(Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)));
         }
 
-        if (userRes.ok) setUser(await userRes.json());
+        if (userData) setUser(userData);
 
         const loadedStandards = Array.isArray(standardsData) ? standardsData : [];
         const result = await Promise.all(
           loadedStandards.map(async (standard: Standard) => {
             try {
-              const res = await apiFetch(`/matrix?standard_id=${standard.id}`);
-              if (!res.ok) return null;
+              const res = await safeFetch(`/matrix?standard_id=${standard.id}`);
+              if (!res?.ok) return null;
               const data = await res.json();
               const rows: MatrixRow[] = Array.isArray(data?.rows) ? data.rows : [];
               if (!rows.length) return { id: standard.id, code: standard.code, type: standard.type, score: 0 };
@@ -318,9 +323,7 @@ export default function DashboardPage() {
     }
 
     load();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
   const evidenceStats = useMemo(() => {
@@ -348,19 +351,7 @@ export default function DashboardPage() {
   }, [risks]);
 
   const activities = useMemo(() => {
-    return [...evidences.slice(0, 4).map((item) => ({
-      id: `e-${item.id}`,
-      title: `Evidence ${item.title || `#${item.id}`} updated`,
-      meta: "Evidence Management",
-      time: formatDate(item.created_at),
-      icon: "evidence" as const,
-    })), ...risks.slice(0, 4).map((item) => ({
-      id: `r-${item.id}`,
-      title: `Risk ${item.title || `#${item.id}`} was updated`,
-      meta: `${item.risk_level || "Risk"} Risk`,
-      time: formatDate(item.created_at),
-      icon: "risk" as const,
-    }))].slice(0, 7);
+    return [...evidences.slice(0, 4).map((item) => ({ id: `e-${item.id}`, title: `Evidence ${item.title || `#${item.id}`} updated`, meta: "Evidence Management", time: formatDate(item.created_at), icon: "evidence" as const })), ...risks.slice(0, 4).map((item) => ({ id: `r-${item.id}`, title: `Risk ${item.title || `#${item.id}`} was updated`, meta: `${item.risk_level || "Risk"} Risk`, time: formatDate(item.created_at), icon: "risk" as const }))].slice(0, 7);
   }, [evidences, risks]);
 
   if (loading || !summary || !overview) {
@@ -375,30 +366,14 @@ export default function DashboardPage() {
   const openRisks = num(overview.summary.open_risks, totalRisks);
   const totalGaps = num(gaps?.summary?.gaps_total);
   const openTasks = num(controlHealth?.open_tasks);
-  const standardRows = coverage;
-
-  const chartData = trend.map((item) => ({
-    ...item,
-    label: new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-    compliance_health: complianceHealth,
-    control_coverage: num(summary.indices?.coverage),
-    evidence_strength: num(summary.indices?.evidence),
-    risk_exposure: num(item.risk_exposure_pct),
-  }));
+  const chartData = trend.map((item) => ({ ...item, label: new Date(item.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }), compliance_health: complianceHealth, control_coverage: num(summary.indices?.coverage), evidence_strength: num(summary.indices?.evidence), risk_exposure: num(item.risk_exposure_pct) }));
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto max-w-[1700px] p-5 lg:p-6">
         <header className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Company Home</h1>
-            <p className="mt-1 text-sm text-slate-500">Welcome back, {user?.full_name || user?.username || "User"}! Here is your compliance overview.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium">Demo Company A.Ş.</div>
-            <button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Reporting Period <span className="ml-2 font-semibold">Aug 2026</span></button>
-            <Link href="/settings/scoring" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700">Scoring</Link>
-          </div>
+          <div><h1 className="text-3xl font-bold tracking-tight text-slate-900">Company Home</h1><p className="mt-1 text-sm text-slate-500">Welcome back, {user?.full_name || user?.username || "User"}! Here is your compliance overview.</p></div>
+          <div className="flex flex-wrap items-center gap-3"><div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium">Demo Company A.Ş.</div><button className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">Reporting Period <span className="ml-2 font-semibold">Aug 2026</span></button><Link href="/settings/scoring" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700">Scoring</Link></div>
         </header>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -409,40 +384,13 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-3">
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-            <div className="flex items-center justify-between">
-              <div><h2 className="text-sm font-bold text-slate-900">Compliance Overview</h2><p className="text-xs text-slate-500">Current enterprise posture</p></div>
-              <Gauge className="text-slate-400" size={18} />
-            </div>
-            <div className="mt-5 grid gap-5 md:grid-cols-2">
-              <div className="flex items-center gap-5"><Donut value={complianceHealth} label="Health" /><div><div className="text-xs text-slate-500">Compliance Health</div><div className="text-2xl font-bold">{Math.round(complianceHealth)}%</div><div className="mt-1 text-xs text-slate-500">Based on current risk, coverage, maturity and evidence posture.</div></div></div>
-              <div className="flex items-center gap-5"><Donut value={100 - exposure} label="Exposure" /><div><div className="text-xs text-slate-500">Exposure Control</div><div className="text-2xl font-bold">{Math.round(100 - exposure)}%</div><div className="mt-1 text-xs text-slate-500">Lower exposure indicates stronger compliance posture.</div></div></div>
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Risk Intelligence</h2><p className="text-xs text-slate-500">Current risk distribution</p></div><Activity size={18} className="text-slate-400" /></div>
-            <div className="mt-5 space-y-3 text-xs">
-              {([['Critical', riskStats.critical, 'bg-red-500'], ['High', riskStats.high, 'bg-orange-500'], ['Medium', riskStats.medium, 'bg-amber-400'], ['Low', riskStats.low, 'bg-emerald-500']] as const).map(([label, value, color]) => <div key={label}><div className="mb-1 flex justify-between"><span>{label}</span><span className="font-semibold">{value}</span></div><div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${color}`} style={{ width: `${totalRisks ? (value / totalRisks) * 100 : 0}%` }} /></div></div>)}
-            </div>
-          </section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold text-slate-900">Compliance Overview</h2><p className="text-xs text-slate-500">Current enterprise posture</p></div><Gauge className="text-slate-400" size={18} /></div><div className="mt-5 grid gap-5 md:grid-cols-2"><div className="flex items-center gap-5"><Donut value={complianceHealth} label="Health" /><div><div className="text-xs text-slate-500">Compliance Health</div><div className="text-2xl font-bold">{Math.round(complianceHealth)}%</div><div className="mt-1 text-xs text-slate-500">Based on current risk, coverage, maturity and evidence posture.</div></div></div><div className="flex items-center gap-5"><Donut value={100 - exposure} label="Exposure" /><div><div className="text-xs text-slate-500">Exposure Control</div><div className="text-2xl font-bold">{Math.round(100 - exposure)}%</div><div className="mt-1 text-xs text-slate-500">Lower exposure indicates stronger compliance posture.</div></div></div></div></section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Risk Intelligence</h2><p className="text-xs text-slate-500">Current risk distribution</p></div><Activity size={18} className="text-slate-400" /></div><div className="mt-5 space-y-3 text-xs">{([['Critical', riskStats.critical, 'bg-red-500'], ['High', riskStats.high, 'bg-orange-500'], ['Medium', riskStats.medium, 'bg-amber-400'], ['Low', riskStats.low, 'bg-emerald-500']] as const).map(([label, value, color]) => <div key={label}><div className="mb-1 flex justify-between"><span>{label}</span><span className="font-semibold">{value}</span></div><div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${color}`} style={{ width: `${totalRisks ? (value / totalRisks) * 100 : 0}%` }} /></div></div>)}</div></section>
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-3">
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-            <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Posture Trend</h2><p className="text-xs text-slate-500">Risk exposure and compliance indicators</p></div><Link href="/analytics" className="text-xs font-semibold text-blue-600">Open Analytics</Link></div>
-            <div className="mt-4 h-64">
-              {chartData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="label" tick={{ fontSize: 10 }} /><YAxis domain={[0, 100]} tick={{ fontSize: 10 }} /><Tooltip /><Line type="monotone" dataKey="compliance_health" stroke="#16a34a" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="control_coverage" stroke="#2563eb" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="risk_exposure" stroke="#ea580c" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center text-sm text-slate-400">No trend data available.</div>}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Standards Coverage</h2><p className="text-xs text-slate-500">Control and maturity posture</p></div><BookOpen size={18} className="text-slate-400" /></div>
-            <div className="mt-4 space-y-4">
-              {standardRows.map((row) => <div key={row.id}><div className="mb-1 flex justify-between text-xs"><span className="font-semibold">{row.code}</span><span>{row.score}%</span></div><div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${progressColor(row.score)}`} style={{ width: `${row.score}%` }} /></div></div>)}
-              {!standardRows.length && <div className="text-sm text-slate-400">No standards data available.</div>}
-            </div>
-          </section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Posture Trend</h2><p className="text-xs text-slate-500">Risk exposure and compliance indicators</p></div><Link href="/analytics" className="text-xs font-semibold text-blue-600">Open Analytics</Link></div><div className="mt-4 h-64">{chartData.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartData}><CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" /><XAxis dataKey="label" tick={{ fontSize: 10 }} /><YAxis domain={[0, 100]} tick={{ fontSize: 10 }} /><Tooltip /><Line type="monotone" dataKey="compliance_health" stroke="#16a34a" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="control_coverage" stroke="#2563eb" strokeWidth={2} dot={false} /><Line type="monotone" dataKey="risk_exposure" stroke="#ea580c" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer> : <div className="flex h-full items-center justify-center text-sm text-slate-400">No trend data available.</div>}</div></section>
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Standards Coverage</h2><p className="text-xs text-slate-500">Control and maturity posture</p></div><BookOpen size={18} className="text-slate-400" /></div><div className="mt-4 space-y-4">{coverage.map((row) => <div key={row.id}><div className="mb-1 flex justify-between text-xs"><span className="font-semibold">{row.code}</span><span>{row.score}%</span></div><div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${progressColor(row.score)}`} style={{ width: `${row.score}%` }} /></div></div>)}{!coverage.length && <div className="text-sm text-slate-400">No standards data available.</div>}</div></section>
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-3">
@@ -451,10 +399,7 @@ export default function DashboardPage() {
           <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Recent Activity</h2><p className="text-xs text-slate-500">Latest evidence and risk updates</p></div><ListChecks size={18} className="text-slate-400" /></div><div className="mt-4 space-y-3">{activities.map((item) => <div key={item.id} className="flex items-start gap-3"><div className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-lg ${item.icon === 'risk' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{item.icon === 'risk' ? <ShieldAlert size={14} /> : <FolderOpen size={14} />}</div><div className="min-w-0"><div className="truncate text-xs font-semibold">{item.title}</div><div className="text-[10px] text-slate-500">{item.meta}{item.time ? ` · ${item.time}` : ''}</div></div></div>)}{!activities.length && <div className="text-sm text-slate-400">No recent activity.</div>}</div></section>
         </div>
 
-        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Enterprise Snapshot</h2><p className="text-xs text-slate-500">Current operating footprint</p></div><Network size={18} className="text-slate-400" /></div>
-          <div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4"><div><div className="text-[10px] uppercase text-slate-500">Standards</div><div className="text-xl font-bold">{standards.length}</div></div><div><div className="text-[10px] uppercase text-slate-500">Controls</div><div className="text-xl font-bold">{controlsCount}</div></div><div><div className="text-[10px] uppercase text-slate-500">Evidence</div><div className="text-xl font-bold">{evidences.length}</div></div><div><div className="text-[10px] uppercase text-slate-500">Risks</div><div className="text-xl font-bold">{risks.length}</div></div></div>
-        </section>
+        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><div><h2 className="text-sm font-bold">Enterprise Snapshot</h2><p className="text-xs text-slate-500">Current operating footprint</p></div><Network size={18} className="text-slate-400" /></div><div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4"><div><div className="text-[10px] uppercase text-slate-500">Standards</div><div className="text-xl font-bold">{standards.length}</div></div><div><div className="text-[10px] uppercase text-slate-500">Controls</div><div className="text-xl font-bold">{controlsCount}</div></div><div><div className="text-[10px] uppercase text-slate-500">Evidence</div><div className="text-xl font-bold">{evidences.length}</div></div><div><div className="text-[10px] uppercase text-slate-500">Risks</div><div className="text-xl font-bold">{risks.length}</div></div></div></section>
       </div>
     </div>
   );
