@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import text
+from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.services.uee_engine import UEEEngine
+from app.models.audit_log import AuditLog
+from app.models.risks import Risk
 
 
 router = APIRouter(prefix="/kpi", tags=["KPI"])
@@ -114,6 +117,64 @@ def kpi_summary_status(
                 warn=50,
             ),
         }
+    }
+
+
+# =====================================================
+# COMPANY HOME TREND – TENANT SAFE
+# =====================================================
+
+@router.get("/trends")
+def kpi_trends(
+    days: int = Query(180, ge=1, le=3650),
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Return tenant-scoped strategic trend data used by Company Home."""
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise ValueError("Authenticated user has no tenant_id")
+
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    approvals = (
+        db.query(
+            func.date(AuditLog.created_at).label("day"),
+            func.count(AuditLog.id).label("count"),
+        )
+        .filter(
+            AuditLog.entity_type == "Evidence",
+            AuditLog.action == "STATUS_CHANGE",
+            AuditLog.new_value["status"].astext.in_(["Approved", "APPROVED"]),
+            AuditLog.created_at >= since,
+        )
+        .group_by(func.date(AuditLog.created_at))
+        .order_by(func.date(AuditLog.created_at))
+        .all()
+    )
+
+    state = _get_uee_state(db, tenant_id)
+    risk_exposure = round(float(state.risk_index), 2)
+
+    approval_days = [
+        {"date": str(row.day), "count": int(row.count)}
+        for row in approvals
+    ]
+
+    # There is no legitimate historical risk series unless historical risk
+    # snapshots exist. Do not manufacture one. Expose the current tenant-scoped
+    # UEE risk exposure as today's point instead.
+    today = datetime.now(timezone.utc).date().isoformat()
+    risk_trend = [{"date": today, "risk_exposure_pct": risk_exposure}]
+
+    return {
+        "period_days": days,
+        "evidence_approvals_daily": approval_days,
+        "risk_exposure_trend": risk_trend,
+        "current": {
+            "risk_exposure_pct": risk_exposure,
+            "total_risks": state.source_stats.get("risk", {}).get("row_count", 0),
+        },
     }
 
 
