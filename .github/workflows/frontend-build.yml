@@ -12,6 +12,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+
     defaults:
       run:
         working-directory: frontend
