@@ -10,141 +10,81 @@ type Props = {
   onCompleteRisk: (riskId: number) => void;
 };
 
-export default function RiskTable({
-  risks,
-  loading,
-  onDeleteRisk,
-  onCompleteRisk,
-}: Props) {
+export default function RiskTable({ risks, loading }: Props) {
   const router = useRouter();
 
   if (loading) {
-    return (
-      <div className="p-6 text-sm text-slate-400">
-        Loading risk intelligence…
-      </div>
-    );
+    return <div className="p-6 text-sm text-slate-500">Loading risk intelligence…</div>;
   }
 
   return (
-    <div className="overflow-hidden">
-      {/* TABLE */}
-      <table className="w-full border-collapse text-sm">
-        <thead className="bg-slate-900/80 text-slate-400 uppercase text-xs tracking-wide">
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] border-collapse text-sm">
+        <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="px-6 py-4 text-left">ID</th>
-            <th className="px-6 py-4 text-left">Risk</th>
-            <th className="px-6 py-4 text-left">Severity</th>
-            <th className="px-6 py-4 text-left">Score</th>
-            <th className="px-6 py-4 text-left">Treatment</th>
-            <th className="px-6 py-4 text-left">Coverage</th>
-            <th className="px-6 py-4 text-left">Evidence</th>
-            <th className="px-6 py-4 text-right">Action</th>
+            <th className="px-6 py-4 text-left font-semibold">ID</th>
+            <th className="px-6 py-4 text-left font-semibold">Risk</th>
+            <th className="px-6 py-4 text-left font-semibold">Severity</th>
+            <th className="px-6 py-4 text-left font-semibold">Score</th>
+            <th className="px-6 py-4 text-left font-semibold">Treatment</th>
+            <th className="px-6 py-4 text-left font-semibold">Coverage</th>
+            <th className="px-6 py-4 text-left font-semibold">Evidence</th>
+            <th className="px-6 py-4 text-right font-semibold">Action</th>
           </tr>
         </thead>
 
-        <tbody>
+        <tbody className="divide-y divide-slate-100">
           {risks.map((risk: RiskItem) => {
             const severityTone = getSeverityTone(risk.risk_level);
-            const coverageTone = getCoverageTone();
-            const governanceSignal = getGovernanceSignal(
-            risk.score ?? 0,
-            risk.evidence_count
-                    )
+            const governanceSignal = getGovernanceSignal(risk.score ?? 0, risk.evidence_count);
 
             return (
               <tr
                 key={risk.id}
                 onClick={() => router.push(`/risks/${risk.id}`)}
-                className="
-                  group
-                  cursor-pointer
-                  border-t border-slate-800/70
-                  hover:bg-gradient-to-r hover:from-slate-900 hover:to-slate-800
-                  transition
-                "
+                className="group cursor-pointer transition hover:bg-slate-50"
               >
-                {/* ID */}
-                <td className="px-6 py-4 text-slate-500">
-                  #{risk.id}
-                </td>
+                <td className="px-6 py-4 font-medium text-slate-500">#{risk.id}</td>
 
-                {/* TITLE */}
-                <td className="px-6 py-4 text-white font-medium">
-                  {risk.title}
-                </td>
+                <td className="px-6 py-4 font-medium text-slate-900">{risk.title}</td>
 
-                {/* SEVERITY */}
                 <td className="px-6 py-4">
-                  <span
-                    className={`px-3 py-1 rounded-full text-xs font-medium border ${severityTone}`}
-                  >
+                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${severityTone}`}>
                     {risk.risk_level || "Unknown"}
                   </span>
                 </td>
 
-                {/* SCORE */}
                 <td className="px-6 py-4">
-                  <span className="text-lg font-semibold text-white">
-                    {risk.score ?? 0}
+                  <span className="font-semibold text-slate-900">{risk.score ?? 0}</span>
+                </td>
+
+                <td className="px-6 py-4 text-slate-600">{risk.treatment || "—"}</td>
+
+                <td className="px-6 py-4">
+                  <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
+                    Not assessed
                   </span>
                 </td>
 
-                {/* TREATMENT */}
-                <td className="px-6 py-4 text-slate-300">
-                  {risk.treatment || "—"}
-                </td>
-
-                {/* COVERAGE */}
-                <td className="px-6 py-4">
-                  <span
-                    className={`px-3 py-1 rounded-md text-xs border ${coverageTone}`}
-                  >
-                    {"not_achieved"}
-                  </span>
-                </td>
-
-                {/* EVIDENCE + GOVERNANCE SIGNAL */}
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-3">
-                    <span className="text-slate-300">
-                      {risk.evidence_count ?? 0}
-                    </span>
-
-                    <span
-                      className={`text-xs px-2 py-1 rounded border ${governanceSignal}`}
-                    >
-                      Gov
-                    </span>
+                    <span className="font-medium text-slate-700">{risk.evidence_count ?? 0}</span>
+                    <span className={`rounded border px-2 py-1 text-xs ${governanceSignal}`}>Governance</span>
                   </div>
                 </td>
 
-              {/* DELETE ACTION - DEMO LOCK */}
-<td className="px-6 py-4 text-right">
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      e.preventDefault();
-
-      alert(
-        "Risk modification requires Risk Intelligence License activation."
-      );
-    }}
-    className="
-      opacity-0
-      group-hover:opacity-100
-      transition
-      text-xs
-      border border-slate-700
-      text-slate-500
-      px-3 py-1
-      rounded-md
-      cursor-not-allowed
-    "
-  >
-    🔒 Delete
-  </button>
-</td>
+                <td className="px-6 py-4 text-right">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      alert("Risk modification requires Risk Intelligence License activation.");
+                    }}
+                    className="rounded-md border border-slate-200 bg-white px-3 py-1 text-xs text-slate-500 opacity-0 transition group-hover:opacity-100 hover:bg-slate-50"
+                  >
+                    🔒 Delete
+                  </button>
+                </td>
               </tr>
             );
           })}
@@ -154,49 +94,18 @@ export default function RiskTable({
   );
 }
 
-/* ================= TONE SYSTEM ================= */
-
 function getSeverityTone(level?: string) {
   const l = (level || "").toLowerCase();
-
-  if (l.includes("critical"))
-    return "bg-rose-500/10 text-rose-300 border-rose-500/40";
-
-  if (l.includes("high"))
-    return "bg-orange-500/10 text-orange-300 border-orange-500/40";
-
-  if (l.includes("medium"))
-    return "bg-amber-500/10 text-amber-300 border-amber-500/40";
-
-  if (l.includes("low"))
-    return "bg-emerald-500/10 text-emerald-300 border-emerald-500/40";
-
-  return "bg-slate-800 text-slate-300 border-slate-700";
+  if (l.includes("critical")) return "border-rose-200 bg-rose-50 text-rose-700";
+  if (l.includes("high")) return "border-orange-200 bg-orange-50 text-orange-700";
+  if (l.includes("medium")) return "border-amber-200 bg-amber-50 text-amber-700";
+  if (l.includes("low")) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
 }
 
-function getCoverageTone(coverage?: string | null) {
-  const c = (coverage || "").toLowerCase();
-
-  if (c.includes("covered"))
-    return "bg-emerald-500/10 text-emerald-300 border-emerald-500/40";
-
-  if (c.includes("partial"))
-    return "bg-amber-500/10 text-amber-300 border-amber-500/40";
-
-  return "bg-rose-500/10 text-rose-300 border-rose-500/40";
-}
-
-function getGovernanceSignal(
-  score: number,
-  evidence?: number | null
-) {
+function getGovernanceSignal(score: number, evidence?: number | null) {
   const e = evidence || 0;
-
-  if (score >= 15 && e === 0)
-    return "bg-rose-500/10 text-rose-300 border-rose-500/40";
-
-  if (score >= 10 && e <= 1)
-    return "bg-amber-500/10 text-amber-300 border-amber-500/40";
-
-  return "bg-emerald-500/10 text-emerald-300 border-emerald-500/40";
+  if (score >= 15 && e === 0) return "border-rose-200 bg-rose-50 text-rose-700";
+  if (score >= 10 && e <= 1) return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
