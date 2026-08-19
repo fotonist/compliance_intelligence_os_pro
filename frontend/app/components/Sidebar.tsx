@@ -17,6 +17,8 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Scale,
   Settings,
   Shield,
@@ -61,6 +63,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const [alertCount, setAlertCount] = useState(0);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
@@ -128,29 +131,58 @@ export default function Sidebar() {
     setOpen((prev) => (prev === section ? null : section));
   }
 
+  function sectionToggle(section: string) {
+    if (collapsed) {
+      setCollapsed(false);
+      setOpen(section);
+      return;
+    }
+    toggle(section);
+  }
+
   return (
-    <aside className="flex min-h-screen w-64 shrink-0 flex-col border-r border-slate-200 bg-white px-3 py-4 text-slate-700">
-      <div>
-        <div className="mb-5 px-2">
-          <div className="flex items-center gap-2 text-lg font-bold tracking-tight text-[#0f2747]">
-            <ShieldCheck size={21} className="text-emerald-500" />
-            COMPLIANCE OS
+    <aside
+      className={`flex min-h-screen shrink-0 flex-col border-r border-slate-200 bg-white px-2 py-4 text-slate-700 transition-[width] duration-200 ${
+        collapsed ? "w-16" : "w-64"
+      }`}
+    >
+      <div className="min-w-0">
+        <div className={`mb-4 flex items-center ${collapsed ? "justify-center" : "justify-between px-2"}`}>
+          <div className={`flex items-center gap-2 text-lg font-bold tracking-tight text-[#0f2747] ${collapsed ? "justify-center" : ""}`} title="Compliance OS">
+            <ShieldCheck size={21} className="shrink-0 text-emerald-500" />
+            {!collapsed && <span>COMPLIANCE OS</span>}
           </div>
-          <div className="mt-1 text-[10px] text-slate-500">Governance &amp; Intelligence</div>
+
+          <button
+            type="button"
+            onClick={() => setCollapsed((value) => !value)}
+            className="rounded-md p-1.5 text-slate-500 transition hover:bg-[#eaf1fb] hover:text-[#0f2747]"
+            title={collapsed ? "Open sidebar" : "Collapse sidebar"}
+            aria-label={collapsed ? "Open sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </button>
         </div>
+
+        {!collapsed && (
+          <div className="mb-4 px-2 text-[10px] text-slate-500">Governance &amp; Intelligence</div>
+        )}
 
         <Link
           href="/dashboard"
-          className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${
+          title="Company Home"
+          className={`mb-3 flex items-center rounded-lg py-2 text-sm font-semibold transition ${
+            collapsed ? "justify-center px-2" : "gap-2 px-3"
+          } ${
             pathname === "/dashboard" ? "bg-[#eaf1fb] text-[#0f2747]" : "text-slate-700 hover:bg-slate-50"
           }`}
         >
           <LayoutDashboard size={17} />
-          Company Home
+          {!collapsed && "Company Home"}
         </Link>
 
         <nav className="space-y-1">
-          <Section title="FOUNDATION" subtitle="Şirket Temeli" icon={<Building2 size={16} />} id="foundation" open={open} toggle={toggle}>
+          <Section title="FOUNDATION" subtitle="Şirket Temeli" icon={<Building2 size={16} />} id="foundation" open={open} toggle={sectionToggle} collapsed={collapsed}>
             <Link href="/company/profile" className={itemClass("/company/profile")}><Building2 size={14} />Company Profile</Link>
             <Link href="/company/processes" className={itemClass("/company/processes")}><Workflow size={14} />Processes</Link>
             <PremiumMenuItem label="Objectives" />
@@ -163,7 +195,7 @@ export default function Sidebar() {
             <PremiumMenuItem label="Policies" />
           </Section>
 
-          <Section title="GOVERNANCE" subtitle="Yönetişim" icon={<Scale size={16} />} id="governance" open={open} toggle={toggle}>
+          <Section title="GOVERNANCE" subtitle="Yönetişim" icon={<Scale size={16} />} id="governance" open={open} toggle={sectionToggle} collapsed={collapsed}>
             <PremiumMenuItem label="Governance Dashboard" />
             <PremiumMenuItem label="Policies & Procedures" />
             <PremiumMenuItem label="Roles & Responsibilities" />
@@ -178,7 +210,7 @@ export default function Sidebar() {
             <Link href="/risk-appetite" className={itemClass("/risk-appetite")}><Shield size={14} />Risk Appetite</Link>
           </Section>
 
-          <Section title="INTELLIGENCE" subtitle="Zeka & Analitik" icon={<BarChart3 size={16} />} id="intelligence" open={open} toggle={toggle} badge={alertCount}>
+          <Section title="INTELLIGENCE" subtitle="Zeka & Analitik" icon={<BarChart3 size={16} />} id="intelligence" open={open} toggle={sectionToggle} badge={alertCount} collapsed={collapsed}>
             <Link href="/intelligence/executive" className={itemClass("/intelligence/executive")}><Gauge size={14} />Executive Intelligence</Link>
             <PremiumMenuItem label="Reports & Insights" />
             <Link href="/intelligence/risk" className={itemClass("/intelligence/risk")}><AlertTriangle size={14} />Risk Intelligence</Link>
@@ -190,7 +222,7 @@ export default function Sidebar() {
             <PremiumMenuItem label="Data Explorer" />
           </Section>
 
-          <Section title="OPERATION" subtitle="Operasyon" icon={<Activity size={16} />} id="operation" open={open} toggle={toggle}>
+          <Section title="OPERATION" subtitle="Operasyon" icon={<Activity size={16} />} id="operation" open={open} toggle={sectionToggle} collapsed={collapsed}>
             <Link href="/matrix" className={itemClass("/matrix")}><Layers3 size={14} />Compliance Matrix</Link>
             <Link href="/controls" className={itemClass("/controls")}><ShieldCheck size={14} />Control Management</Link>
             <Link href="/requirements" className={itemClass("/requirements")}><ListChecks size={14} />Requirement Management</Link>
@@ -203,7 +235,7 @@ export default function Sidebar() {
             <Link href="/company/tasks" className={itemClass("/company/tasks")}><ClipboardList size={14} />Task Management</Link>
           </Section>
 
-          <Section title="INTERNAL AUDIT" subtitle="İç Denetim" icon={<ClipboardCheck size={16} />} id="audit" open={open} toggle={toggle}>
+          <Section title="INTERNAL AUDIT" subtitle="İç Denetim" icon={<ClipboardCheck size={16} />} id="audit" open={open} toggle={sectionToggle} collapsed={collapsed}>
             <PremiumMenuItem label="Audit Dashboard" />
             <Link href="/audit/planning" className={itemClass("/audit/planning")}><ClipboardList size={14} />Audit Planning</Link>
             <PremiumMenuItem label="Audit Programs" />
@@ -216,7 +248,7 @@ export default function Sidebar() {
             <PremiumMenuItem label="Auditor Management" />
           </Section>
 
-          <Section title="ADMINISTRATION" subtitle="Yönetim" icon={<Settings size={16} />} id="admin" open={open} toggle={toggle}>
+          <Section title="ADMINISTRATION" subtitle="Yönetim" icon={<Settings size={16} />} id="admin" open={open} toggle={sectionToggle} collapsed={collapsed}>
             <Link href="/admin/users" className={itemClass("/admin/users")}><Users size={14} />Users</Link>
             <PremiumMenuItem label="Roles & Permissions" />
             <PremiumMenuItem label="Departments" />
@@ -232,15 +264,17 @@ export default function Sidebar() {
       </div>
 
       <div className="mt-auto border-t border-slate-200 pt-3">
-        <div className="rounded-lg bg-slate-50 p-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#eaf1fb] text-[#0f2747]">
+        <div className={`rounded-lg bg-slate-50 p-2 ${collapsed ? "flex justify-center" : "p-3"}`} title={collapsed ? (currentUser?.full_name || currentUser?.username || "Logged in") : undefined}>
+          <div className={`flex items-center ${collapsed ? "justify-center" : "gap-2"}`}>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#eaf1fb] text-[#0f2747]">
               <User size={15} />
             </div>
-            <div className="min-w-0">
-              <div className="truncate text-xs font-semibold text-[#0f2747]">{currentUser?.full_name || currentUser?.username || "Logged in"}</div>
-              <div className="truncate text-[10px] text-slate-500">{currentUser?.role || "User"}</div>
-            </div>
+            {!collapsed && (
+              <div className="min-w-0">
+                <div className="truncate text-xs font-semibold text-[#0f2747]">{currentUser?.full_name || currentUser?.username || "Logged in"}</div>
+                <div className="truncate text-[10px] text-slate-500">{currentUser?.role || "User"}</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -252,9 +286,11 @@ export default function Sidebar() {
             sessionStorage.removeItem("token");
             router.replace("/login");
           }}
-          className="mt-3 flex items-center gap-2 px-2 text-xs text-red-500 hover:text-red-600"
+          title="Logout"
+          className={`mt-3 flex items-center text-xs text-red-500 hover:text-red-600 ${collapsed ? "justify-center w-full px-2" : "gap-2 px-2"}`}
         >
-          <LogOut size={14} /> Logout
+          <LogOut size={14} />
+          {!collapsed && "Logout"}
         </button>
       </div>
     </aside>
@@ -270,6 +306,7 @@ function Section({
   toggle,
   children,
   badge,
+  collapsed,
 }: {
   title: string;
   subtitle: string;
@@ -279,28 +316,33 @@ function Section({
   toggle: (section: string) => void;
   children: ReactNode;
   badge?: number;
+  collapsed: boolean;
 }) {
   return (
     <div className="border-b border-slate-200/80 pb-1">
       <button
         type="button"
         onClick={() => toggle(id)}
-        className="flex w-full items-center justify-between px-2 py-2 text-left hover:text-[#0f2747]"
+        title={collapsed ? title : undefined}
+        className={`flex w-full items-center rounded-md py-2 text-left hover:bg-slate-50 hover:text-[#0f2747] ${collapsed ? "justify-center px-2" : "justify-between px-2"}`}
       >
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="text-slate-500">{icon}</span>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-[#0f2747]">
-              {title}
-              {!!badge && <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] text-white">{badge}</span>}
+        <div className={`flex min-w-0 items-center ${collapsed ? "justify-center" : "gap-2"}`}>
+          <span className="shrink-0 text-slate-500">{icon}</span>
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[11px] font-bold tracking-wide text-[#0f2747]">
+                {title}
+                {!!badge && <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] text-white">{badge}</span>}
+              </div>
+              <div className="text-[9px] text-slate-500">{subtitle}</div>
             </div>
-            <div className="text-[9px] text-slate-500">{subtitle}</div>
-          </div>
+          )}
+          {collapsed && !!badge && <span className="ml-1 h-2 w-2 rounded-full bg-red-600" />}
         </div>
-        <span className="text-slate-400">{open === id ? "⌄" : "›"}</span>
+        {!collapsed && <span className="text-slate-400">{open === id ? "⌄" : "›"}</span>}
       </button>
 
-      {open === id && <div className="ml-3 space-y-0.5 pb-2">{children}</div>}
+      {!collapsed && open === id && <div className="ml-3 space-y-0.5 pb-2">{children}</div>}
     </div>
   );
 }
