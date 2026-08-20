@@ -17,7 +17,7 @@ class UEEWeights:
     task_pressure: float = 0.15
 
     def normalized(self) -> "UEEWeights":
-        total = self.risk + self.coverage + self.maturity + self.evidence + self.task_pressure
+        total = float(self.risk + self.coverage + self.maturity + self.evidence + self.task_pressure)
         if total <= 0:
             return UEEWeights()
         return UEEWeights(
@@ -47,10 +47,12 @@ class UEEState:
 
 
 class UEEEngine:
-    """Deterministic tenant-scoped compliance exposure and health engine.
+    """Tenant-safe Unified Exposure Engine.
 
-    All component indices are exposure/pressure values: higher is worse.
-    Missing data is never treated as a neutral 50.
+    All indices are exposure/pressure values: 0 is best, 100 is worst.
+    No-data conditions are represented as zero exposure where the absence of
+    records means no current exposure, and coverage is derived from the
+    canonical tenant-scoped control coverage view.
     """
 
     def __init__(
@@ -69,13 +71,36 @@ class UEEEngine:
         warnings: list[str] = []
         weights = self._get_weights(db, tenant_id).normalized()
 
-        risk_index, risk_stats, w1 = self._compute_risk_index(db, tenant_id)
-        evidence_index, evidence_stats, w2 = self._compute_evidence_index(db, tenant_id)
-        maturity_index, maturity_stats, w3, maturity_available = self._compute_maturity_index(db, tenant_id)
-        coverage_index, coverage_stats, w4 = self._compute_coverage_index(db, tenant_id)
-        task_index, task_stats, w5, task_available = self._compute_task_pressure_index(db, tenant_id)
-        warnings.extend(w1 + w2 + w3 + w4 + w5)
+        risk_index, risk_stats, w1 = self._safe_metric(db, tenant_id, self._compute_risk_index)
+        warnings.extend(w1)
+        evidence_index, evidence_stats, w2 = self._safe_metric(db, tenant_id, self._compute_evidence_index)
+        warnings.extend(w2)
+        maturity_index, maturity_stats, w3 = self._safe_metric(db, tenant_id, self._compute_maturity_index)
+        warnings.extend(w3)
+        coverage_index, coverage_stats, w4 = self._safe_metric(db, tenant_id, self._compute_coverage_index)
+        warnings.extend(w4)
+        task_pressure_index, task_stats, w5 = self._safe_metric(db, tenant_id, self._compute_task_pressure_index)
+        warnings.extend(w5)
 
+        components = {
+            "risk": risk_index,
+            "coverage": coverage_index,
+            "maturity": maturity_index,
+            "evidence": evidence_index,
+            "task_pressure": task_pressure_index,
+        }
+
+        unified_exposure_score = self._clamp_0_100(
+            risk_index * weights.risk
+            + coverage_index * weights.coverage
+            + maturity_index * weights.maturity
+            + evidence_index * weights.evidence
+            + task_pressure_index * weights.task_pressure
+        )
+
+        # Control Health is a hard gate. If controls exist but none are covered,
+        # compliance health cannot be positive even when other exposure components
+        # are low. This keeps the API contract aligned with analytics views.
         total_controls = int(coverage_stats.get("total_controls", 0) or 0)
         covered_controls = int(coverage_stats.get("covered_controls", 0) or 0)
         control_health = (
@@ -83,36 +108,8 @@ class UEEEngine:
             if total_controls <= 0
             else (covered_controls / float(total_controls)) * 100.0
         )
-
-        active_weights: Dict[str, float] = {
-            "risk": weights.risk,
-            "coverage": weights.coverage,
-            "evidence": weights.evidence,
-        }
-        if maturity_available:
-            active_weights["maturity"] = weights.maturity
-        if task_available:
-            active_weights["task_pressure"] = weights.task_pressure
-
-        active_total = sum(active_weights.values()) or 1.0
-        active_weights = {k: v / active_total for k, v in active_weights.items()}
-
-        components = {
-            "risk": risk_index,
-            "coverage": coverage_index,
-            "maturity": maturity_index,
-            "evidence": evidence_index,
-            "task_pressure": task_index,
-        }
-
-        unified_exposure_score = self._clamp_0_100(
-            sum(components[name] * weight for name, weight in active_weights.items())
-        )
-
-        composite_health = self._clamp_0_100(100.0 - unified_exposure_score)
-        compliance_health_index = self._clamp_0_100(
-            min(composite_health, control_health)
-        )
+        raw_health = self._clamp_0_100(100.0 - unified_exposure_score)
+        compliance_health_index = self._clamp_0_100(min(raw_health, control_health))
 
         state = UEEState(
             tenant_id=tenant_id,
@@ -121,18 +118,25 @@ class UEEEngine:
             coverage_index=coverage_index,
             maturity_index=maturity_index,
             evidence_index=evidence_index,
-            task_pressure_index=task_index,
+            task_pressure_index=task_pressure_index,
             unified_exposure_score=unified_exposure_score,
             compliance_health_index=compliance_health_index,
-            weights=active_weights,
+            weights={
+                "risk": weights.risk,
+                "coverage": weights.coverage,
+                "maturity": weights.maturity,
+                "evidence": weights.evidence,
+                "task_pressure": weights.task_pressure,
+            },
             components=components,
             source_stats={
                 "risk": risk_stats,
-                "coverage": coverage_stats,
                 "evidence": evidence_stats,
                 "maturity": maturity_stats,
+                "coverage": coverage_stats,
                 "task_pressure": task_stats,
                 "control_health": control_health,
+                "raw_health": raw_health,
             },
             warnings=tuple(dict.fromkeys(warnings)),
         )
@@ -141,68 +145,129 @@ class UEEEngine:
             try:
                 with db.begin_nested():
                     self._snapshot_persister(db=db, state=state)
-            except Exception as exc:
-                warnings = tuple(state.warnings + (f"snapshot_persist_failed:{type(exc).__name__}",))
-                state = UEEState(**{**state.__dict__, "warnings": warnings})
+            except Exception as e:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                state = UEEState(
+                    **{**state.__dict__, "warnings": tuple(state.warnings + (f"snapshot_persist_failed:{type(e).__name__}",))}
+                )
 
         return state
+
+    def _safe_metric(self, db: Session, tenant_id: int, fn: callable) -> Tuple[float, Dict[str, Any], list[str]]:
+        try:
+            with db.begin_nested():
+                return fn(db, tenant_id)
+        except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            name = getattr(fn, "__name__", "metric")
+            return 0.0, {}, [f"{name}:failed:{type(e).__name__}"]
 
     def _get_weights(self, db: Session, tenant_id: int) -> UEEWeights:
         if self._weights_provider is None:
             return self._default_weights
         try:
-            value = self._weights_provider(db=db, tenant_id=tenant_id)
-            if isinstance(value, UEEWeights):
-                return value
-            if isinstance(value, dict):
+            w = self._weights_provider(db=db, tenant_id=tenant_id)
+            if isinstance(w, UEEWeights):
+                return w
+            if isinstance(w, dict):
                 return UEEWeights(
-                    risk=float(value.get("risk", self._default_weights.risk)),
-                    coverage=float(value.get("coverage", self._default_weights.coverage)),
-                    maturity=float(value.get("maturity", self._default_weights.maturity)),
-                    evidence=float(value.get("evidence", self._default_weights.evidence)),
-                    task_pressure=float(value.get("task_pressure", self._default_weights.task_pressure)),
+                    risk=float(w.get("risk", self._default_weights.risk)),
+                    coverage=float(w.get("coverage", self._default_weights.coverage)),
+                    maturity=float(w.get("maturity", self._default_weights.maturity)),
+                    evidence=float(w.get("evidence", self._default_weights.evidence)),
+                    task_pressure=float(w.get("task_pressure", self._default_weights.task_pressure)),
                 )
         except Exception:
             pass
         return self._default_weights
 
     def _compute_risk_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
-        warnings: list[str] = []
         stats: Dict[str, Any] = {}
+        warnings: list[str] = []
         try:
             row = db.execute(text("""
-                SELECT COUNT(*)::bigint AS n,
-                       AVG(score)::numeric AS avg_score,
-                       SUM(CASE WHEN LOWER(COALESCE(status, '')) = 'open' THEN 1 ELSE 0 END)::bigint AS open_n
-                FROM risks
+                SELECT
+                    COUNT(*)::bigint AS n,
+                    AVG(exposure_score)::numeric AS avg_exposure_score,
+                    AVG(risk_score)::numeric AS avg_risk_score,
+                    SUM(CASE WHEN is_covered THEN 1 ELSE 0 END)::bigint AS covered_n
+                FROM analytics.v_risk_exposure
                 WHERE tenant_id = :tenant_id
             """), {"tenant_id": tenant_id}).mappings().first()
             n = int(row["n"] or 0)
-            open_n = int(row["open_n"] or 0)
-            stats.update({"row_count": n, "open_count": open_n})
-            if n == 0:
+            stats["row_count"] = n
+            stats["covered_count"] = int(row["covered_n"] or 0)
+            if n <= 0:
                 warnings.append("risk:no_rows")
                 return 0.0, stats, warnings
-            avg_score = row["avg_score"]
-            if avg_score is None:
-                warnings.append("risk:missing_scores")
-                return 0.0, stats, warnings
-            risk_pressure = self._clamp_0_100(float(avg_score) * 4.0)
-            stats["avg_score"] = float(avg_score)
-            return risk_pressure, stats, warnings
-        except Exception as exc:
-            warnings.append(f"risk:query_failed:{type(exc).__name__}")
+            if row["avg_exposure_score"] is not None:
+                value = self._clamp_0_100(float(row["avg_exposure_score"]))
+                stats["avg_exposure_score"] = value
+                return value, stats, warnings
+            if row["avg_risk_score"] is not None:
+                value = self._normalize_unknown_scale(float(row["avg_risk_score"]))
+                stats["avg_risk_score"] = float(row["avg_risk_score"])
+                warnings.append("risk:used_avg_risk_score_normalization")
+                return value, stats, warnings
+            warnings.append("risk:missing_scores")
+            return 0.0, stats, warnings
+        except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            warnings.append(f"risk:query_failed:{type(e).__name__}")
             return 0.0, stats, warnings
 
-    def _compute_coverage_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
-        warnings: list[str] = []
+    def _compute_evidence_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
         stats: Dict[str, Any] = {}
+        warnings: list[str] = []
         try:
             row = db.execute(text("""
-                SELECT COUNT(*)::bigint AS total_controls,
-                       SUM(CASE WHEN coverage_status = 'covered' THEN 1 ELSE 0 END)::bigint AS covered_controls,
-                       SUM(CASE WHEN coverage_status = 'partial' THEN 1 ELSE 0 END)::bigint AS partial_controls,
-                       SUM(CASE WHEN coverage_status = 'uncovered' OR coverage_status IS NULL THEN 1 ELSE 0 END)::bigint AS uncovered_controls
+                SELECT COUNT(*)::bigint AS n,
+                       COALESCE(AVG(evidence_quality_score), 0)::numeric AS avg_quality
+                FROM analytics.v_evidence_intelligence
+                WHERE tenant_id = :tenant_id
+            """), {"tenant_id": tenant_id}).mappings().first()
+            n = int(row["n"] or 0)
+            stats["row_count"] = n
+            if n <= 0:
+                warnings.append("evidence:no_rows")
+                return 100.0, stats, warnings
+            value = self._clamp_0_100(float(row["avg_quality"] or 0))
+            stats["avg_quality"] = value
+            stats["source"] = "analytics.v_evidence_intelligence"
+            # quality is positive; convert to exposure/pressure
+            return 100.0 - value, stats, warnings
+        except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            warnings.append(f"evidence:query_failed:{type(e).__name__}")
+            return 100.0, stats, warnings
+
+    def _compute_maturity_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
+        # No active maturity assessment session means there is no measured maturity
+        # exposure to inject into the composite. Do not manufacture a 50 score.
+        return 0.0, {"row_count": 0, "source": "no_active_maturity_assessment"}, ["maturity:no_active_assessment"]
+
+    def _compute_coverage_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
+        stats: Dict[str, Any] = {}
+        warnings: list[str] = []
+        try:
+            row = db.execute(text("""
+                SELECT
+                    COUNT(*)::bigint AS total_controls,
+                    COUNT(*) FILTER (WHERE coverage_status = 'covered')::bigint AS covered_controls,
+                    COUNT(*) FILTER (WHERE coverage_status = 'partial')::bigint AS partial_controls,
+                    COUNT(*) FILTER (WHERE coverage_status = 'uncovered')::bigint AS uncovered_controls
                 FROM analytics.v_control_coverage_uee
                 WHERE tenant_id = :tenant_id
             """), {"tenant_id": tenant_id}).mappings().first()
@@ -216,96 +281,75 @@ class UEEEngine:
                 "partial_controls": partial,
                 "uncovered_controls": uncovered,
             })
-            if total == 0:
+            if total <= 0:
                 warnings.append("coverage:no_controls")
-                return 100.0, stats, warnings
-            coverage_score = ((covered * 100.0) + (partial * 50.0)) / total
-            stats["coverage_score"] = coverage_score
-            return self._clamp_0_100(100.0 - coverage_score), stats, warnings
-        except Exception as exc:
-            warnings.append(f"coverage:query_failed:{type(exc).__name__}")
-            return 100.0, stats, warnings
+                return 0.0, stats, warnings
+            # Exposure: covered=0, partial=50, uncovered=100.
+            exposure = ((partial * 50.0) + (uncovered * 100.0)) / total
+            stats["coverage_health"] = (covered / total) * 100.0
+            return self._clamp_0_100(exposure), stats, warnings
+        except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            warnings.append(f"coverage:query_failed:{type(e).__name__}")
+            return 0.0, stats, warnings
 
-    def _compute_evidence_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
-        warnings: list[str] = []
+    def _compute_task_pressure_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
         stats: Dict[str, Any] = {}
+        warnings: list[str] = []
         try:
             row = db.execute(text("""
-                SELECT COUNT(*)::bigint AS total_files,
-                       SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END)::bigint AS approved_files,
-                       SUM(CASE WHEN status = 'waiting_approval' THEN 1 ELSE 0 END)::bigint AS pending_files,
-                       SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END)::bigint AS rejected_files
-                FROM evidence_files
-                WHERE tenant_id = :tenant_id
-            """), {"tenant_id": tenant_id}).mappings().first()
-            total = int(row["total_files"] or 0)
-            approved = int(row["approved_files"] or 0)
-            pending = int(row["pending_files"] or 0)
-            rejected = int(row["rejected_files"] or 0)
-            stats.update({"total_files": total, "approved_files": approved, "pending_files": pending, "rejected_files": rejected})
-            if total == 0:
-                warnings.append("evidence:no_files")
-                return 100.0, stats, warnings
-            strength = approved / float(total) * 100.0
-            stats["strength_score"] = strength
-            return self._clamp_0_100(100.0 - strength), stats, warnings
-        except Exception as exc:
-            warnings.append(f"evidence:query_failed:{type(exc).__name__}")
-            return 100.0, stats, warnings
-
-    def _compute_maturity_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str], bool]:
-        warnings: list[str] = []
-        stats: Dict[str, Any] = {}
-        try:
-            row = db.execute(text("""
-                SELECT COUNT(*)::bigint AS n,
-                       AVG(achieved_level)::numeric AS avg_achieved,
-                       AVG(target_level)::numeric AS avg_target
-                FROM analytics.v_maturity_progress
+                SELECT
+                    COUNT(*)::bigint AS n,
+                    SUM(CASE WHEN UPPER(status::text) NOT IN ('DONE','COMPLETED','CLOSED') THEN 1 ELSE 0 END)::bigint AS open_n,
+                    SUM(CASE WHEN due_date IS NOT NULL
+                                  AND due_date < NOW()
+                                  AND UPPER(status::text) NOT IN ('DONE','COMPLETED','CLOSED')
+                             THEN 1 ELSE 0 END)::bigint AS overdue_n
+                FROM public.compliance_tasks
                 WHERE tenant_id = :tenant_id
             """), {"tenant_id": tenant_id}).mappings().first()
             n = int(row["n"] or 0)
-            if n == 0 or row["avg_target"] is None or float(row["avg_target"]) <= 0:
-                warnings.append("maturity:no_source")
-                return 0.0, stats, warnings, False
-            ratio = max(0.0, min(1.0, float(row["avg_achieved"] or 0) / float(row["avg_target"])))
-            pressure = (1.0 - ratio) * 100.0
-            stats.update({"row_count": n, "avg_achieved": float(row["avg_achieved"] or 0), "avg_target": float(row["avg_target"])})
-            return pressure, stats, warnings, True
-        except Exception:
-            warnings.append("maturity:no_source")
-            return 0.0, stats, warnings, False
-
-    def _compute_task_pressure_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str], bool]:
-        warnings: list[str] = []
-        stats: Dict[str, Any] = {}
-        try:
-            row = db.execute(text("""
-                SELECT COUNT(*)::bigint AS n,
-                       SUM(CASE WHEN status IN ('open','todo','in_progress') THEN 1 ELSE 0 END)::bigint AS open_n,
-                       SUM(CASE WHEN due_date IS NOT NULL AND due_date < NOW() AND status NOT IN ('done','closed') THEN 1 ELSE 0 END)::bigint AS overdue_n
-                FROM compliance_tasks
-                WHERE tenant_id = :tenant_id
-            """), {"tenant_id": tenant_id}).mappings().first()
-            n = int(row["n"] or 0)
-            if n == 0:
-                warnings.append("task:no_rows")
-                return 0.0, {"row_count": 0}, warnings, True
             open_n = int(row["open_n"] or 0)
             overdue_n = int(row["overdue_n"] or 0)
-            pressure = (0.6 * open_n / n + 0.4 * min(1.0, (overdue_n / n) * 2.0)) * 100.0
             stats.update({"row_count": n, "open_count": open_n, "overdue_count": overdue_n})
-            return self._clamp_0_100(pressure), stats, warnings, True
-        except Exception:
-            warnings.append("task:no_source")
-            return 0.0, stats, warnings, False
+            if n <= 0:
+                warnings.append("task:no_rows")
+                return 0.0, stats, warnings
+            open_ratio = open_n / float(n)
+            overdue_ratio = overdue_n / float(n)
+            pressure = (0.6 * open_ratio) + (0.4 * min(1.0, overdue_ratio * 2.0))
+            stats["open_ratio"] = open_ratio
+            stats["overdue_ratio"] = overdue_ratio
+            return self._clamp_0_100(pressure * 100.0), stats, warnings
+        except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            warnings.append(f"task:query_failed:{type(e).__name__}")
+            return 0.0, stats, warnings
 
     @staticmethod
-    def _clamp_0_100(value: float) -> float:
+    def _clamp_0_100(x: float) -> float:
         try:
-            value = float(value)
-        except (TypeError, ValueError):
+            v = float(x)
+        except Exception:
             return 0.0
-        if value != value:
+        if v != v:
             return 0.0
-        return max(0.0, min(100.0, value))
+        return max(0.0, min(100.0, v))
+
+    @staticmethod
+    def _normalize_unknown_scale(x: float) -> float:
+        try:
+            v = float(x)
+        except Exception:
+            return 0.0
+        if v < 0:
+            return 0.0
+        if v <= 25.0:
+            return max(0.0, min(100.0, v * 4.0))
+        return max(0.0, min(100.0, v))

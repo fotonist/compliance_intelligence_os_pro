@@ -30,32 +30,30 @@ export default function ChecklistQuestion({
   onChange,
 }: Props) {
   return (
-    <div className="border border-slate-800 rounded-md px-4 py-3 bg-slate-950">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-slate-400">
+    <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             {question.dimension}
           </div>
 
-          <div className="text-sm font-semibold text-slate-100">
+          <div className="mt-1 text-sm font-semibold text-slate-900">
             {question.title}
           </div>
 
           {question.description && (
-            <div className="text-xs text-slate-500 mt-0.5">
+            <div className="mt-1 text-xs leading-5 text-slate-500">
               {question.description}
             </div>
           )}
         </div>
 
-        <div className="text-xs px-2 py-1 rounded border border-slate-700 bg-slate-900 text-slate-300">
+        <div className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
           {value ? value : "Not answered"}
         </div>
       </div>
 
-      {/* Choices */}
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         {question.choices?.map((c) => (
           <ChecklistChoice
             key={c.key}
