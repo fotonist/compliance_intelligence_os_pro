@@ -19,6 +19,7 @@ from app.routes.matrix_view import router as matrix_view_router
 from app.routes.risk import router as risk_router
 from app.routes.risk_create import router as risk_create_router
 from app.routes.evidence import router as evidence_router
+from app.routes.evidence_create_fix import router as evidence_create_fix_router
 from app.routes.evidence_files import router as evidence_files_router
 from app.routes.standards import router as standards_router
 from app.routes.controls import router as controls_router
@@ -153,6 +154,11 @@ app.include_router(evidence_files_router)
 app.include_router(user_router)
 app.include_router(company_tasks_evidence_router)
 app.include_router(company_tasks_router)
+# Register the version-aware create endpoint before the legacy evidence router.
+# This preserves all existing evidence routes while making POST /evidences and
+# POST /company/evidences resolve through the canonical standard-version contract.
+app.include_router(evidence_create_fix_router)
+app.include_router(evidence_create_fix_router, prefix="/company")
 app.include_router(evidence_router)
 app.include_router(evidence_router, prefix="/company")
 app.include_router(risk_create_router)
