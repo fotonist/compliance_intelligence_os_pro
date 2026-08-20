@@ -5,6 +5,8 @@ from sqlalchemy import (
     ForeignKey,
     DateTime,
     Boolean,
+    event,
+    text,
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -125,20 +127,6 @@ class Evidence(Base, TenantMixin):
 
     # =========================================================
     # EVIDENCE WORKFLOW STATUS
-    #
-    # IMPORTANT:
-    # The production DB does NOT contain approval_status.
-    #
-    # Evidence approval is derived from the latest
-    # EvidenceFile.status.
-    #
-    # EvidenceFile.status:
-    #   uploaded
-    #   waiting_approval
-    #   approved
-    #   rejected
-    #
-    # Evidence-level status remains the existing DB field.
     # =========================================================
 
     status = Column(
@@ -175,9 +163,6 @@ class Evidence(Base, TenantMixin):
 
     # =========================================================
     # REVIEW / APPROVAL INFORMATION
-    #
-    # Approval state is represented through EvidenceFile.status.
-    # Reviewer metadata remains stored at Evidence level.
     # =========================================================
 
     reviewed_by = Column(
@@ -215,3 +200,112 @@ class Evidence(Base, TenantMixin):
         back_populates="evidence",
         cascade="all, delete-orphan",
     )
+
+
+# =========================================================
+# STANDARD CONTEXT REPAIR ON INSERT
+# =========================================================
+#
+# Evidence has two mandatory standard-context fields:
+#   - standard_id
+#   - standard_version_id
+#
+# Older control records in production can exist with a missing
+# standard_version_id. The canonical matrix chain is:
+#   MatrixRow -> MatrixInstance -> StandardVersion -> Standard
+#
+# Resolve the context at persistence time so every Evidence creation
+# path (UI, API, direct control upload, etc.) obeys the same invariant.
+# =========================================================
+@event.listens_for(Evidence, "before_insert")
+def populate_standard_context(mapper, connection, target):
+    # Nothing to repair when both mandatory values are already present.
+    if target.standard_version_id is not None and target.standard_id is not None:
+        return
+
+    # ---------------------------------------------------------
+    # CONTROL EVIDENCE
+    # ---------------------------------------------------------
+    if target.control_id is not None:
+        row = connection.execute(
+            text(
+                """
+                SELECT
+                    mr.standard_id,
+                    mi.standard_version_id
+                FROM matrix_rows mr
+                JOIN matrix_instances mi
+                    ON mi.id = mr.instance_id
+                WHERE mr.control_id = :control_id
+                  AND (:tenant_id IS NULL OR mr.tenant_id = :tenant_id)
+                ORDER BY mi.id DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "control_id": target.control_id,
+                "tenant_id": target.tenant_id,
+            },
+        ).mappings().first()
+
+        if row:
+            if target.standard_id is None:
+                target.standard_id = row["standard_id"]
+            if target.standard_version_id is None:
+                target.standard_version_id = row["standard_version_id"]
+
+        # Fallback for legacy controls not represented in matrix_rows.
+        if target.standard_version_id is None or target.standard_id is None:
+            row = connection.execute(
+                text(
+                    """
+                    SELECT
+                        c.standard_version_id,
+                        sv.standard_id
+                    FROM controls c
+                    LEFT JOIN standard_versions sv
+                        ON sv.id = c.standard_version_id
+                    WHERE c.id = :control_id
+                    LIMIT 1
+                    """
+                ),
+                {"control_id": target.control_id},
+            ).mappings().first()
+
+            if row:
+                if target.standard_version_id is None:
+                    target.standard_version_id = row["standard_version_id"]
+                if target.standard_id is None:
+                    target.standard_id = row["standard_id"]
+
+    # ---------------------------------------------------------
+    # MATURITY EVIDENCE
+    # ---------------------------------------------------------
+    if target.standard_id is not None and target.standard_version_id is None:
+        row = connection.execute(
+            text(
+                """
+                SELECT id
+                FROM standard_versions
+                WHERE standard_id = :standard_id
+                ORDER BY
+                    CASE WHEN status = 'published' THEN 0 ELSE 1 END,
+                    id DESC
+                LIMIT 1
+                """
+            ),
+            {"standard_id": target.standard_id},
+        ).mappings().first()
+
+        if row:
+            target.standard_version_id = row["id"]
+
+    # ---------------------------------------------------------
+    # HARD FAIL BEFORE POSTGRES NOT-NULL ERROR
+    # ---------------------------------------------------------
+    if target.standard_version_id is None or target.standard_id is None:
+        raise ValueError(
+            "Evidence standard context could not be resolved. "
+            "Provide a valid control mapped to a matrix instance or "
+            "provide standard_id/standard_version_id explicitly."
+        )
