@@ -28,6 +28,45 @@ def _normalized_code(value: str | None) -> str:
     return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
 
 
+def _find_canonical_published_version(
+    db: Session,
+    standard: Standard,
+) -> StandardVersion | None:
+    if standard.type != "CONTROL_BASED":
+        return None
+
+    candidates = (
+        db.query(Standard)
+        .filter(
+            Standard.id != standard.id,
+            Standard.type == "CONTROL_BASED",
+        )
+        .order_by(Standard.id.desc())
+        .all()
+    )
+
+    source_standard = next(
+        (
+            item
+            for item in candidates
+            if _normalized_code(item.code) == _normalized_code(standard.code)
+        ),
+        None,
+    )
+    if not source_standard:
+        return None
+
+    return (
+        db.query(StandardVersion)
+        .filter(
+            StandardVersion.standard_id == source_standard.id,
+            StandardVersion.status == "published",
+        )
+        .order_by(StandardVersion.id.desc())
+        .first()
+    )
+
+
 def _clone_control_structure(
     db: Session,
     source_version: StandardVersion,
@@ -110,6 +149,18 @@ def ensure_draft(db: Session, standard: Standard) -> StandardVersion:
         .first()
     )
     if draft:
+        if standard.type == "CONTROL_BASED":
+            has_structure = (
+                db.query(Clause.id)
+                .filter(Clause.standard_version_id == draft.id)
+                .first()
+                is not None
+            )
+            if not has_structure:
+                source_version = _find_canonical_published_version(db, standard)
+                if source_version:
+                    _clone_control_structure(db, source_version, standard, draft)
+                    db.commit()
         return draft
 
     published = (
@@ -131,6 +182,12 @@ def ensure_draft(db: Session, standard: Standard) -> StandardVersion:
         db.add(draft)
         db.commit()
         db.refresh(draft)
+
+        if standard.type == "CONTROL_BASED":
+            source_version = _find_canonical_published_version(db, standard)
+            if source_version:
+                _clone_control_structure(db, source_version, standard, draft)
+                db.commit()
         return draft
 
     draft = StandardVersion(
@@ -237,35 +294,9 @@ def create_standard(
     db.refresh(draft)
 
     if db_standard.type == "CONTROL_BASED":
-        source_standard = (
-            db.query(Standard)
-            .filter(
-                Standard.id != db_standard.id,
-                Standard.type == "CONTROL_BASED",
-            )
-            .all()
-        )
-        source_standard = next(
-            (
-                item
-                for item in source_standard
-                if _normalized_code(item.code) == _normalized_code(db_standard.code)
-            ),
-            None,
-        )
-
-        if source_standard:
-            source_version = (
-                db.query(StandardVersion)
-                .filter(
-                    StandardVersion.standard_id == source_standard.id,
-                    StandardVersion.status == "published",
-                )
-                .order_by(StandardVersion.id.desc())
-                .first()
-            )
-            if source_version:
-                _clone_control_structure(db, source_version, db_standard, draft)
+        source_version = _find_canonical_published_version(db, db_standard)
+        if source_version:
+            _clone_control_structure(db, source_version, db_standard, draft)
 
     db.commit()
     return StandardResponse.model_validate(db_standard)
