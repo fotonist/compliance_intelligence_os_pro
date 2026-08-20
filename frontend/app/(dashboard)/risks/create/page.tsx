@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import ChecklistQuestion from "@/app/components/assessment/ChecklistQuestion";
 import AssessmentFooter from "@/app/components/assessment/AssessmentFooter";
+import { apiFetch } from "@/app/lib/api";
 
 type Dimension = "likelihood" | "impact";
 type SourceType = "STANDARD" | "REQUIREMENT" | "CONTROL";
@@ -38,9 +39,6 @@ type StandardStructure = {
   }[];
 };
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "https://compliance-intelligence-os-pro-2.onrender.com";
-
 const CHOICE_SCORE_MAP: Record<string, number> = {
   rare: 1,
   unlikely: 2,
@@ -71,6 +69,12 @@ export default function CreateRiskPage() {
   const [sourceType, setSourceType] = useState<SourceType | "">("");
   const [sourceId, setSourceId] = useState<number | "">("");
   const [sourceOptions, setSourceOptions] = useState<SourceOption[]>([]);
+  const [allSourceOptions, setAllSourceOptions] = useState<{
+    standards: SourceOption[];
+    requirements: SourceOption[];
+    controls: SourceOption[];
+  }>({ standards: [], requirements: [], controls: [] });
+
   const [processId, setProcessId] = useState<number | "">("");
   const [processes, setProcesses] = useState<any[]>([]);
 
@@ -81,28 +85,27 @@ export default function CreateRiskPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function token() {
-    return localStorage.getItem("access_token") || "";
-  }
-
-  async function apiGet(path: string) {
-    const res = await fetch(`${API_BASE}${path}`, {
-      headers: token() ? { Authorization: `Bearer ${token()}` } : undefined,
-      credentials: "include",
-    });
-    if (!res.ok) throw new Error(await res.text());
-    return res.json();
-  }
-
   useEffect(() => {
-    (async () => {
+    let mounted = true;
+
+    async function load() {
       try {
         setBootLoading(true);
-        const [questionData, processData, standardData] = await Promise.all([
-          apiGet("/risk-assessment/questions"),
-          apiGet("/company/processes"),
-          apiGet("/standards/"),
+        setError(null);
+
+        const [questionRes, processRes, standardRes] = await Promise.all([
+          apiFetch("/risk-assessment/questions"),
+          apiFetch("/company/processes"),
+          apiFetch("/standards/"),
         ]);
+
+        const [questionData, processData, standardData] = await Promise.all([
+          questionRes.json(),
+          processRes.json(),
+          standardRes.json(),
+        ]);
+
+        if (!mounted) return;
 
         setQuestions(Array.isArray(questionData) ? questionData : []);
         setProcesses(
@@ -110,21 +113,28 @@ export default function CreateRiskPage() {
         );
 
         const standards = Array.isArray(standardData) ? standardData : [];
+
         const structures = await Promise.all(
           standards.map(async (standard: any) => {
             try {
-              return await apiGet(`/standards/${standard.id}/structure`);
+              const response = await apiFetch(
+                `/standards/${standard.id}/structure`
+              );
+              return await response.json();
             } catch {
               return null;
             }
           })
         );
 
+        if (!mounted) return;
+
         const requirements: SourceOption[] = [];
         const controls: SourceOption[] = [];
 
         structures.forEach((structure: StandardStructure | null) => {
           if (!structure?.clauses) return;
+
           structure.clauses.forEach((clause) => {
             clause.requirements?.forEach((requirement) => {
               requirements.push({
@@ -133,6 +143,7 @@ export default function CreateRiskPage() {
                 title: requirement.title,
                 standardCode: structure.standard_code,
               });
+
               requirement.controls?.forEach((control) => {
                 controls.push({
                   id: control.id,
@@ -145,29 +156,31 @@ export default function CreateRiskPage() {
           });
         });
 
-        (window as any).__riskSourceOptions = {
-          standards: standards.map((s: any) => ({
-            id: s.id,
-            code: s.code,
-            title: s.title,
+        const nextSourceOptions = {
+          standards: standards.map((standard: any) => ({
+            id: standard.id,
+            code: standard.code,
+            title: standard.title,
           })),
           requirements,
           controls,
         };
 
-        setSourceOptions(
-          standards.map((s: any) => ({
-            id: s.id,
-            code: s.code,
-            title: s.title,
-          }))
-        );
+        setAllSourceOptions(nextSourceOptions);
+        setSourceOptions(nextSourceOptions.standards);
       } catch (e: any) {
-        setError(e?.message || "Initialization failed");
+        if (!mounted) return;
+        setError(e?.message || "Unable to load risk assessment data.");
       } finally {
-        setBootLoading(false);
+        if (mounted) setBootLoading(false);
       }
-    })();
+    }
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   function dimensionScore(dim: Dimension): number | null {
@@ -177,18 +190,28 @@ export default function CreateRiskPage() {
     const scores = group
       .map((q) => answers[q.id])
       .filter(Boolean)
-      .map((k) => CHOICE_SCORE_MAP[k!])
-      .filter((n) => typeof n === "number");
+      .map((key) => CHOICE_SCORE_MAP[key!])
+      .filter((value) => typeof value === "number");
 
     if (scores.length !== group.length) return null;
     return Math.max(...scores);
   }
 
-  const likelihood = useMemo(() => dimensionScore("likelihood"), [answers, questions]);
-  const impact = useMemo(() => dimensionScore("impact"), [answers, questions]);
+  const likelihood = useMemo(
+    () => dimensionScore("likelihood"),
+    [answers, questions]
+  );
+
+  const impact = useMemo(
+    () => dimensionScore("impact"),
+    [answers, questions]
+  );
 
   const score = useMemo(() => {
-    if (typeof likelihood !== "number" || typeof impact !== "number") return null;
+    if (typeof likelihood !== "number" || typeof impact !== "number") {
+      return null;
+    }
+
     return likelihood * impact;
   }, [likelihood, impact]);
 
@@ -209,10 +232,15 @@ export default function CreateRiskPage() {
     setSourceType(value);
     setSourceId("");
 
-    const all = (window as any).__riskSourceOptions || {};
-    if (value === "STANDARD") setSourceOptions(all.standards || []);
-    if (value === "REQUIREMENT") setSourceOptions(all.requirements || []);
-    if (value === "CONTROL") setSourceOptions(all.controls || []);
+    if (value === "STANDARD") {
+      setSourceOptions(allSourceOptions.standards);
+    } else if (value === "REQUIREMENT") {
+      setSourceOptions(allSourceOptions.requirements);
+    } else if (value === "CONTROL") {
+      setSourceOptions(allSourceOptions.controls);
+    } else {
+      setSourceOptions([]);
+    }
   }
 
   async function handleCreate() {
@@ -222,16 +250,11 @@ export default function CreateRiskPage() {
       setSaving(true);
       setError(null);
 
-      const res = await fetch(`${API_BASE}/risks/`, {
+      await apiFetch("/risks/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token() ? { Authorization: `Bearer ${token()}` } : {}),
-        },
-        credentials: "include",
         body: JSON.stringify({
-          title,
-          description,
+          title: title.trim(),
+          description: description.trim(),
           likelihood,
           impact,
           process_id: Number(processId),
@@ -241,10 +264,9 @@ export default function CreateRiskPage() {
         }),
       });
 
-      if (!res.ok) throw new Error(await res.text());
       router.push("/risks");
     } catch (e: any) {
-      setError(e?.message || "Create risk failed");
+      setError(e?.message || "Unable to create risk.");
     } finally {
       setSaving(false);
     }
@@ -253,7 +275,9 @@ export default function CreateRiskPage() {
   if (bootLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center bg-slate-50">
-        <div className="text-sm text-slate-500">Loading risk assessment…</div>
+        <div className="text-sm text-slate-500">
+          Loading risk assessment…
+        </div>
       </div>
     );
   }
@@ -265,7 +289,9 @@ export default function CreateRiskPage() {
           <div className="text-xs font-semibold uppercase tracking-wider text-blue-600">
             Risk Management
           </div>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900">Create New Risk</h1>
+          <h1 className="mt-1 text-2xl font-semibold text-slate-900">
+            Create New Risk
+          </h1>
           <p className="mt-1 text-sm text-slate-500">
             Define the risk context, assess likelihood and impact, and create the initial risk version.
           </p>
@@ -279,7 +305,9 @@ export default function CreateRiskPage() {
 
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-900">Risk Context</h2>
+            <h2 className="text-base font-semibold text-slate-900">
+              Risk Context
+            </h2>
             <p className="mt-1 text-xs text-slate-500">
               Link the risk to the applicable standard, requirement or control and organizational process.
             </p>
@@ -287,10 +315,14 @@ export default function CreateRiskPage() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Source Type</label>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Source Type
+              </label>
               <select
                 value={sourceType}
-                onChange={(e) => handleSourceTypeChange(e.target.value as SourceType | "")}
+                onChange={(event) =>
+                  handleSourceTypeChange(event.target.value as SourceType | "")
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Select source type…</option>
@@ -301,19 +333,25 @@ export default function CreateRiskPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Source</label>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Source
+              </label>
               <select
                 value={sourceId}
                 disabled={!sourceType || sourceOptions.length === 0}
-                onChange={(e) => setSourceId(e.target.value ? Number(e.target.value) : "")}
+                onChange={(event) =>
+                  setSourceId(
+                    event.target.value ? Number(event.target.value) : ""
+                  )
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
               >
                 <option value="">
                   {!sourceType
                     ? "Select source type first…"
                     : sourceOptions.length
-                    ? "Select source…"
-                    : "No sources available"}
+                      ? "Select source…"
+                      : "No sources available"}
                 </option>
                 {sourceOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -325,16 +363,23 @@ export default function CreateRiskPage() {
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Process</label>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Process
+              </label>
               <select
                 value={processId}
-                onChange={(e) => setProcessId(e.target.value ? Number(e.target.value) : "")}
+                onChange={(event) =>
+                  setProcessId(
+                    event.target.value ? Number(event.target.value) : ""
+                  )
+                }
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 <option value="">Select process…</option>
-                {processes.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.code ? `${p.code} — ` : ""}{p.name || p.title}
+                {processes.map((process) => (
+                  <option key={process.id} value={process.id}>
+                    {process.code ? `${process.code} — ` : ""}
+                    {process.name || process.title}
                   </option>
                 ))}
               </select>
@@ -344,29 +389,37 @@ export default function CreateRiskPage() {
 
         <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-5">
-            <h2 className="text-base font-semibold text-slate-900">Risk Definition</h2>
-            <p className="mt-1 text-xs text-slate-500">Describe the risk in business and operational terms.</p>
+            <h2 className="text-base font-semibold text-slate-900">
+              Risk Definition
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Describe the risk in business and operational terms.
+            </p>
           </div>
 
           <div className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Risk Title</label>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Risk Title
+              </label>
               <input
                 placeholder="e.g. Unauthorized access to privileged accounts"
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(event) => setTitle(event.target.value)}
               />
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600">Description</label>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Description
+              </label>
               <textarea
                 rows={4}
                 placeholder="Describe the event, cause and potential consequence."
                 className="w-full resize-y rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(event) => setDescription(event.target.value)}
               />
             </div>
           </div>
@@ -375,12 +428,14 @@ export default function CreateRiskPage() {
         <section className="rounded-xl border border-slate-200 bg-slate-50 p-6 shadow-sm">
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-semibold text-slate-900">Risk Assessment</h2>
+              <h2 className="text-base font-semibold text-slate-900">
+                Risk Assessment
+              </h2>
               <p className="mt-1 text-xs text-slate-500">
                 Assess likelihood and impact. The system calculates the score from the selected values.
               </p>
             </div>
-            <div className="hidden sm:flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+            <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600 sm:flex">
               <span>Score</span>
               <strong className="text-slate-900">{score ?? "—"}</strong>
               <span className="mx-1 text-slate-300">|</span>
@@ -390,22 +445,28 @@ export default function CreateRiskPage() {
           </div>
 
           <div className="space-y-6">
-            {(["likelihood", "impact"] as Dimension[]).map((dim) => {
-              const group = questions.filter((q) => q.dimension === dim);
+            {(["likelihood", "impact"] as Dimension[]).map((dimension) => {
+              const group = questions.filter(
+                (question) => question.dimension === dimension
+              );
+
               if (group.length === 0) return null;
 
               return (
-                <div key={dim} className="space-y-3">
+                <div key={dimension} className="space-y-3">
                   <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    {dim}
+                    {dimension}
                   </div>
-                  {group.map((q) => (
+                  {group.map((question) => (
                     <ChecklistQuestion
-                      key={q.id}
-                      question={q}
-                      value={answers[q.id]}
-                      onChange={(qid, choiceKey) =>
-                        setAnswers((prev) => ({ ...prev, [qid]: choiceKey }))
+                      key={question.id}
+                      question={question}
+                      value={answers[question.id]}
+                      onChange={(questionId, choiceKey) =>
+                        setAnswers((previous) => ({
+                          ...previous,
+                          [questionId]: choiceKey,
+                        }))
                       }
                     />
                   ))}
