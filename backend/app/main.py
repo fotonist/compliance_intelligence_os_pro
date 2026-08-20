@@ -142,10 +142,10 @@ def startup():
 # ==============================
 
 app.include_router(auth.router, tags=["auth"])
-# Matrix view must be registered before the legacy matrix router because both
-# expose GET /matrix/. The new endpoint reads the generated matrix_rows data.
-app.include_router(matrix_view_router)
+# Matrix generation/preview must win the shared GET /matrix route. The legacy
+# matrix_view router is registered after the canonical matrix router.
 app.include_router(matrix_router)
+app.include_router(matrix_view_router)
 app.include_router(assessments.router)
 app.include_router(kpi_router)
 app.include_router(company_home_router)
