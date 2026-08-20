@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
+import re
 
 from app.db.session import get_db
 from app.core.security import get_current_user
@@ -9,7 +10,6 @@ from app.models.standards import Standard
 from app.models.standard_versions import StandardVersion
 from app.schemas.standard_schema import StandardCreate, StandardResponse
 
-# STRUCTURE MODELS
 from app.models.clauses import Clause
 from app.models.requirements import Requirement
 from app.models.controls import Control
@@ -23,9 +23,83 @@ router = APIRouter(
     tags=["Standards"]
 )
 
-# =================================================
-# PHASE A – CORE RULE
-# =================================================
+
+def _normalized_code(value: str | None) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
+
+
+def _clone_control_structure(
+    db: Session,
+    source_version: StandardVersion,
+    target_standard: Standard,
+    target_version: StandardVersion,
+) -> None:
+    clauses = (
+        db.query(Clause)
+        .filter(Clause.standard_version_id == source_version.id)
+        .order_by(Clause.id)
+        .all()
+    )
+
+    clause_map: dict[int, int] = {}
+    for c in clauses:
+        nc = Clause(
+            code=c.code,
+            title=c.title,
+            standard_id=target_standard.id,
+            standard_version_id=target_version.id,
+        )
+        db.add(nc)
+        db.flush()
+        clause_map[c.id] = nc.id
+
+    if not clause_map:
+        return
+
+    requirements = (
+        db.query(Requirement)
+        .filter(Requirement.clause_id.in_(list(clause_map.keys())))
+        .order_by(Requirement.id)
+        .all()
+    )
+
+    req_map: dict[int, int] = {}
+    for r in requirements:
+        target_clause_id = clause_map.get(r.clause_id)
+        if not target_clause_id:
+            continue
+        nr = Requirement(
+            code=r.code,
+            title=r.title,
+            clause_id=target_clause_id,
+        )
+        db.add(nr)
+        db.flush()
+        req_map[r.id] = nr.id
+
+    controls = (
+        db.query(Control)
+        .filter(Control.standard_version_id == source_version.id)
+        .order_by(Control.id)
+        .all()
+    )
+
+    for ctl in controls:
+        target_requirement_id = req_map.get(ctl.requirement_id)
+        if not target_requirement_id:
+            continue
+        db.add(
+            Control(
+                code=ctl.code,
+                title=ctl.title,
+                description=ctl.description,
+                requirement_id=target_requirement_id,
+                standard_id=target_standard.id,
+                standard_version_id=target_version.id,
+            )
+        )
+
+
 def ensure_draft(db: Session, standard: Standard) -> StandardVersion:
     draft = (
         db.query(StandardVersion)
@@ -69,60 +143,11 @@ def ensure_draft(db: Session, standard: Standard) -> StandardVersion:
     db.refresh(draft)
 
     if standard.type == "CONTROL_BASED":
-        clauses = db.query(Clause).filter(
-            Clause.standard_version_id == published.id
-        ).all()
-
-        clause_map = {}
-        for c in clauses:
-            nc = Clause(
-                code=c.code,
-                title=c.title,
-                standard_id=c.standard_id,
-                standard_version_id=draft.id,
-            )
-            db.add(nc)
-            db.flush()
-            clause_map[c.id] = nc.id
-
-        requirements = db.query(Requirement).filter(
-            Requirement.clause_id.in_(clause_map.keys())
-        ).all()
-
-        req_map = {}
-        for r in requirements:
-            nr = Requirement(
-                code=r.code,
-                title=r.title,
-                clause_id=clause_map[r.clause_id],
-            )
-            db.add(nr)
-            db.flush()
-            req_map[r.id] = nr.id
-
-        controls = db.query(Control).filter(
-            Control.standard_version_id == published.id
-        ).all()
-
-        for ctl in controls:
-            db.add(
-                Control(
-                    code=ctl.code,
-                    title=ctl.title,
-                    description=ctl.description,
-                    requirement_id=req_map.get(ctl.requirement_id),
-                    standard_id=ctl.standard_id,
-                    standard_version_id=draft.id,
-                )
-            )
+        _clone_control_structure(db, published, standard, draft)
 
     db.commit()
     return draft
 
-
-# =================================================
-# CLAUSE CREATE (ADIM 2)
-# =================================================
 
 class ClauseCreate(BaseModel):
     code: str
@@ -181,9 +206,6 @@ def create_clause(
     }
 
 
-# -----------------------------
-# CREATE STANDARD
-# -----------------------------
 @router.post("/", response_model=StandardResponse)
 def create_standard(
     standard: StandardCreate,
@@ -194,19 +216,61 @@ def create_standard(
     if exists:
         raise HTTPException(status_code=400, detail="Standard already exists")
 
-    db_standard = Standard(**standard.model_dump())
+    db_standard = Standard(
+        code=standard.code,
+        title=standard.title,
+        description=standard.description,
+        type=standard.type,
+    )
     db.add(db_standard)
     db.commit()
     db.refresh(db_standard)
 
-    ensure_draft(db, db_standard)
+    requested_version = (standard.version or "").strip()
+    draft = StandardVersion(
+        standard_id=db_standard.id,
+        version_code=requested_version or "v1",
+        status="draft",
+    )
+    db.add(draft)
+    db.commit()
+    db.refresh(draft)
 
+    if db_standard.type == "CONTROL_BASED":
+        source_standard = (
+            db.query(Standard)
+            .filter(
+                Standard.id != db_standard.id,
+                Standard.type == "CONTROL_BASED",
+            )
+            .all()
+        )
+        source_standard = next(
+            (
+                item
+                for item in source_standard
+                if _normalized_code(item.code) == _normalized_code(db_standard.code)
+            ),
+            None,
+        )
+
+        if source_standard:
+            source_version = (
+                db.query(StandardVersion)
+                .filter(
+                    StandardVersion.standard_id == source_standard.id,
+                    StandardVersion.status == "published",
+                )
+                .order_by(StandardVersion.id.desc())
+                .first()
+            )
+            if source_version:
+                _clone_control_structure(db, source_version, db_standard, draft)
+
+    db.commit()
     return StandardResponse.model_validate(db_standard)
 
 
-# =================================================
-# PHASE B – PUBLISH
-# =================================================
 @router.post("/{standard_id}/publish")
 def publish_standard(
     standard_id: int,
@@ -246,9 +310,6 @@ def publish_standard(
     }
 
 
-# =================================================
-# GET STANDARD STRUCTURE (DRAFT FIRST)
-# =================================================
 @router.get("/{standard_id}/structure")
 def get_standard_structure(
     standard_id: int,
@@ -344,9 +405,6 @@ def get_standard_structure(
     }
 
 
-# -----------------------------
-# LIST STANDARDS
-# -----------------------------
 @router.get("/", response_model=list[StandardResponse])
 def list_standards(
     type: str | None = Query(default=None),
@@ -381,6 +439,8 @@ def list_standards(
         result.append(item)
 
     return result
+
+
 @router.post("/{standard_id}/draft")
 def get_or_create_draft(
     standard_id: int,
