@@ -1,4 +1,4 @@
-# C:\Projects\compliance_app\backend\app\models\evidence_files.py
+﻿# C:\Projects\compliance_app\backend\app\models\evidence_files.py
 from __future__ import annotations
 
 from datetime import datetime
@@ -22,7 +22,7 @@ class EvidenceFile(Base, TenantMixin):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # ✅ MULTI TENANT (join safety)
+    # âœ… MULTI TENANT (join safety)
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False, index=True)
 
     evidence_id = Column(Integer, ForeignKey("evidences.id"), nullable=False, index=True)
@@ -50,8 +50,15 @@ class EvidenceFile(Base, TenantMixin):
     approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     approved_at = Column(DateTime, nullable=True)
 
+    rejected_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
     approval_comment = Column(Text, nullable=True)
+
     rejected_at = Column(DateTime, nullable=True)
+
+    archive_path = Column(String, nullable=True)
+
+    archived_at = Column(DateTime, nullable=True)
 
     # Rollback lineage (audit safe)
     rolled_from_file_id = Column(Integer, ForeignKey("evidence_files.id"), nullable=True)
@@ -60,3 +67,5 @@ class EvidenceFile(Base, TenantMixin):
 
     # Relationships
     evidence = relationship("Evidence", back_populates="files", lazy="selectin")
+
+

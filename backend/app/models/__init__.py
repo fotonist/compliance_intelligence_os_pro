@@ -1,4 +1,4 @@
-from app.db.base import Base
+﻿from app.db.base import Base
 
 # --- Standards Hierarchy ---
 from app.models.standards import Standard
@@ -31,6 +31,7 @@ from app.models.process_risk_link import ProcessRiskLink
 # --- Evidence ---
 from app.models.evidences import Evidence
 from app.models.evidence_files import EvidenceFile
+from app.models.evidence_file_history import EvidenceFileHistory
 
 # --- Risk ---
 from app.models.risks import Risk
@@ -59,3 +60,19 @@ from app.models.practice_evidence_link import PracticeEvidenceLink
 # --- Risk Appetite ---
 from app.models.risk_appetite_profile import RiskAppetiteProfile
 from app.models.process_risk_appetite import ProcessRiskAppetite
+
+# --- Company Foundation ---
+from app.models.company_objective import CompanyObjective
+from app.models.asset import Asset
+from app.models.organization import Organization
+from app.models.stakeholder import Stakeholder
+from app.models.location import Location
+# --- Governance ---
+from app.models.governance_policy import GovernancePolicy
+from app.models.governance_procedure import GovernanceProcedure
+
+from app.models.governance_procedure_document import GovernanceProcedureDocument
+from app.models.governance_document_history import GovernanceDocumentHistory
+
+
+

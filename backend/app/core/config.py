@@ -1,4 +1,4 @@
-from dotenv import load_dotenv
+﻿from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
 
+
+    # =========================
+    # DOCUMENT STORAGE
+    # =========================
+
+    DOCUMENT_STORAGE_ROOT: str = "uploads"
+
+    GOVERNANCE_STORAGE_ROOT: str = "governance"
     # =========================
     # AI
     # =========================
@@ -62,3 +70,4 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+

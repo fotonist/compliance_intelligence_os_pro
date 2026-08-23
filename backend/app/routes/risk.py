@@ -66,7 +66,7 @@ def calculate_risk_level(score: Optional[int]) -> Optional[str]:
 
 
 # -------------------------------------------------
-# Assess Risk (HISTORY WRITE – CANONICAL)
+# Assess Risk (HISTORY WRITE ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ CANONICAL)
 # -------------------------------------------------
 
 @router.post("/{risk_id}/assess")
@@ -102,7 +102,7 @@ def assess_risk(
     else:
         new_risk_level = "LOW"
 
-    # ✅ HISTORY INSERT (FULL SNAPSHOT)
+    # ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ HISTORY INSERT (FULL SNAPSHOT)
     db.execute(
         text(
             """
@@ -480,68 +480,18 @@ def get_risk_history(risk_id: int, db: Session = Depends(get_db)):
 
 
 # -------------------------------------------------
-# Update Risk (SIMPLE)
-# -------------------------------------------------
-
-@router.put("/{risk_id}")
-def update_risk(
-    risk_id: int,
-    payload: RiskUpdateRequest,
-    db: Session = Depends(get_db),
-):
-    current = db.execute(
-        text("SELECT * FROM risks WHERE id = :id"),
-        {"id": risk_id},
-    ).fetchone()
-
-    if not current:
-        raise HTTPException(status_code=404, detail="Risk not found")
-
-    likelihood = payload.likelihood if payload.likelihood is not None else current.likelihood
-    impact = payload.impact if payload.impact is not None else current.impact
-    score = likelihood * impact
-
-    db.execute(
-        text(
-            """
-            UPDATE risks
-            SET
-                likelihood = :l,
-                impact = :i,
-                score = :s,
-                updated_at = NOW()
-            WHERE id = :id
-            """
-        ),
-        {
-            "id": risk_id,
-            "l": likelihood,
-            "i": impact,
-            "s": score,
-        },
-    )
-
-    db.commit()
-    return {"ok": True}
-
-
-# -------------------------------------------------
 # Related Risks
 # -------------------------------------------------
 
 @router.get("/{risk_id}/related")
-def get_related_risks(risk_id: int, db: Session = Depends(get_db)):
+def get_related_risks(
+    risk_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
     current = db.execute(
-        text("SELECT id, control_id FROM risks WHERE id = :id"),
-        {"id": risk_id},
-    ).fetchone()
-
-    if not current:
-        raise HTTPException(status_code=404, detail="Risk not found")
-
-    results: Dict[int, Dict[str, Any]] = {}
-
-    rows = db.execute(
         text(
             """
             SELECT
@@ -549,91 +499,183 @@ def get_related_risks(risk_id: int, db: Session = Depends(get_db)):
                 r.title,
                 r.score,
                 r.risk_level,
-                rr.relation_type,
-                rr.relation_description
-            FROM risk_relations rr
-            JOIN risks r ON r.id = rr.to_risk_id
-            WHERE rr.from_risk_id = :id
+                r.control_id
+            FROM risks r
+            WHERE r.id = :risk_id
+              AND r.tenant_id = :tenant_id
             """
         ),
-        {"id": risk_id},
+        {
+            "risk_id": risk_id,
+            "tenant_id": tenant_id,
+        },
+    ).fetchone()
+
+    if not current:
+        raise HTTPException(
+            status_code=404,
+            detail="Risk not found",
+        )
+
+    results: Dict[int, Dict[str, Any]] = {}
+
+    # -------------------------------------------------
+    # Same Process Context
+    # -------------------------------------------------
+
+    process_rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT
+                r.id,
+                r.title,
+                r.score,
+                r.risk_level
+            FROM risks r
+            JOIN process_risk_links prl
+                ON prl.risk_id = r.id
+            JOIN process_risk_links current_prl
+                ON current_prl.process_id = prl.process_id
+            WHERE current_prl.risk_id = :risk_id
+              AND current_prl.tenant_id = :tenant_id
+              AND prl.tenant_id = :tenant_id
+              AND r.tenant_id = :tenant_id
+              AND r.id <> :risk_id
+            ORDER BY r.score DESC NULLS LAST, r.id DESC
+            """
+        ),
+        {
+            "risk_id": risk_id,
+            "tenant_id": tenant_id,
+        },
     ).fetchall()
 
-    for r in rows:
-        results[r.id] = {
-            "id": r.id,
-            "title": r.title,
-            "score": r.score,
-            "risk_level": r.risk_level,
-            "relation_type": r.relation_type,
-            "relation_reason": r.relation_description,
-            "relation_source": "manual",
+    for row in process_rows:
+        results[row.id] = {
+            "id": row.id,
+            "title": row.title,
+            "score": row.score,
+            "risk_level": row.risk_level,
+            "relation_type": "process",
+            "relation_reason": "Same process context",
+            "relation_source": "process_id",
         }
 
+    # -------------------------------------------------
+    # Same Control Context
+    # -------------------------------------------------
+
     if current.control_id is not None:
-        auto_rows = db.execute(
+        control_rows = db.execute(
             text(
                 """
-                SELECT id, title, score, risk_level
+                SELECT
+                    id,
+                    title,
+                    score,
+                    risk_level
                 FROM risks
-                WHERE id != :id AND control_id = :control_id
+                WHERE tenant_id = :tenant_id
+                  AND id <> :risk_id
+                  AND control_id = :control_id
+                ORDER BY score DESC NULLS LAST, id DESC
                 """
             ),
-            {"id": risk_id, "control_id": current.control_id},
+            {
+                "tenant_id": tenant_id,
+                "risk_id": risk_id,
+                "control_id": current.control_id,
+            },
         ).fetchall()
 
-        for r in auto_rows:
-            results.setdefault(
-                r.id,
-                {
-                    "id": r.id,
-                    "title": r.title,
-                    "score": r.score,
-                    "risk_level": r.risk_level,
-                    "relation_type": "correlated",
+        for row in control_rows:
+            if row.id in results:
+                results[row.id]["relation_type"] = "process + control"
+                results[row.id]["relation_reason"] = (
+                    "Same process and control context"
+                )
+                results[row.id]["relation_source"] = "process_id,control_id"
+            else:
+                results[row.id] = {
+                    "id": row.id,
+                    "title": row.title,
+                    "score": row.score,
+                    "risk_level": row.risk_level,
+                    "relation_type": "control",
                     "relation_reason": "Same control context",
                     "relation_source": "control_id",
-                },
-            )
+                }
 
     return list(results.values())
 
 
+# -------------------------------------------------# -------------------------------------------------
 # -------------------------------------------------
 # Related Evidences
 # -------------------------------------------------
 
 @router.get("/{risk_id}/related-evidences")
-def get_related_evidences(risk_id: int, db: Session = Depends(get_db)):
+def get_related_evidences(
+    risk_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
     rows = db.execute(
         text(
             """
-            SELECT
+            SELECT DISTINCT
                 e.id,
                 e.title,
                 e.status,
-                rel.relation_description
-            FROM risk_evidence_links rel
-            JOIN evidences e ON e.id = rel.evidence_id
-            WHERE rel.risk_id = :risk_id
+                e.control_id,
+                e.requirement_id,
+                e.standard_id,
+                e.description,
+                e.assessment_type,
+                e.updated_at,
+                ef.status AS file_status
+            FROM risk_versions rv
+            JOIN risk_evidence_link rel
+                ON rel.risk_version_id = rv.id
+            JOIN evidence_files ef
+                ON ef.id = rel.evidence_file_id
+            JOIN evidences e
+                ON e.id = ef.evidence_id
+            WHERE rv.risk_id = :risk_id
+              AND rv.tenant_id = :tenant_id
+              AND rel.tenant_id = :tenant_id
+              AND ef.tenant_id = :tenant_id
+              AND e.tenant_id = :tenant_id
+              AND e.is_deleted = FALSE
             ORDER BY e.id
             """
         ),
-        {"risk_id": risk_id},
+        {
+            "risk_id": risk_id,
+            "tenant_id": tenant_id,
+        },
     ).fetchall()
 
     return [
         {
-            "id": r.id,
-            "title": r.title,
-            "status": r.status,
-            "relation_reason": r.relation_description,
+            "id": row.id,
+            "title": row.title,
+            "status": row.status,
+            "file_status": row.file_status,
+            "control_id": row.control_id,
+            "requirement_id": row.requirement_id,
+            "standard_id": row.standard_id,
+            "description": row.description,
+            "assessment_type": row.assessment_type,
+            "updated_at": row.updated_at,
         }
-        for r in rows
+        for row in rows
     ]
 
-# ------------------------------------------------------
-# DELETE RISK (FINAL – DYNAMIC & SAFE)
+
+# ------------------------------------------------------ (FINAL ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ DYNAMIC & SAFE)
 # ------------------------------------------------------
 @router.delete("/{risk_id}")
 def delete_risk(
@@ -758,7 +800,7 @@ def create_risk(
     else:
         risk_level = "LOW"
 
-    # 1️⃣ Insert base Risk
+    # 1ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢Ãƒâ€ Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â£ Insert base Risk
     result = db.execute(
         text(
             """
@@ -812,7 +854,7 @@ def create_risk(
 
     new_risk_id = result.scalar()
 
-    # 2️⃣ Insert immutable RiskVersion (v1)
+    # 2ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢Ãƒâ€ Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â£ Insert immutable RiskVersion (v1)
     db.execute(
         text(
             """

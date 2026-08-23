@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   LineChart,
@@ -27,7 +27,7 @@ function formatDate(v: string) {
   }
 }
 
-/* ===== COMPACT TOOLTIP ===== */
+/* ===== ENTERPRISE TOOLTIP ===== */
 function CompactTooltip({
   active,
   payload,
@@ -40,10 +40,13 @@ function CompactTooltip({
   if (!active || !payload || payload.length === 0) return null;
 
   return (
-    <div className="px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded shadow">
-      <div className="text-slate-400">{formatDate(label ?? "")}</div>
-      <div className="text-white font-semibold">
-        Score: {payload[0].value}
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+        {formatDate(label ?? "")}
+      </div>
+
+      <div className="mt-1 text-sm font-semibold text-slate-900">
+        Risk Score: {payload[0].value}
       </div>
     </div>
   );
@@ -59,44 +62,78 @@ export default function RiskHistoryChart({ rows }: Props) {
   }
 
   return (
-    <div className="border border-slate-800 rounded-lg bg-slate-950 p-3">
-      <div className="text-sm font-semibold text-white mb-2">
-        Risk Score History
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-slate-900">
+          Risk Score History
+        </div>
+
+        <div className="mt-0.5 text-xs text-slate-500">
+          Historical movement of the recorded risk score
+        </div>
       </div>
 
-      {/* 👇 Grafik boyutu burada küçültüldü */}
       <div style={{ width: "100%", height: 180 }}>
         <ResponsiveContainer>
           <LineChart
             data={rows}
-            margin={{ top: 10, right: 12, left: 0, bottom: 0 }}
+            margin={{ top: 10, right: 12, left: 0, bottom: 4 }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
-              stroke="#1e293b"
+              stroke="#e2e8f0"
+              vertical={false}
             />
 
             <XAxis
               dataKey="date"
               tickFormatter={formatDate}
-              tick={{ fontSize: 10, fill: "#94a3b8" }}
+              tick={{
+                fontSize: 10,
+                fill: "#64748b",
+              }}
+              axisLine={{
+                stroke: "#cbd5e1",
+              }}
+              tickLine={false}
             />
 
             <YAxis
               allowDecimals={false}
-              tick={{ fontSize: 10, fill: "#94a3b8" }}
+              tick={{
+                fontSize: 10,
+                fill: "#64748b",
+              }}
               width={28}
+              axisLine={false}
+              tickLine={false}
             />
 
-            <Tooltip content={<CompactTooltip />} />
+            <Tooltip
+              content={<CompactTooltip />}
+              cursor={{
+                stroke: "#cbd5e1",
+                strokeDasharray: "4 4",
+              }}
+            />
 
             <Line
               type="monotone"
               dataKey="score"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={{ r: 2 }}
-              activeDot={{ r: 4 }}
+              stroke="#0f766e"
+              strokeWidth={2.5}
+              dot={{
+                r: 3,
+                fill: "#ffffff",
+                stroke: "#0f766e",
+                strokeWidth: 2,
+              }}
+              activeDot={{
+                r: 5,
+                fill: "#ffffff",
+                stroke: "#0f766e",
+                strokeWidth: 2,
+              }}
             />
           </LineChart>
         </ResponsiveContainer>

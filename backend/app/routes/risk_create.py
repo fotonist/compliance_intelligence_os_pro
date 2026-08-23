@@ -34,6 +34,7 @@ class RiskUpdateIn(BaseModel):
     process_id: Optional[int] = None
     source_type: Optional[str] = None
     source_id: Optional[int] = None
+    change_reason: Optional[str] = None
 
 
 def calculate_risk_level(score: int) -> str:
@@ -62,6 +63,7 @@ def validate_source(
         return standard_id, requirement_id, control_id
 
     source_type = source_type.upper()
+
     source_tables = {
         "STANDARD": ("standards", "standard_id"),
         "REQUIREMENT": ("requirements", "requirement_id"),
@@ -75,20 +77,23 @@ def validate_source(
         )
 
     table_name, target_name = source_tables[source_type]
+
     exists = db.execute(
         text(
             f"""
             SELECT id
             FROM {table_name}
             WHERE id = :source_id
-              AND tenant_id = :tenant_id
             """
         ),
-        {"source_id": source_id, "tenant_id": tenant_id},
+        {"source_id": source_id},
     ).scalar()
 
     if exists is None:
-        raise HTTPException(status_code=404, detail=f"{source_type.title()} not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"{source_type.title()} not found",
+        )
 
     if target_name == "standard_id":
         standard_id = source_id
@@ -98,7 +103,6 @@ def validate_source(
         control_id = source_id
 
     return standard_id, requirement_id, control_id
-
 
 @router.post("/", status_code=201)
 def create_risk(
@@ -252,6 +256,17 @@ def update_risk(
     score = likelihood * impact
     risk_level = calculate_risk_level(score)
 
+    score_changed = (
+        likelihood != current["likelihood"]
+        or impact != current["impact"]
+    )
+
+    if score_changed and not (payload.change_reason or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail="Change reason is required when likelihood or impact changes.",
+        )
+
     title = payload.title if payload.title is not None else current["title"]
     description = (
         payload.description
@@ -378,6 +393,79 @@ def update_risk(
             },
         )
 
+        db.execute(
+            text(
+                """
+                INSERT INTO risk_history (
+                    tenant_id,
+                    risk_id,
+                    impact_old,
+                    impact_new,
+                    likelihood_old,
+                    likelihood_new,
+                    score_old,
+                    score_new,
+                    risk_level_old,
+                    risk_level_new,
+                    treatment_old,
+                    treatment_new,
+                    status_old,
+                    status_new,
+                    action_old,
+                    action_new,
+                    change_reason,
+                    changed_by,
+                    changed_at
+                )
+                VALUES (
+                    :tenant_id,
+                    :risk_id,
+                    :impact_old,
+                    :impact_new,
+                    :likelihood_old,
+                    :likelihood_new,
+                    :score_old,
+                    :score_new,
+                    :risk_level_old,
+                    :risk_level_new,
+                    :treatment_old,
+                    :treatment_new,
+                    :status_old,
+                    :status_new,
+                    :action_old,
+                    :action_new,
+                    :change_reason,
+                    :changed_by,
+                    NOW()
+                )
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "risk_id": risk_id,
+                "impact_old": current["impact"],
+                "impact_new": impact,
+                "likelihood_old": current["likelihood"],
+                "likelihood_new": likelihood,
+                "score_old": current["score"],
+                "score_new": score,
+                "risk_level_old": current["risk_level"],
+                "risk_level_new": risk_level,
+                "treatment_old": current["treatment"],
+                "treatment_new": treatment,
+                "status_old": current["status"],
+                "status_new": status,
+                "action_old": current["action"],
+                "action_new": action,
+                "change_reason": (
+                    payload.change_reason.strip()
+                    if payload.change_reason
+                    else None
+                ),
+                "changed_by": current_user.id,
+            },
+        )
+
         db.commit()
     except Exception as exc:
         db.rollback()
@@ -391,3 +479,5 @@ def update_risk(
         "risk_level": risk_level,
         "status": status,
     }
+
+

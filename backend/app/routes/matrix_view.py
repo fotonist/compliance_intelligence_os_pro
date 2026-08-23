@@ -25,6 +25,7 @@ def _rows_to_dict(rows) -> List[Dict[str, Any]]:
 @router.get("/")
 def get_matrix_view(
     standard_id: Optional[int] = Query(default=None),
+    standard_version_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -184,13 +185,21 @@ def get_matrix_view(
             MatrixRow.control_id.isnot(None),
         )
     )
+    if standard_version_id is not None:
 
-    if standard_id is not None:
+        query = query.filter(
+            MatrixInstance.standard_version_id == standard_version_id,
+        )
+
+    elif standard_id is not None:
+
         query = query.filter(
             MatrixRow.standard_id == standard_id,
             MatrixInstance.standard_id == standard_id,
         )
+
     else:
+
         latest_instance_id = (
             db.query(func.max(MatrixInstance.id))
             .filter(
@@ -200,7 +209,10 @@ def get_matrix_view(
             .correlate(MatrixRow)
             .scalar_subquery()
         )
-        query = query.filter(MatrixInstance.id == latest_instance_id)
+
+        query = query.filter(
+            MatrixInstance.id == latest_instance_id
+        )
 
     rows = query.order_by(
         Standard.code,
@@ -214,3 +226,5 @@ def get_matrix_view(
         "mode": "control",
         "rows": _rows_to_dict(rows),
     }
+
+

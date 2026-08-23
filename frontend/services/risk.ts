@@ -1,7 +1,7 @@
 
-// Backend localhost kuralı
+// Backend localhost kuralÃƒâ€Ã‚Â±
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://compliance-intelligence-os-pro-2.onrender.com";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export type RiskItem = {
   id: number;
   title: string;
@@ -14,6 +14,7 @@ export type RiskItem = {
 
   coverage?: string | null;
   treatment?: string | null;
+  action?: string | null;
 
   status?: string | null;
   owner?: string | null;
@@ -111,7 +112,7 @@ export async function fetchRisks(
 
   const json = await res.json();
 
-  // backend bazen array dönse bile kırılmasın
+  // backend bazen array dÃƒÆ’Ã‚Â¶nse bile kÃƒâ€Ã‚Â±rÃƒâ€Ã‚Â±lmasÃƒâ€Ã‚Â±n
   if (Array.isArray(json)) {
     return {
       items: json as RiskItem[],
@@ -159,6 +160,7 @@ export type RiskCreatePayload = {
   treatment?: string | null;
   status?: string | null;
   action?: string | null;
+  change_reason?: string | null;
 
   control_id?: number | null;
   clause_id?: number | null;
@@ -213,4 +215,31 @@ export async function deleteRisk(id: number) {
   }
 
   return true;
+}
+export type RelatedEvidenceItem = {
+  id: number;
+  title: string;
+  status?: string | null;
+  relation_reason?: string | null;
+};
+
+export async function fetchRelatedEvidences(
+  riskId: number
+): Promise<RelatedEvidenceItem[]> {
+  const res = await fetch(
+    `${API_URL}/risks/${riskId}/related-evidences`,
+    {
+      method: "GET",
+      headers: authHeaders(),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await readText(res);
+    throw new Error(`Failed to fetch related evidences: ${text}`);
+  }
+
+  const json = await res.json();
+
+  return Array.isArray(json) ? json : [];
 }

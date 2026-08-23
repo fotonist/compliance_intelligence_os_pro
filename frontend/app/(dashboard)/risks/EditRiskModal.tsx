@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 type EditRiskModalProps = {
   open: boolean;
   risk: any | null;
@@ -67,7 +69,7 @@ export default function EditRiskModal({
 
   const score = impact * likelihood;
 
-  // 🔑 AUTO CALCULATION
+  // ÄŸÅ¸â€â€˜ AUTO CALCULATION
   useEffect(() => {
     const auto = calculateAuto(score);
     setStatus(auto.status);
@@ -92,8 +94,8 @@ export default function EditRiskModal({
       };
 
       const url = isEdit
-        ? `https://compliance-intelligence-os-pro-2.onrender.com/risks/${risk.id}`
-        : "https://compliance-intelligence-os-pro-2.onrender.com/risks/";
+        ? `${API_BASE}/risks/${risk.id}`
+        : `${API_BASE}/risks/`;
 
       const method = isEdit ? "PUT" : "POST";
 
@@ -131,7 +133,7 @@ export default function EditRiskModal({
             {isEdit ? `Update Risk: ${risk?.title}` : "Create New Risk"}
           </h2>
           <button onClick={onClose} className="text-slate-300 hover:text-white text-xl">
-            ✕
+            Ã¢Å“â€¢
           </button>
         </div>
 

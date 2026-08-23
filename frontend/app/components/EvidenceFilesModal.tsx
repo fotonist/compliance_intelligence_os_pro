@@ -14,7 +14,7 @@ type Props = {
   onClose: () => void;
 };
 
-const API_URL = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_URL = "http://127.0.0.1:8000";
 
 export default function EvidenceFilesModal({
   evidenceId,
@@ -113,3 +113,4 @@ export default function EvidenceFilesModal({
     </div>
   );
 }
+

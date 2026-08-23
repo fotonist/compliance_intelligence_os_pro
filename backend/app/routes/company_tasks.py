@@ -1,4 +1,4 @@
-# =========================================================
+﻿# =========================================================
 # IMPORTS
 # =========================================================
 
@@ -14,6 +14,9 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.compliance_tasks import ComplianceTask
 from app.models.standard_practice import StandardPractice
+from app.models.evidence_files import EvidenceFile
+from app.models.evidences import Evidence
+from app.models.task_evidence_link import TaskEvidenceLink
 
 
 # =========================================================
@@ -403,21 +406,22 @@ def upload_task_evidence_file(
     tenant_id = task.tenant_id or 1
     control_id = task.control_id
 
-    standard_id = getattr(task, "standard_id", None)
-
-    if not standard_id:
-        standard_id = db.execute(
-            text(
-                """
-                SELECT c.standard_id
-FROM controls ctr
-JOIN requirements r ON r.id = ctr.requirement_id
-JOIN clauses c ON c.id = r.clause_id
-WHERE ctr.id = :control_id;
-                """
-            ),
-            {"control_id": control_id},
-        ).scalar()
+    standard_id = db.execute(
+        text(
+            """
+            SELECT c.standard_id
+            FROM controls ctr
+            JOIN requirements r 
+                ON r.id = ctr.requirement_id
+            JOIN clauses c 
+                ON c.id = r.clause_id
+            WHERE ctr.id = :control_id
+            """
+        ),
+        {
+            "control_id": control_id
+        },
+    ).scalar()
 
     if not standard_id:
         raise HTTPException(
@@ -425,125 +429,84 @@ WHERE ctr.id = :control_id;
             detail="Could not resolve standard_id for this task/control.",
         )
 
-    base_path = os.path.join(UPLOAD_DIR, str(control_id))
-    os.makedirs(base_path, exist_ok=True)
+    base_path = os.path.join(
+        UPLOAD_DIR,
+        str(control_id),
+    )
+
+    os.makedirs(
+        base_path,
+        exist_ok=True,
+    )
 
     original_name = file.filename or "uploaded_file"
-    ext = original_name.split(".")[-1] if "." in original_name else "bin"
+
+    ext = (
+        original_name.split(".")[-1]
+        if "." in original_name
+        else "bin"
+    )
+
     stored_filename = f"{uuid.uuid4()}.{ext}"
-    file_path = os.path.join(base_path, stored_filename)
+
+    file_path = os.path.join(
+        base_path,
+        stored_filename,
+    )
 
     try:
+
         with open(file_path, "wb") as buffer:
             buffer.write(file.file.read())
 
-        evidence_id = db.execute(
-            text(
-                """
-                INSERT INTO evidences(
-                    title,
-                    tenant_id,
-                    standard_id,
-                    control_id,
-                    status,
-                    approval_status,
-                    uploaded_at,
-                    created_at,
-                    updated_at
-                )
-                VALUES(
-                    :title,
-                    :tenant_id,
-                    :standard_id,
-                    :control_id,
-                    'uploaded',
-                    'PENDING_REVIEW',
-                    now(),
-                    now(),
-                    now()
-                )
-                RETURNING id
-                """
-            ),
-            {
-                "title": original_name,
-                "tenant_id": tenant_id,
-                "standard_id": standard_id,
-                "control_id": control_id,
-            },
-        ).scalar()
+
+        evidence = Evidence(
+            title=original_name,
+            tenant_id=tenant_id,
+            standard_id=standard_id,
+            control_id=control_id,
+            status="uploaded",
+        )
+
+        db.add(evidence)
 
         db.flush()
 
-        db.execute(
-            text(
-                """
-                INSERT INTO evidence_files(
-    tenant_id,
-    evidence_id,
-    file_name,
-    file_path,
-    mime_type,
-    file_size,
-    version,
-    is_current,
-    status,
-    uploaded_at
-)
-VALUES(
-    :tenant_id,
-    :evidence_id,
-    :file_name,
-    :file_path,
-    :mime_type,
-    :file_size,
-    1,
-    TRUE,
-    'uploaded',
-    now()
-)
-                """
-            ),
-            {
-    "tenant_id": tenant_id,
-    "evidence_id": evidence_id,
-    "file_name": original_name,
-    "file_path": file_path,
-    "mime_type": file.content_type,
-    "file_size": os.path.getsize(file_path),
-},
+
+        evidence_file = EvidenceFile(
+            tenant_id=tenant_id,
+            evidence_id=evidence.id,
+            file_name=original_name,
+            file_path=file_path,
+            mime_type=file.content_type,
+            file_size=os.path.getsize(file_path),
+            version=1,
+            status="uploaded",
+            uploaded_at=datetime.utcnow(),
         )
 
-        db.execute(
-            text(
-                """
-                INSERT INTO task_evidence_links(
-                    tenant_id,
-                    task_id,
-                    evidence_id
-                )
-                VALUES(
-                    :tenant_id,
-                    :task_id,
-                    :evidence_id
-                )
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "task_id": task_id,
-                "evidence_id": evidence_id,
-            },
+        db.add(evidence_file)
+
+
+        task_link = TaskEvidenceLink(
+            tenant_id=tenant_id,
+            task_id=task_id,
+            evidence_id=evidence.id,
         )
+
+        db.add(task_link)
+
 
         db.commit()
 
+
         return {
             "success": True,
-            "evidence_id": evidence_id,
+            "evidence_id": evidence.id,
             "file": stored_filename,
             "path": file_path,
         }
+
 
     except Exception:
         db.rollback()
@@ -552,7 +515,6 @@ VALUES(
             os.remove(file_path)
 
         raise
-
 
 # =========================================================
 # CREATE TASK
@@ -602,3 +564,9 @@ def create_task(
         "task": task,
     }
     
+
+
+
+
+
+

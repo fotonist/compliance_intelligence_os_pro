@@ -1,4 +1,4 @@
-# backend/app/routes/processes.py
+﻿# backend/app/routes/processes.py
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -918,10 +918,6 @@ def list_derived_standards_for_process(
                 ProcessRiskLink.tenant_id == user.tenant_id,
 
                 Risk.tenant_id == user.tenant_id,
-                Control.tenant_id == user.tenant_id,
-                Requirement.tenant_id == user.tenant_id,
-                Clause.tenant_id == user.tenant_id,
-                Standard.tenant_id == user.tenant_id,
             )
         )
         .distinct()
@@ -944,3 +940,5 @@ def list_derived_standards_for_process(
         }
         for s in rows
     ]
+
+

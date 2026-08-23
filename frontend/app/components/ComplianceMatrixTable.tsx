@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -62,7 +62,7 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
   if (!rows || rows.length === 0) {
     return (
       <div className="py-8 text-center text-slate-400">
-        Matrix kaydı bulunamadı.
+        Matrix kaydÄ± bulunamadÄ±.
       </div>
     );
   }
@@ -111,7 +111,7 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
   ) => (
     <div className="min-w-[180px] max-w-[320px]">
       <div className="flex items-center gap-2">
-        <span className={codeClassName}>{code || "—"}</span>
+        <span className={codeClassName}>{code || "â€”"}</span>
         {description && (
           <span
             title={description}
@@ -135,7 +135,7 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
       <span>
         Page <b>{page}</b> / {totalPages}{" "}
         <span className="text-slate-500">
-          (Rows {startRow}–{endRow} of {totalRows})
+          (Rows {startRow}â€“{endRow} of {totalRows})
         </span>
       </span>
       <div className="flex gap-2">
@@ -183,7 +183,7 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
                     {row.process_area_code}
                     {row.process_area_title && (
                       <span className="text-slate-400 ml-1">
-                        – {row.process_area_title}
+                        â€“ {row.process_area_title}
                       </span>
                     )}
                   </td>
@@ -219,103 +219,128 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
     );
   }
 
-  const isAnnexControl = (row: MatrixRow) =>
-    /^A\.[5-8]\.[0-9]+$/.test(row.control_code ?? "");
-
   return (
-    <div className="mt-6">
-      <div className="overflow-x-auto rounded-xl bg-slate-900/70 p-4">
-        <table className="min-w-full text-sm text-slate-200">
-          <thead className="bg-slate-800/70 text-xs uppercase text-slate-300">
-            <tr>
-              <th className="p-3 text-left">Standard</th>
-              <th className="p-3 text-left">Clause</th>
-              <th className="p-3 text-left">Requirement</th>
-              <th className="p-3 text-left">Control</th>
-              <th className="p-3 text-center">Coverage</th>
-              <th className="p-3 text-center">Evidence</th>
-              <th className="p-3 text-center">Risk</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700/40">
-            {pagedRows.map((row, i) => (
-              <tr
-                key={
-                  row.id ??
-                  `matrix-row-${row.matrix_instance_id ?? "instance"}-${row.clause_id ?? "clause"}-${row.requirement_id ?? "requirement"}-${row.control_id ?? "control"}-${i}`
-                }
-                onClick={() => onView?.(row)}
-                className="hover:bg-slate-800/40 cursor-pointer align-top"
-              >
-                <td className="p-3">
-                  {hierarchyCell(
-                    row.standard_code,
-                    row.standard_title
-                  )}
-                </td>
-                <td className="p-3">
-                  {hierarchyCell(
-                    row.clause_code,
-                    row.clause_title,
-                    row.clause_description
-                  )}
-                </td>
-                <td className="p-3">
-                  {hierarchyCell(
-                    row.requirement_code,
-                    row.requirement_title,
-                    row.requirement_description
-                  )}
-                </td>
-                <td className="p-3">
-                  {isAnnexControl(row) ? (
-                    <div className="min-w-[150px]">
-                      <div className="font-semibold text-slate-100">
-                        {row.control_code || "—"}
-                      </div>
-                      <div className="mt-0.5 text-xs text-slate-400">
-                        Annex A control
-                      </div>
-                    </div>
-                  ) : (
-                    hierarchyCell(
-                      row.control_code,
-                      row.control_title,
-                      row.control_description,
-                      "font-semibold text-slate-100"
-                    )
-                  )}
-                </td>
-                <td className="p-3 text-center">
-                  <span
-                    className={`${badge} ${coverageColor(row.coverage_status)}`}
-                  >
-                    {row.coverage_status ?? "UNKNOWN"}
-                  </span>
-                </td>
-                <td className="p-3 text-center">
-                  {row.evidence_count && row.evidence_count > 0 ? (
-                    <span className={`${badge} bg-blue-700/30 text-blue-300`}>
-                      {row.evidence_count} evidence
-                    </span>
-                  ) : (
-                    <span className="italic text-slate-400">No evidence</span>
-                  )}
-                </td>
-                <td className="p-3 text-center">
-                  <span
-                    title={riskTooltip(row.risk_level)}
-                    className={`${badge} ${riskColor(row.risk_level)} cursor-help`}
-                  >
-                    {row.risk_level ?? "—"}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="mt-6 space-y-4">
+
+      {pagedRows.map((row, i) => (
+
+        <div
+          key={
+            row.id ??
+            `matrix-card-${row.matrix_instance_id ?? "instance"}-${row.control_id ?? "control"}-${i}`
+          }
+          onClick={() => onView?.(row)}
+          className="
+            rounded-2xl
+            border
+            border-slate-200
+            bg-white
+            p-6
+            shadow-sm
+            hover:shadow-md
+            transition
+            cursor-pointer
+          "
+        >
+
+          <div className="flex items-start justify-between gap-4">
+
+            <div>
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                {row.standard_code ?? "STANDARD"}
+              </div>
+
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                {row.control_code ?? "-"}
+              </div>
+
+              <div className="mt-1 text-sm text-slate-600">
+                {row.control_title ?? "-"}
+              </div>
+            </div>
+
+
+            <span
+              className="
+                rounded-full
+                border
+                px-3
+                py-1
+                text-xs
+                font-semibold
+              "
+            >
+              {row.coverage_status ?? "UNKNOWN"}
+            </span>
+
+          </div>
+
+
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-5">
+
+            <div>
+              <div className="text-xs uppercase text-slate-400">
+                Clause
+              </div>
+
+              <div className="mt-1 font-medium text-slate-800">
+                {row.clause_code ?? "-"}
+              </div>
+
+              <div className="text-sm text-slate-500">
+                {row.clause_title ?? "-"}
+              </div>
+            </div>
+
+
+            <div>
+              <div className="text-xs uppercase text-slate-400">
+                Evidence Assurance
+              </div>
+
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                {row.approved_evidence_count ?? 0}
+              </div>
+
+              <div className="text-xs text-slate-500">
+                approved evidence
+              </div>
+            </div>
+
+
+            <div>
+              <div className="text-xs uppercase text-slate-400">
+                Risk Exposure
+              </div>
+
+              <div className="mt-1 text-lg font-semibold text-slate-900">
+                {row.risk_level ?? "No Risk"}
+              </div>
+            </div>
+
+          </div>
+
+
+          <div className="mt-6 flex justify-between items-center">
+
+            <div className="text-xs text-slate-400">
+              Requirement: {row.requirement_title ?? "-"}
+            </div>
+
+            <div className="text-xs font-medium text-blue-600">
+              Open Control Intelligence →
+            </div>
+
+          </div>
+
+        </div>
+
+      ))}
+
       <PaginationFooter />
+
     </div>
   );
 }
+
+

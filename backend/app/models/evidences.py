@@ -1,4 +1,4 @@
-from sqlalchemy import (
+﻿from sqlalchemy import (
     Column,
     Integer,
     String,
@@ -201,6 +201,12 @@ class Evidence(Base, TenantMixin):
         cascade="all, delete-orphan",
     )
 
+    task_links = relationship(
+        "TaskEvidenceLink",
+        back_populates="evidence",
+        cascade="all, delete-orphan",
+    )
+
 
 # =========================================================
 # STANDARD CONTEXT REPAIR ON INSERT
@@ -309,3 +315,6 @@ def populate_standard_context(mapper, connection, target):
             "Provide a valid control mapped to a matrix instance or "
             "provide standard_id/standard_version_id explicitly."
         )
+
+
+

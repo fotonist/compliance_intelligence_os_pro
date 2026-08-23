@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import { useState } from "react";
@@ -53,32 +53,35 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#f4f7fb] text-[#102a43]">
       <div className="grid min-h-screen lg:grid-cols-[minmax(460px,0.95fr)_minmax(520px,1.05fr)]">
-        <aside className="relative hidden overflow-hidden bg-[#061426] lg:flex lg:flex-col lg:justify-between">
-          <div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-blue-500/10 blur-3xl" />
-          <div className="absolute -bottom-40 -left-32 h-96 w-96 rounded-full bg-emerald-400/10 blur-3xl" />
+        <aside className="relative hidden overflow-hidden bg-[radial-gradient(circle_at_15%_12%,#ffffff_0%,rgba(255,255,255,0.92)_12%,transparent_34%),radial-gradient(circle_at_82%_82%,rgba(16,185,129,0.28)_0%,transparent_28%),linear-gradient(125deg,#ffffff_0%,#e7f4fb_28%,#72c8e8_55%,#1d5f91_76%,#102a43_100%)] lg:flex lg:flex-col lg:justify-between">
+          <div className="absolute -right-32 -top-32 h-[30rem] w-[30rem] rounded-full bg-cyan-200/30 blur-3xl" />
+          <div className="absolute -bottom-40 -left-32 h-[28rem] w-[28rem] rounded-full bg-emerald-300/20 blur-3xl" />
 
+          <div className="absolute inset-0 opacity-[0.22] bg-[linear-gradient(rgba(15,42,67,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(15,42,67,0.18)_1px,transparent_1px)] bg-[size:48px_48px]" />
+          <div className="absolute right-10 top-1/2 h-72 w-72 -translate-y-1/2 rounded-full border border-white/45 opacity-50 shadow-[0_0_80px_rgba(255,255,255,0.12)]" />
+          <div className="absolute right-24 top-1/2 h-48 w-48 -translate-y-1/2 rounded-full border border-white/35 opacity-50" />
           <div className="relative z-10 p-12 xl:p-16">
-            <div className="mb-12 inline-flex rounded-2xl bg-white px-5 py-4 shadow-2xl shadow-black/20">
+            <div className="mb-14 inline-flex items-center">
               <Image
-                src="/complianceos-logo.svg"
+                src="/complianceos-pro-logo.png"
                 alt="ComplianceOS Pro"
-                width={260}
-                height={80}
+                width={91}
+                height={90}
                 priority
-                className="h-auto w-[230px] object-contain"
+                className="h-[90px] w-[91px] object-contain"
               />
             </div>
 
             <div className="max-w-xl">
-              <div className="mb-4 text-xs font-bold uppercase tracking-[0.24em] text-emerald-400">
-                Governance &amp; Intelligence Platform
+              <div className="mb-4 text-xs font-bold uppercase tracking-[0.24em] text-emerald-600">
+                Governance & Intelligence Platform
               </div>
-              <h1 className="text-4xl font-bold leading-tight text-white xl:text-5xl">
+              <h1 className="text-4xl font-extrabold leading-[1.04] tracking-[-0.04em] text-[#09243d] drop-shadow-sm xl:text-5xl">
                 Compliance intelligence,
                 <br />
                 built for enterprise governance.
               </h1>
-              <p className="mt-6 max-w-lg text-base leading-7 text-slate-300">
+              <p className="mt-6 max-w-lg text-[15px] font-medium leading-7 text-[#244863]">
                 A unified operating environment for standards, controls, risks,
                 evidence, internal audit and executive compliance intelligence.
               </p>
@@ -91,7 +94,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="relative z-10 border-t border-white/10 px-12 py-6 text-xs text-slate-500 xl:px-16">
+          <div className="relative z-10 border-t border-white/40 px-12 py-6 text-xs font-medium text-slate-500 xl:px-16 xl:px-16">
             ComplianceOS Pro · Secure enterprise access
           </div>
         </aside>
@@ -101,7 +104,7 @@ export default function LoginPage() {
             <div className="mb-8 lg:hidden">
               <div className="inline-flex rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
                 <Image
-                  src="/complianceos-logo.svg"
+                  src="/complianceos-pro-logo.png"
                   alt="ComplianceOS Pro"
                   width={220}
                   height={70}
@@ -170,7 +173,7 @@ export default function LoginPage() {
                   disabled={loading}
                   className="group flex w-full items-center justify-center gap-2 rounded-xl bg-[#0b5cff] px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-[#084ed6] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {loading ? "Authenticating…" : "Sign In"}
+                  {loading ? "Authenticating..." : "Sign In"}
                   {!loading && <ArrowRight size={17} className="transition-transform group-hover:translate-x-0.5" />}
                 </button>
               </form>
@@ -195,8 +198,8 @@ export default function LoginPage() {
 
 function Feature({ label }: { label: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-3 text-xs font-medium text-slate-300">
-      <div className="mb-2 h-1.5 w-6 rounded-full bg-emerald-400" />
+    <div className="rounded-xl border border-white/60 bg-white/48 shadow-[0_14px_35px_rgba(15,42,67,0.12)] backdrop-blur-xl px-3 py-3 text-xs font-medium text-slate-600">
+      <div className="mb-2 h-1.5 w-8 rounded-full bg-gradient-to-r from-emerald-500 via-cyan-400 to-blue-500" />
       {label}
     </div>
   );

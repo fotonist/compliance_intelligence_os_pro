@@ -176,7 +176,7 @@ def ensure_draft(db: Session, standard: Standard) -> StandardVersion:
     if not published:
         draft = StandardVersion(
             standard_id=standard.id,
-            version_code="v1",
+            version_code=(standard.version or "v1"),
             status="draft",
         )
         db.add(draft)
@@ -192,7 +192,7 @@ def ensure_draft(db: Session, standard: Standard) -> StandardVersion:
 
     draft = StandardVersion(
         standard_id=standard.id,
-        version_code=f"v{published.id + 1}",
+        version_code=published.version_code,
         status="draft",
     )
     db.add(draft)
@@ -450,9 +450,17 @@ def list_standards(
         )
         .outerjoin(
             StandardVersion,
-            and_(
-                StandardVersion.standard_id == Standard.id,
-                StandardVersion.status == "draft",
+            StandardVersion.id == (
+                db.query(StandardVersion.id)
+                .filter(
+                    StandardVersion.standard_id == Standard.id,
+                )
+                .order_by(
+                    StandardVersion.id.desc()
+                )
+                .limit(1)
+                .correlate(Standard)
+                .scalar_subquery()
             )
         )
     )
@@ -490,3 +498,11 @@ def get_or_create_draft(
         "version": draft.version_code,
         "status": draft.status,
     }
+
+
+
+
+
+
+
+

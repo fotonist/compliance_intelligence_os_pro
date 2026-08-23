@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 
 type Standard = {
   id: number;
@@ -272,3 +272,4 @@ export default function StandardSetupPage() {
     </div>
   );
 }
+

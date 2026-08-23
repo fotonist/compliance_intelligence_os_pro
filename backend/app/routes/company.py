@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
@@ -44,7 +44,11 @@ def get_company_profile(
         "internal_issues": profile.internal_issues,
         "external_issues": profile.external_issues,
         "strategic_objectives": profile.strategic_objectives,
+        "policy_summary": profile.policy_summary,
+        "leadership_representative": profile.leadership_representative,
+        "compliance_officer": profile.compliance_officer,
         "scope_description": profile.scope_description,
+        "included_locations": profile.included_locations or [],
         "excluded_activities": profile.excluded_activities,
         "status": profile.status,
     }
@@ -81,7 +85,11 @@ def upsert_company_profile(
         "internal_issues",
         "external_issues",
         "strategic_objectives",
+        "policy_summary",
+        "leadership_representative",
+        "compliance_officer",
         "scope_description",
+        "included_locations",
         "excluded_activities",
     ]:
         if field in payload:
@@ -90,7 +98,10 @@ def upsert_company_profile(
     db.commit()
     db.refresh(profile)
 
-    return {"success": True}
+    return {
+        "success": True,
+        "id": profile.id,
+    }
 
 
 @router.post("/profile/publish")
@@ -109,8 +120,12 @@ def publish_company_profile(
 
     profile.status = "published"
     db.commit()
+    db.refresh(profile)
 
-    return {"status": "published"}
+    return {
+        "status": profile.status,
+        "id": profile.id,
+    }
 
 
 # ===================================================
@@ -136,6 +151,7 @@ def list_processes(
             "type": p.type,
             "owner": p.owner,
             "status": p.status,
+            "updated_at": p.updated_at,
         }
         for p in rows
     ]
@@ -170,6 +186,7 @@ def create_process(
         "type": process.type,
         "owner": process.owner,
         "status": process.status,
+        "updated_at": process.updated_at,
     }
 
 
@@ -193,6 +210,8 @@ def delete_process(
     db.commit()
 
     return {"success": True}
+
+
 @router.get("/processes/{process_id}")
 def get_process_detail(
     process_id: int,
@@ -219,9 +238,12 @@ def get_process_detail(
         "created_at": process.created_at,
         "updated_at": process.updated_at,
     }
+
+
 # ----------------------------------------------------------
 # LIST LINKED RISKS
 # ----------------------------------------------------------
+
 @router.get("/processes/{process_id}/risks")
 def list_process_risks(
     process_id: int,
@@ -250,6 +272,7 @@ def list_process_risks(
         for r in risks
     ]
 
+
 # ----------------------------------------------------------
 # UNLINK RISKS
 # ----------------------------------------------------------
@@ -276,3 +299,37 @@ def unlink_risk_from_process(
     db.commit()
 
     return {"unlinked": True}
+
+
+
+# ===================================================
+# COMPANY USERS (Department Managers)
+# ===================================================
+
+@router.get("/users")
+def get_company_users(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+
+    stmt = (
+        select(User)
+        .where(
+            User.tenant_id == user.tenant_id
+        )
+        .order_by(
+            User.full_name
+        )
+    )
+
+    users = db.execute(stmt).scalars().all()
+
+    return [
+        {
+            "id": item.id,
+            "name": item.full_name,
+            "email": item.email,
+        }
+        for item in users
+    ]
+

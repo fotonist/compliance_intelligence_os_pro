@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import text, func
+from sqlalchemy import text, func, cast, String
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
@@ -23,7 +23,7 @@ def _get_uee_state(db: Session, tenant_id: int):
 
 
 # =====================================================
-# STRATEGIC KPI – TENANT SAFE UEE
+# STRATEGIC KPI Ã¢â‚¬â€œ TENANT SAFE UEE
 # =====================================================
 
 @router.get("/summary")
@@ -121,7 +121,7 @@ def kpi_summary_status(
 
 
 # =====================================================
-# COMPANY HOME TREND – TENANT SAFE
+# COMPANY HOME TREND Ã¢â‚¬â€œ TENANT SAFE
 # =====================================================
 
 @router.get("/trends")
@@ -145,7 +145,7 @@ def kpi_trends(
         .filter(
             AuditLog.entity_type == "Evidence",
             AuditLog.action == "STATUS_CHANGE",
-            AuditLog.new_value["status"].astext.in_(["Approved", "APPROVED"]),
+            cast(AuditLog.new_value["status"], String).in_(["Approved", "APPROVED"]),
             AuditLog.created_at >= since,
         )
         .group_by(func.date(AuditLog.created_at))
@@ -179,7 +179,7 @@ def kpi_trends(
 
 
 # =====================================================
-# OPERATIONAL KPI – MTTR
+# OPERATIONAL KPI Ã¢â‚¬â€œ MTTR
 # =====================================================
 
 @router.get("/operations/mttr-trend")
@@ -215,7 +215,7 @@ def mttr_trend(
 
 
 # =====================================================
-# OPERATIONAL KPI – MTTR DETAILS
+# OPERATIONAL KPI Ã¢â‚¬â€œ MTTR DETAILS
 # =====================================================
 
 @router.get("/operations/mttr-details")
@@ -247,7 +247,7 @@ def mttr_details(db: Session = Depends(get_db)):
 
 
 # =====================================================
-# OPERATIONAL KPI – REJECTED TREND
+# OPERATIONAL KPI Ã¢â‚¬â€œ REJECTED TREND
 # =====================================================
 
 @router.get("/operations/rejected-trend")
@@ -270,7 +270,7 @@ def rejected_trend(
 
 
 # =====================================================
-# OPERATIONAL KPI – PENDING AGING
+# OPERATIONAL KPI Ã¢â‚¬â€œ PENDING AGING
 # =====================================================
 
 @router.get("/operations/pending-aging")

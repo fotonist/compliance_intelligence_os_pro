@@ -32,6 +32,8 @@ from app.routes.control_assessments import router as control_assessments_router
 from app.routes.requirements import router as requirements_router
 from app.routes.risk_intelligence import router as risk_intelligence_router
 from app.routes.company import router as company_router
+from app.routes.company_objectives import router as company_objectives_router
+from app.routes.assets import router as assets_router
 from app.routes.processes import router as processes_router
 from app.routes.process_risk_links import router as process_risk_router
 from app.routes.coverage import router as coverage_router
@@ -60,6 +62,11 @@ from app.routes.audit_findings import router as audit_findings_router
 from app.routes.audit_finding_workflow import router as audit_finding_workflow_router
 from app.routes.actions import router as actions_router
 from app.routes.company_home import router as company_home_router
+from app.routes.organization import router as organization_router
+from app.routes.location import router as location_router
+from app.routes.stakeholder import router as stakeholder_router
+from app.routes.department import router as department_router
+from app.routes.governance import router as governance_router
 
 # ==============================
 # MODELS (metadata load safety)
@@ -99,7 +106,7 @@ from app.seed.iso15504_2006 import seed_iso15504_2006
 # APP INIT
 # ==============================
 
-app = FastAPI()
+application = FastAPI()
 
 # ==============================
 # CORS
@@ -107,10 +114,11 @@ app = FastAPI()
 
 # Vercel preview URLs are generated dynamically. Allow only this application's
 # Vercel hostname family instead of maintaining a hard-coded preview list.
-app.add_middleware(
+application.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "https://compliance-intelligence-os-m65n.vercel.app",
         "https://compliance-intelligence-os-pro-u6yj-r5twwl9gv.vercel.app",
         "https://compliance-intelligence-os-d3ot6ocmd-hasans-projects-b02466bd.vercel.app",
@@ -125,9 +133,9 @@ app.add_middleware(
 UPLOAD_ROOT = "uploads"
 if not os.path.exists(UPLOAD_ROOT):
     os.makedirs(UPLOAD_ROOT)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_ROOT), name="uploads")
+application.mount("/uploads", StaticFiles(directory=UPLOAD_ROOT), name="uploads")
 
-@app.on_event("startup")
+@application.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
     db: Session = SessionLocal()
@@ -141,69 +149,76 @@ def startup():
 # ROUTER INCLUDES
 # ==============================
 
-app.include_router(auth.router, tags=["auth"])
+application.include_router(auth.router, tags=["auth"])
 # Matrix generation/preview must win the shared GET /matrix route. The legacy
 # matrix_view router is registered after the canonical matrix router.
-app.include_router(matrix_router)
-app.include_router(matrix_view_router)
-app.include_router(assessments.router)
-app.include_router(kpi_router)
-app.include_router(company_home_router)
-app.include_router(control_assessments_router)
-app.include_router(evidence_files_router)
-app.include_router(user_router)
-app.include_router(company_tasks_evidence_router)
-app.include_router(company_tasks_router)
+application.include_router(matrix_router)
+application.include_router(matrix_view_router)
+application.include_router(assessments.router)
+application.include_router(kpi_router)
+application.include_router(company_home_router)
+application.include_router(control_assessments_router)
+application.include_router(evidence_files_router)
+application.include_router(user_router)
+application.include_router(company_tasks_evidence_router)
+application.include_router(company_tasks_router)
 # Register the version-aware create endpoint before the legacy evidence router.
 # This preserves all existing evidence routes while making POST /evidences and
 # POST /company/evidences resolve through the canonical standard-version contract.
-app.include_router(evidence_create_fix_router)
-app.include_router(evidence_create_fix_router, prefix="/company")
-app.include_router(evidence_router)
-app.include_router(evidence_router, prefix="/company")
-app.include_router(risk_create_router)
-app.include_router(risk_router)
-app.include_router(standards_router)
-app.include_router(standard_structure.router)
-app.include_router(controls_router)
-app.include_router(ai_router)
-app.include_router(risk_assessment_router)
-app.include_router(requirements_router)
-app.include_router(risk_intelligence_router)
-app.include_router(company_router)
-app.include_router(processes_router)
-app.include_router(process_risk_router)
-app.include_router(coverage_router)
-app.include_router(readiness.router)
-app.include_router(clause_weights.router)
-app.include_router(heatmap.router)
-app.include_router(intelligence_health_router)
-app.include_router(executive_summary_router)
-app.include_router(intelligence_router)
-app.include_router(intelligence_api_router)
-app.include_router(risk_forecast_router)
-app.include_router(intelligence_control_router)
-app.include_router(uee_router)
-app.include_router(process_readiness_router)
-app.include_router(analytics_router)
-app.include_router(analytics_control_router)
-app.include_router(roles_router)
-app.include_router(maturity_router)
-app.include_router(clause_router)
-app.include_router(risk_appetite_router)
-app.include_router(compliance_object_router)
-app.include_router(license_router)
-app.include_router(audit_plans_router)
-app.include_router(audit_finding_workflow_router)
-app.include_router(audit_findings_router)
-app.include_router(audit_router)
-app.include_router(actions_router)
+application.include_router(evidence_create_fix_router)
+application.include_router(evidence_create_fix_router, prefix="/company")
+application.include_router(evidence_router)
+application.include_router(evidence_router, prefix="/company")
+application.include_router(risk_create_router)
+application.include_router(risk_router)
+application.include_router(standards_router)
+application.include_router(standard_structure.router)
+application.include_router(controls_router)
+application.include_router(ai_router)
+application.include_router(risk_assessment_router)
+application.include_router(requirements_router)
+application.include_router(risk_intelligence_router)
+application.include_router(company_router)
+application.include_router(company_objectives_router)
+application.include_router(assets_router)
+application.include_router(processes_router)
+application.include_router(organization_router)
+application.include_router(location_router)
+application.include_router(stakeholder_router)
+application.include_router(department_router)
+application.include_router(governance_router)
+application.include_router(process_risk_router)
+application.include_router(coverage_router)
+application.include_router(readiness.router)
+application.include_router(clause_weights.router)
+application.include_router(heatmap.router)
+application.include_router(intelligence_health_router)
+application.include_router(executive_summary_router)
+application.include_router(intelligence_router)
+application.include_router(intelligence_api_router)
+application.include_router(risk_forecast_router)
+application.include_router(intelligence_control_router)
+application.include_router(uee_router)
+application.include_router(process_readiness_router)
+application.include_router(analytics_router)
+application.include_router(analytics_control_router)
+application.include_router(roles_router)
+application.include_router(maturity_router)
+application.include_router(clause_router)
+application.include_router(risk_appetite_router)
+application.include_router(compliance_object_router)
+application.include_router(license_router)
+application.include_router(audit_plans_router)
+application.include_router(audit_finding_workflow_router)
+application.include_router(audit_findings_router)
+application.include_router(audit_router)
+application.include_router(actions_router)
 
-@app.get("/")
+@application.get("/")
 def health():
     return {"status": "ok"}
 
-@app.get("/health/intelligence")
+@application.get("/health/intelligence")
 def intelligence_health():
     try:
         with engine.connect() as connection:
@@ -211,3 +226,9 @@ def intelligence_health():
         return {"status": "active", "engine": "intelligence"}
     except Exception:
         return {"status": "offline", "engine": "intelligence"}
+
+
+
+
+
+import app.models.governance_procedure

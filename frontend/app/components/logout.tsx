@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useRouter } from "next/navigation";
 
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 
 export default function LogoutButton() {
   const router = useRouter();
@@ -30,3 +30,4 @@ export default function LogoutButton() {
     </button>
   );
 }
+

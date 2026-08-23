@@ -21,3 +21,17 @@ Thumbs.db
 uploads/
 storage/
 tmp/.env
+
+# Backup files
+*.bak
+*.backup*
+*_backup_*
+*.before*
+*.archive.bak
+*.BROKEN*
+
+# Test files
+test_*.txt
+sidebar_full.txt
+process_detail_github.tsx
+processes_github.py

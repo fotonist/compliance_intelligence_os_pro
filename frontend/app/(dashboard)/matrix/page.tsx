@@ -1,4 +1,6 @@
+﻿
 "use client";
+
 import ComplianceWorkspaceDrawer from "../../components/compliance-workspace/ComplianceWorkspaceDrawer";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -11,18 +13,29 @@ type StandardOption = {
   code: string;
   title?: string | null;
   type?: string | null;
+  version?: string | null;
 };
 
 type MatrixKpi = {
   compliance_percentage?: number;
-evidence?: {
+
+  controls?: {
+    total?: number;
+    covered?: number;
+    partial?: number;
+    not_covered?: number;
+  };
+
+  evidence?: {
     total?: number;
     approved?: number;
     pending?: number;
     uploaded?: number;
     rejected?: number;
+    draft?: number;
     linked?: number;
-}
+  };
+
   risk?: {
     total?: number;
     critical?: number;
@@ -32,282 +45,457 @@ evidence?: {
   };
 };
 
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 
+function getEvidenceAssurance(kpi: MatrixKpi | null) {
+  const total = kpi?.evidence?.total ?? 0;
+
+  if (!total) return 0;
+
+  return Math.round(
+    ((kpi?.evidence?.approved ?? 0) / total) * 100
+  );
+}
+
+function getRiskExposure(kpi: MatrixKpi | null) {
+  return (
+    (kpi?.risk?.critical ?? 0) +
+    (kpi?.risk?.high ?? 0)
+  );
+}
+
+function getControlCoverage(kpi: MatrixKpi | null) {
+  const total = kpi?.controls?.total ?? 0;
+
+  if (!total) return 0;
+
+  const covered =
+    (kpi?.controls?.covered ?? 0) +
+    (kpi?.controls?.partial ?? 0);
+
+  return Number(
+    ((covered / total) * 100).toFixed(1)
+  );
+}
 export default function MatrixPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [mode, setMode] = useState<Mode>("control");
-  const [selectedRow, setSelectedRow] = useState<any | null>(null);
 
-  const [standardId, setStandardId] = useState<number | "all">("all");
-  const [standards, setStandards] = useState<StandardOption[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [selectedRow, setSelectedRow] =
+    useState<any | null>(null);
 
-  const [kpi, setKpi] = useState<MatrixKpi | null>(null);
-  const [token, setToken] = useState<string>("");
+  const [standardId, setStandardId] =
+    useState<number | "all">("all");
+
+  const [standards, setStandards] =
+    useState<StandardOption[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [kpi, setKpi] =
+    useState<MatrixKpi | null>(null);
+
+  const [token, setToken] =
+    useState("");
+
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const t =
+    if (typeof window === "undefined")
+      return;
+
+    setToken(
       localStorage.getItem("access_token") ||
       localStorage.getItem("token") ||
-      "";
-    setToken(t);
+      ""
+    );
   }, []);
 
+
   const selectedStandard = useMemo(() => {
-    if (standardId === "all") return null;
-    return standards.find((s) => s.id === standardId) || null;
+    if (standardId === "all")
+      return null;
+
+    return standards.find(
+      (s) => s.id === standardId
+    ) ?? null;
+
   }, [standardId, standards]);
 
+
   useEffect(() => {
-    if (!token) return;
 
-    async function fetchStandards() {
-      try {
-        const res = await fetch(`${API_BASE}/standards/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+    if (!token)
+      return;
 
-        const data = await res.json();
+    async function loadStandards(){
 
-        const list: StandardOption[] = Array.isArray(data)
-          ? data.map((s: any) => ({
-              id: s.id,
-              code: s.code,
-              title: s.title ?? null,
-              type: s.type ?? s.standard_type ?? s.assessment_type ?? null,
-            }))
-          : [];
+      try{
 
-        const controlStandards = list.filter(
-          (s) => s.type === "CONTROL_BASED"
+        const res =
+          await fetch(
+            `${API_BASE}/standards/`,
+            {
+              headers:{
+                Authorization:`Bearer ${token}`
+              }
+            }
+          );
+
+        const data =
+          await res.json();
+
+        setStandards(
+          Array.isArray(data)
+          ? data.filter(
+              (s:any)=>
+                s.type==="CONTROL_BASED"
+            )
+          : []
         );
 
-        controlStandards.sort((a, b) =>
-          (a.code || "").localeCompare(b.code || "")
+      }catch(err){
+
+        console.error(
+          "standards load failed",
+          err
         );
 
-        setStandards(controlStandards);
-      } catch (err) {
-        console.error("STANDARDS fetch failed:", err);
         setStandards([]);
+
       }
+
     }
 
-    fetchStandards();
-  }, [token]);
+    loadStandards();
+
+  },[token]);
+
+
 
   useEffect(() => {
-    if (!token) return;
 
-    async function fetchMatrix() {
-      try {
+    if (!token)
+      return;
+
+
+    async function loadMatrix(){
+
+      try{
+
         setLoading(true);
 
         const url =
-          standardId === "all"
-            ? `${API_BASE}/matrix/`
-            : `${API_BASE}/matrix/?standard_id=${standardId}`;
+          standardId==="all"
+          ? `${API_BASE}/matrix/`
+          : `${API_BASE}/matrix/?standard_id=${standardId}`;
 
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
 
-        const data = await res.json();
-        const resolvedRows = Array.isArray(data)
+        const res =
+          await fetch(
+            url,
+            {
+              headers:{
+                Authorization:`Bearer ${token}`
+              }
+            }
+          );
+
+
+        const data =
+          await res.json();
+
+
+        setRows(
+          Array.isArray(data)
           ? data
-          : data?.rows ?? [];
+          : data.rows ?? []
+        );
 
-        setRows(resolvedRows);
-        setMode((data?.mode as Mode) || "control");
-      } catch (err) {
-        console.error("MATRIX fetch failed:", err);
+
+        setMode(
+          data.mode ?? "control"
+        );
+
+
+      }catch(err){
+
+        console.error(
+          "matrix load failed",
+          err
+        );
+
         setRows([]);
-        setMode("control");
-      } finally {
+
+      }
+      finally{
         setLoading(false);
       }
+
     }
 
-    fetchMatrix();
-  }, [standardId, token]);
+
+    loadMatrix();
+
+  },[
+    token,
+    standardId
+  ]);
+
+
 
   useEffect(() => {
-    if (!token) return;
 
-    async function fetchKpi() {
-      try {
+    if (!token)
+      return;
+
+
+    async function loadKpi(){
+
+      try{
+
         const url =
-          standardId === "all"
-            ? `${API_BASE}/matrix/kpi`
-            : `${API_BASE}/matrix/kpi?standard_id=${standardId}`;
+          standardId==="all"
+          ? `${API_BASE}/matrix/kpi`
+          : `${API_BASE}/matrix/kpi?standard_id=${standardId}`;
 
-        const res = await fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
 
-        const data = await res.json();
-        setKpi(data);
-      } catch (err) {
-        console.error("KPI fetch failed:", err);
+        const res =
+          await fetch(
+            url,
+            {
+              headers:{
+                Authorization:`Bearer ${token}`
+              }
+            }
+          );
+
+
+        setKpi(
+          await res.json()
+        );
+
+
+      }catch(err){
+
+        console.error(
+          "kpi load failed",
+          err
+        );
+
         setKpi(null);
+
       }
+
     }
 
-    fetchKpi();
-  }, [standardId, token]);
+
+    loadKpi();
+
+  },[
+    token,
+    standardId
+  ]);
+
 
   const instancesHref =
-    standardId === "all"
-      ? "/matrix/instances"
-      : `/matrix/instances?standard_id=${standardId}`;
-
+    standardId==="all"
+    ? "/matrix/instances"
+    : `/matrix/instances?standard_id=${standardId}`;
   return (
-    <div className="p-6 space-y-6 max-w-[1400px] mx-auto">
-      <div className="bg-[#0f172a] border border-slate-800 rounded-2xl p-5 shadow-lg">
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-wide text-white">
-              Compliance Matrix
-            </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Mode: <span className="text-slate-200 font-medium">{mode}</span>
-              {"  "}•{"  "}
-              Rows: <span className="text-slate-200 font-medium">{rows.length}</span>
-            </p>
-          </div>
+    <div className="min-h-full bg-slate-50 p-8 text-slate-900">
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href={instancesHref}
-              className="px-4 py-2 text-sm rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition"
-            >
-              View Matrices
-            </Link>
+      <div className="mx-auto max-w-[1500px] space-y-6">
 
-            <Link
-              href="/matrix/builder"
-              className="px-4 py-2 text-sm rounded-lg bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition"
-            >
-              Row Builder
-            </Link>
 
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto sm:min-w-[260px]">
-              <label className="text-xs text-slate-400 whitespace-nowrap">
-                Standard
-              </label>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 
-              <select
-                value={standardId}
-                onChange={(e) =>
-                  setStandardId(
-                    e.target.value === "all"
-                      ? "all"
-                      : Number(e.target.value)
-                  )
-                }
-                className="w-full sm:w-[260px] bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-600"
-              >
-                <option value="all">All</option>
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
 
-                {standards.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.code}
-                    {s.title ? ` — ${s.title}` : ""}
-                  </option>
-                ))}
-              </select>
+            <div>
+              <div className="text-xs uppercase tracking-widest text-slate-400">
+                Compliance Intelligence Platform
+              </div>
+
+              <h1 className="mt-2 text-2xl font-semibold">
+                Compliance Matrix
+              </h1>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Enterprise control coverage, evidence assurance and risk intelligence workspace.
+              </p>
+
+
+              <div className="mt-4 flex flex-wrap gap-3">
+
+                <span className="rounded-full border px-3 py-1 text-xs">
+                  Mode: {mode === "control" ? "Control Based" : "Maturity Based"}
+                </span>
+
+
+                {selectedStandard && (
+                  <span className="rounded-full border px-3 py-1 text-xs">
+                    {selectedStandard.code}
+                  </span>
+                )}
+
+                <span className="rounded-full border px-3 py-1 text-xs">
+                  Rows: {rows.length}
+                </span>
+
+              </div>
+
             </div>
+
+
+            <div className="flex flex-wrap gap-3">
+
+              <Link
+                href={instancesHref}
+                className="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50"
+              >
+                Matrix Instances
+              </Link>
+
+
+              <Link
+                href="/matrix/builder"
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800"
+              >
+                Matrix Builder
+              </Link>
+
+
+            </div>
+
+
           </div>
+
         </div>
+
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+
+
+          <KpiCard
+            title="Compliance Health"
+            value={`${kpi?.compliance_percentage ?? 0}%`}
+          />
+
+
+          <KpiCard
+            title="Evidence Assurance"
+            value={`${getEvidenceAssurance(kpi)}%`}
+          />
+
+
+          <KpiCard
+            title="Risk Exposure"
+            value={getRiskExposure(kpi)}
+          />
+
+
+          <KpiCard
+            title="Control Coverage"
+            value={`${getControlCoverage(kpi)}%`}
+          />
+
+
+        </div>
+
+
+
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+
+
+          {loading ? (
+
+            <div className="p-10 text-center text-sm text-slate-500">
+              Loading compliance intelligence...
+            </div>
+
+          ) : rows.length === 0 ? (
+
+            <div className="p-10 text-center">
+
+              <div className="text-lg font-semibold">
+                No Compliance Matrix Available
+              </div>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Generate the matrix from the standard structure before assessment.
+              </p>
+
+
+              <Link
+                href="/matrix/builder"
+                className="inline-block mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white"
+              >
+                Build Matrix
+              </Link>
+
+            </div>
+
+          ) : (
+
+            <ComplianceMatrixTable
+              rows={rows}
+              mode={mode}
+              onView={(row:any)=>{
+                setSelectedRow(row);
+              }}
+            />
+
+          )}
+
+
+        </div>
+
+
+
+        <ComplianceWorkspaceDrawer
+          open={selectedRow !== null}
+          controlId={selectedRow?.control_id ?? null}
+          onClose={() => setSelectedRow(null)}
+        />
+
+
       </div>
 
-      {kpi && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <KpiCard
-            title="Compliance"
-            value={`${kpi.compliance_percentage ?? 0}%`}
-            highlight="text-emerald-400"
-          />
-
-          <KpiCard
-            title="Total Evidence"
-            value={kpi.evidence?.total ?? 0}
-            tooltip={
-              <div className="space-y-1">
-                <div>Total: {kpi.evidence?.total ?? 0}</div>
-                <div>Approved: {kpi.evidence?.approved ?? 0}</div>
-                <div>Waiting Approval: {kpi.evidence?.pending ?? 0}</div>
-                <div>Uploaded: {kpi.evidence?.uploaded ?? 0}</div>
-                <div>Rejected: {kpi.evidence?.rejected ?? 0}</div>
-                <div>Linked Controls: {kpi.evidence?.linked ?? 0}</div>
-              </div>
-            }
-          />
-
-          <KpiCard
-            title="Approved Evidence"
-            value={kpi.evidence?.approved ?? 0}
-            highlight="text-blue-400"
-          />
-
-          <KpiCard
-            title="Critical Risks"
-            value={kpi.risk?.critical ?? 0}
-            highlight="text-red-400"
-          />
-        </div>
-      )}
-
-      {loading ? (
-        <div className="text-slate-400">Loading matrix...</div>
-      ) : (
-        <ComplianceMatrixTable
-          rows={rows}
-          mode={mode}
-          onView={(row: any) => {
-            console.log("SELECTED ROW:", row);
-            setSelectedRow(row);
-          }}
-        />
-      )}
-
-      <ComplianceWorkspaceDrawer
-        open={selectedRow !== null}
-        controlId={selectedRow?.control_id ?? null}
-        onClose={() => setSelectedRow(null)}
-      />
     </div>
   );
 }
+
+
 
 function KpiCard({
   title,
   value,
-  highlight,
-  tooltip,
-}: {
-  title: string;
-  value: any;
-  highlight?: string;
-  tooltip?: React.ReactNode;
-}) {
+}:{
+  title:string;
+  value:any;
+}){
+
   return (
-    <div className="relative group bg-[#0f172a] border border-slate-800 rounded-2xl p-5 shadow-md">
-      <div className="text-xs text-slate-400 uppercase tracking-wide">
+
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+
+      <div className="text-xs uppercase tracking-wider text-slate-400">
         {title}
       </div>
 
-      <div className={`text-2xl font-semibold mt-2 ${highlight ?? ""}`}>
+
+      <div className="mt-3 text-3xl font-semibold text-slate-900">
         {value}
       </div>
 
-      {tooltip && (
-        <div className="absolute top-full left-0 mt-2 z-50 w-52 rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition">
-          {tooltip}
-        </div>
-      )}
+
     </div>
+
   );
+
 }
+
+
+
+

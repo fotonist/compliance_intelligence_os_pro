@@ -1,4 +1,3 @@
-﻿// frontend/app/(dashboard)/company/layout.tsx
 "use client";
 
 import Link from "next/link";
@@ -11,6 +10,23 @@ export default function CompanyLayout({
 }) {
   const pathname = usePathname();
 
+  const isCompanyProfile =
+    pathname === "/company/profile" ||
+    pathname.startsWith("/company/profile/");
+
+  const isCompanyProcesses =
+    pathname === "/company/processes" ||
+    pathname.startsWith("/company/processes/");
+
+  const isCompanyOrganization =
+    pathname === "/company/organization" ||
+    pathname.startsWith("/company/organization/");
+
+  const showCompanyFoundationHeader =
+    isCompanyProfile ||
+    isCompanyProcesses ||
+    isCompanyOrganization;
+
   const tabClass = (href: string) =>
     `px-4 py-2 rounded-lg text-sm border ${
       pathname === href || pathname.startsWith(href + "/")
@@ -20,26 +36,22 @@ export default function CompanyLayout({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-2xl font-semibold">Company Foundation</div>
-          <div className="text-sm text-slate-400">
-            A Layer → Company Profile & Process Management
-          </div>
-        </div>
-      </div>
+      {showCompanyFoundationHeader && (
+        <>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-2xl font-semibold">
+                Company Foundation
+              </div>
 
-      <div className="flex gap-2">
-        <Link href="/company/profile" className={tabClass("/company/profile")}>
-          Company Profile
-        </Link>
-        <Link
-          href="/company/processes"
-          className={tabClass("/company/processes")}
-        >
-          Processes
-        </Link>
-      </div>
+              <div className="text-sm text-slate-400">
+                A Layer → Company Profile & Process Management
+              </div>
+            </div>
+          </div>
+
+        </>
+      )}
 
       {children}
     </div>

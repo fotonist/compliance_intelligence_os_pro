@@ -17,26 +17,31 @@ type HistoryItem = {
   score_old?: number | null;
   score_new?: number | null;
 
+  risk_level_old?: string | null;
+  risk_level_new?: string | null;
+
   treatment_old?: string | null;
   treatment_new?: string | null;
 
   action_old?: string | null;
   action_new?: string | null;
 
-  reason?: string | null;
+  change_reason?: string | null;
 };
 
 type ApiResponse =
   | HistoryItem[]
   | {
       items?: HistoryItem[];
+      rich?: HistoryItem[];
     };
 
 type Props = {
   riskId: number;
 };
 
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function RiskHistoryTab({ riskId }: Props) {
   const [rows, setRows] = useState<HistoryItem[]>([]);
@@ -69,6 +74,8 @@ export default function RiskHistoryTab({ riskId }: Props) {
 
       if (Array.isArray(data)) {
         setRows(data);
+      } else if (Array.isArray(data.rich)) {
+        setRows(data.rich);
       } else if (Array.isArray(data.items)) {
         setRows(data.items);
       } else {
@@ -107,15 +114,15 @@ export default function RiskHistoryTab({ riskId }: Props) {
         return (
           <div
             key={r.id ?? i}
-            className="border border-slate-700 rounded px-3 py-2 bg-slate-800 text-sm"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm shadow-sm"
           >
             <div className="flex justify-between mb-1">
-              <span className="text-slate-300">
+              <span className="text-slate-500 text-xs font-medium">
                 {date ? new Date(date).toLocaleString() : "-"}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mt-3">
               <Diff
                 label="Likelihood"
                 oldVal={r.likelihood_old}
@@ -131,6 +138,12 @@ export default function RiskHistoryTab({ riskId }: Props) {
                 oldVal={r.score_old}
                 newVal={r.score_new}
               />
+
+              <Diff
+                label="Risk Level"
+                oldVal={r.risk_level_old}
+                newVal={r.risk_level_new}
+              />
               <Diff
                 label="Treatment"
                 oldVal={r.treatment_old}
@@ -143,9 +156,12 @@ export default function RiskHistoryTab({ riskId }: Props) {
               />
             </div>
 
-            {r.reason && (
-              <div className="mt-2 text-xs text-slate-400">
-                Reason: {r.reason}
+            {r.change_reason && (
+              <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-slate-700">
+                <span className="font-semibold text-slate-900">
+                  Change Reason:
+                </span>{" "}
+                {r.change_reason}
               </div>
             )}
           </div>

@@ -1,4 +1,4 @@
-# C:\Projects\compliance_app\backend\app\routes\evidence.py
+﻿# C:\Projects\compliance_app\backend\app\routes\evidence.py
 
 from typing import List
 from datetime import datetime
@@ -15,6 +15,7 @@ from app.db.session import get_db
 from app.core.security import get_current_user
 from app.models.evidences import Evidence
 from app.models.evidence_files import EvidenceFile
+from app.models.evidence_file_history import EvidenceFileHistory
 from app.models.risk_evidence_link import RiskEvidenceLink
 from app.models.risks import Risk
 from app.models.risk_versions import RiskVersion
@@ -107,7 +108,7 @@ def _risk_query_for_evidence(
         .join(RiskEvidenceLink, RiskVersion.id == RiskEvidenceLink.risk_version_id)
         .join(EvidenceFile, EvidenceFile.id == RiskEvidenceLink.evidence_file_id)
         .filter(EvidenceFile.evidence_id == evidence_id)
-        .group_by(   # 🔥 DUPLICATE FIX
+        .group_by(   # ğŸ”¥ DUPLICATE FIX
             Risk.id,
             Risk.title,
             Risk.score,
@@ -275,7 +276,7 @@ def upload_evidence_with_file(
 
 
 # --------------------------------------------------
-# EVIDENCE LINK (GUARDED – FINAL)
+# EVIDENCE LINK (GUARDED â€“ FINAL)
 # --------------------------------------------------
 @router.post("/evaluations/{evaluation_id}/evidence")
 def link_evidence_to_maturity_practice(
@@ -717,15 +718,32 @@ def approve_file(
     user=Depends(get_current_user),
 ):
     f = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
+
     if not f:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(
+            status_code=404,
+            detail="File not found"
+        )
+
+    old_status = f.status
 
     f.status = "approved"
     f.approved_by = user.id
     f.approved_at = datetime.utcnow()
-    db.commit()
-    return {"success": True}
 
+    db.add(
+        EvidenceFileHistory(
+            evidence_file_id=f.id,
+            action="APPROVE",
+            old_status=old_status,
+            new_status=f.status,
+            performed_by=user.id,
+        )
+    )
+
+    db.commit()
+
+    return {"success": True}
 
 @router.post("/files/{file_id}/reject")
 def reject_file(
@@ -734,15 +752,32 @@ def reject_file(
     user=Depends(get_current_user),
 ):
     f = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
+
     if not f:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(
+            status_code=404,
+            detail="File not found"
+        )
+
+    old_status = f.status
 
     f.status = "rejected"
     f.rejected_by = user.id if hasattr(f, "rejected_by") else None
     f.rejected_at = datetime.utcnow() if hasattr(f, "rejected_at") else None
-    db.commit()
-    return {"success": True}
 
+    db.add(
+        EvidenceFileHistory(
+            evidence_file_id=f.id,
+            action="REJECT",
+            old_status=old_status,
+            new_status=f.status,
+            performed_by=user.id,
+        )
+    )
+
+    db.commit()
+
+    return {"success": True}
 
 @router.post("/files/{file_id}/rollback")
 def rollback_file(
@@ -751,26 +786,47 @@ def rollback_file(
     user=Depends(get_current_user),
 ):
     f = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
+
     if not f:
-        raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(
+            status_code=404,
+            detail="File not found"
+        )
+
+    old_status = f.status
 
     f.status = "uploaded"
+
     if hasattr(f, "approved_by"):
         f.approved_by = None
+
     if hasattr(f, "approved_at"):
         f.approved_at = None
+
     if hasattr(f, "submitted_by"):
         f.submitted_by = None
+
     if hasattr(f, "submitted_at"):
         f.submitted_at = None
 
-    db.commit()
-    return {"success": True}
+    db.add(
+        EvidenceFileHistory(
+            evidence_file_id=f.id,
+            action="ROLLBACK",
+            old_status=old_status,
+            new_status=f.status,
+            performed_by=user.id,
+        )
+    )
 
+    db.commit()
+
+    return {"success": True}
 
 # =====================================================
 # EVIDENCE LIST (PAGINATED)
 # =====================================================
+@router.get("")
 @router.get("/")
 def evidences_paged(
     page: int = 1,
@@ -954,14 +1010,14 @@ def link_risk_to_evidence_direct(
     db: Session,
     user,
 ):
-    print("🔥 LINK START", evidence_id, payload.risk_ids)
+    print("ğŸ”¥ LINK START", evidence_id, payload.risk_ids)
 
     evidence = db.query(Evidence).filter(Evidence.id == evidence_id).first()
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
     file_ids = _evidence_file_ids(db, evidence_id)
-    print("🔥 FILE IDS:", file_ids)
+    print("ğŸ”¥ FILE IDS:", file_ids)
 
     if not file_ids:
         raise HTTPException(status_code=400, detail="No files found for this evidence")
@@ -969,7 +1025,7 @@ def link_risk_to_evidence_direct(
     linked = []
 
     for risk_id in payload.risk_ids:
-        print("👉 processing risk:", risk_id)
+        print("ğŸ‘‰ processing risk:", risk_id)
 
         rv = (
             db.query(RiskVersion)
@@ -978,7 +1034,7 @@ def link_risk_to_evidence_direct(
             .first()
         )
 
-        print("👉 risk_version:", rv.id if rv else None)
+        print("ğŸ‘‰ risk_version:", rv.id if rv else None)
 
         if not rv:
             continue
@@ -1008,13 +1064,13 @@ def link_risk_to_evidence_direct(
 
             db.add(new_link)
             inserted_for_this_risk = True
-            print("   ✅ INSERT", file_id, rv.id)
+            print("   âœ… INSERT", file_id, rv.id)
 
         if inserted_for_this_risk:
             linked.append(risk_id)
 
     db.commit()
-    print("🔥 COMMIT DONE")
+    print("ğŸ”¥ COMMIT DONE")
 
     return {"linked": linked}
 
@@ -1246,7 +1302,7 @@ def get_available_risks(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    # 🔥 already linked riskleri bul
+    # ğŸ”¥ already linked riskleri bul
     linked_ids = [
         r.risk_id
         for r in (
@@ -1260,7 +1316,7 @@ def get_available_risks(
         )
     ]
 
-    # 🔥 sadece linklenmemişleri getir
+    # ğŸ”¥ sadece linklenmemiÅŸleri getir
     risks = (
         db.query(Risk)
         .filter(~Risk.id.in_(linked_ids))
@@ -1268,3 +1324,10 @@ def get_available_risks(
     )
 
     return risks
+
+
+
+
+
+
+

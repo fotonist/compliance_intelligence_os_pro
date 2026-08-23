@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+﻿from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
@@ -7,6 +7,7 @@ import uuid
 
 from app.db.session import get_db
 from app.models.evidence_files import EvidenceFile
+from app.models.evidence_file_history import EvidenceFileHistory
 from app.models.evidences import Evidence
 from app.models.risk_evidence_link import RiskEvidenceLink
 from app.core.security import get_current_user
@@ -143,10 +144,24 @@ def submit_file(
     if f.status not in ["uploaded", "rejected"]:
         raise HTTPException(status_code=409, detail=f"File cannot be submitted from status '{f.status}'")
 
+    old_status = f.status
+
     f.status = "waiting_approval"
     f.submitted_by = user.id
     f.submitted_at = datetime.utcnow()
+
+    db.add(
+        EvidenceFileHistory(
+            evidence_file_id=f.id,
+            action="SUBMIT_REVIEW",
+            old_status=old_status,
+            new_status=f.status,
+            performed_by=user.id,
+        )
+    )
+
     db.commit()
+
     return {"success": True, "status": f.status}
 
 
@@ -182,11 +197,28 @@ def approve_file(
     )
     shutil.move(source_path, archive_path)
 
+    old_status = f.status
+
     f.file_path = archive_path
+    f.archive_path = archive_path
+    f.archived_at = datetime.utcnow()
+
     f.status = "approved"
     f.approved_by = user.id
     f.approved_at = datetime.utcnow()
+
     evidence.updated_at = datetime.utcnow()
+
+    db.add(
+        EvidenceFileHistory(
+            evidence_file_id=f.id,
+            action="APPROVE",
+            old_status=old_status,
+            new_status=f.status,
+            performed_by=user.id,
+        )
+    )
+
     db.commit()
 
     return {
@@ -209,10 +241,24 @@ def reject_file(
     if f.status != "waiting_approval":
         raise HTTPException(status_code=409, detail="Only files waiting for approval can be rejected")
 
+    old_status = f.status
+
     f.status = "rejected"
     f.rejected_by = user.id
     f.rejected_at = datetime.utcnow()
+
+    db.add(
+        EvidenceFileHistory(
+            evidence_file_id=f.id,
+            action="REJECT",
+            old_status=old_status,
+            new_status=f.status,
+            performed_by=user.id,
+        )
+    )
+
     db.commit()
+
     return {"success": True, "status": f.status}
 
 
@@ -229,12 +275,26 @@ def rollback_file(
     if f.status == "approved":
         raise HTTPException(status_code=409, detail="Approved evidence versions are immutable; upload a new version instead")
 
+    old_status = f.status
+
     f.status = "uploaded"
     f.approved_by = None
     f.approved_at = None
     f.submitted_by = None
     f.submitted_at = None
+
+    db.add(
+        EvidenceFileHistory(
+            evidence_file_id=f.id,
+            action="ROLLBACK",
+            old_status=old_status,
+            new_status=f.status,
+            performed_by=user.id,
+        )
+    )
+
     db.commit()
+
     return {"success": True, "status": f.status}
 
 
@@ -294,3 +354,53 @@ def delete_evidence_file_legacy(
     user=Depends(get_current_user),
 ):
     return _delete_evidence_file(file_id, db)
+
+
+
+
+
+
+
+
+
+@router.get("/files/{file_id}/history")
+def get_file_history(
+    file_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    file = (
+        db.query(EvidenceFile)
+        .filter(EvidenceFile.id == file_id)
+        .first()
+    )
+
+    if not file:
+        raise HTTPException(
+            status_code=404,
+            detail="File not found"
+        )
+
+    history = (
+        db.query(EvidenceFileHistory)
+        .filter(
+            EvidenceFileHistory.evidence_file_id == file_id
+        )
+        .order_by(
+            EvidenceFileHistory.created_at.desc()
+        )
+        .all()
+    )
+
+    return [
+        {
+            "id": h.id,
+            "action": h.action,
+            "old_status": h.old_status,
+            "new_status": h.new_status,
+            "comment": h.comment,
+            "performed_by": h.performed_by,
+            "created_at": h.created_at,
+        }
+        for h in history
+    ]

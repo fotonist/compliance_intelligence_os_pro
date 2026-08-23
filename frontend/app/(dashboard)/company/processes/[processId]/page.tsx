@@ -34,7 +34,7 @@ type RiskOption = {
   title: string;
 };
 
-/* ... TÜM MEVCUT TYPE'LAR AYNI ... */
+/* ... T├£M MEVCUT TYPE'LAR AYNI ... */
 
 type ProcessDetail = {
   id: number;
@@ -103,7 +103,7 @@ function Badge({
       ? "border-sky-700/40 bg-sky-950/30 text-sky-200"
       : variant === "danger"
       ? "border-red-700/40 bg-red-950/30 text-red-200"
-      : "border-slate-700/40 bg-slate-900 text-slate-200";
+      : "border-slate-300/40 bg-white text-slate-800";
 
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${cls}`}>
@@ -124,11 +124,11 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 space-y-4">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-lg font-semibold text-slate-100">{title}</div>
-          {subtitle ? <div className="text-sm text-slate-400">{subtitle}</div> : null}
+          <div className="text-lg font-semibold text-slate-900">{title}</div>
+          {subtitle ? <div className="text-sm text-slate-500">{subtitle}</div> : null}
         </div>
         {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
       </div>
@@ -138,14 +138,14 @@ function Section({
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <div className="text-xs text-slate-400 mb-1">{children}</div>;
+  return <div className="text-xs text-slate-500 mb-1">{children}</div>;
 }
 
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       {...props}
-      className={`w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-slate-600 ${
+      className={`w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 ${
         props.className || ""
       }`}
     />
@@ -156,7 +156,7 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      className={`w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-slate-600 ${
+      className={`w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 ${
         props.className || ""
       }`}
     />
@@ -167,7 +167,7 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className={`w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 outline-none focus:border-slate-600 ${
+      className={`w-full rounded-lg bg-white border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-slate-300 ${
         props.className || ""
       }`}
     />
@@ -189,12 +189,12 @@ function Button({
 }) {
   const cls =
     variant === "primary"
-      ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+      ? "border border-emerald-700 bg-emerald-700 text-white shadow-sm hover:bg-emerald-800 hover:border-emerald-800"
       : variant === "secondary"
-      ? "bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700"
+      ? "bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-300"
       : variant === "danger"
       ? "bg-red-700 hover:bg-red-600 text-white"
-      : "bg-transparent hover:bg-slate-800/60 text-slate-200 border border-slate-800";
+      : "bg-transparent hover:bg-slate-50 text-slate-800 border border-slate-200";
 
   return (
     <button
@@ -253,9 +253,9 @@ function heatVariant(score01: number): "success" | "warning" | "info" | "danger"
 function HeatBar({ summary }: { summary: RiskSummary | null }) {
   if (!summary) {
     return (
-      <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
-        <div className="text-sm text-slate-300">Risk Exposure</div>
-        <div className="mt-2 h-2 rounded bg-slate-800/70" />
+      <div className="rounded-lg border border-slate-200 bg-white/40 p-4">
+        <div className="text-sm text-slate-700">Risk Exposure</div>
+        <div className="mt-2 h-2 rounded bg-slate-200" />
         <div className="mt-2 text-xs text-slate-500">Loading summary...</div>
       </div>
     );
@@ -279,12 +279,12 @@ function HeatBar({ summary }: { summary: RiskSummary | null }) {
       : "bg-emerald-500";
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-4 space-y-3">
+    <div className="rounded-lg border border-slate-200 bg-white/40 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm text-slate-200 font-medium">Risk Exposure</div>
+          <div className="text-sm text-slate-800 font-medium">Risk Exposure</div>
           <div className="text-xs text-slate-500">
-            {summary.linked_count} linked · {summary.open_count} open
+            {summary.linked_count} linked ┬À {summary.open_count} open
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -296,16 +296,16 @@ function HeatBar({ summary }: { summary: RiskSummary | null }) {
         </div>
       </div>
 
-      <div className="h-2 rounded bg-slate-800/70 overflow-hidden">
+      <div className="h-2 rounded bg-slate-200 overflow-hidden">
         <div className={`h-2 ${barCls}`} style={{ width: `${pct}%` }} />
       </div>
 
-      <div className="flex items-center justify-between text-xs text-slate-400">
+      <div className="flex items-center justify-between text-xs text-slate-500">
         <div className="flex items-center gap-2">
-          <span>🟢 {b.LOW}</span>
-          <span>🟡 {b.MEDIUM}</span>
-          <span>🟠 {b.HIGH}</span>
-          <span>🔴 {b.CRITICAL}</span>
+          <span>­şşó {b.LOW}</span>
+          <span>­şşí {b.MEDIUM}</span>
+          <span>­şşá {b.HIGH}</span>
+          <span>­şö┤ {b.CRITICAL}</span>
         </div>
         <div>{pct}%</div>
       </div>
@@ -383,7 +383,7 @@ const [selectedRiskId, setSelectedRiskId] = useState<number | null>(null);
   useEffect(() => {
   if (!processId) return;
 
-  // Risk summary endpoint henüz yok
+  // Risk summary endpoint hen├╝z yok
   // refreshRiskSummary(processId);
 
 }, [processId]);
@@ -755,7 +755,7 @@ const rid = selectedRiskId;
         <div>
           <div className="text-2xl font-semibold">{headerTitle}</div>
 
-          <div className="text-sm text-slate-400">Process detail — inputs/outputs, standards, risks, KPIs</div>
+          <div className="text-sm text-slate-500">Process detail — inputs/outputs, standards, risks, KPIs</div>
           {data?.updated_at ? (
             <div className="text-xs text-slate-500 mt-1">Updated: {formatDate(data.updated_at)}</div>
           ) : null}
@@ -788,11 +788,11 @@ const rid = selectedRiskId;
       ) : null}
 
       {loading ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-300">Loading...</div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-700">Loading...</div>
       ) : null}
 
       {!loading && !data ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-300">Process not found.</div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-700">Process not found.</div>
       ) : null}
 
       {data ? (
@@ -838,7 +838,7 @@ const rid = selectedRiskId;
                       <option value="archived">Archived</option>
                     </Select>
                   ) : (
-                    <div className="text-sm text-slate-400">{TYPE_LABEL[data.type]}</div>
+                    <div className="text-sm text-slate-500">{TYPE_LABEL[data.type]}</div>
                   )}
                 </div>
               </div>
@@ -860,7 +860,7 @@ const rid = selectedRiskId;
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <div>
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-slate-300">Inputs</div>
+                  <div className="text-sm text-slate-700">Inputs</div>
                   {editMode ? <Button variant="secondary" onClick={() => addTag("inputs")}>+ Add</Button> : null}
                 </div>
 
@@ -871,9 +871,9 @@ const rid = selectedRiskId;
                     data.inputs.map((x) => (
                       <div
                         key={x}
-                        className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                        className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"
                       >
-                        <div className="text-sm text-slate-200">{x}</div>
+                        <div className="text-sm text-slate-800">{x}</div>
                         {editMode ? (
                           <Button variant="ghost" onClick={() => removeTag("inputs", x)}>Remove</Button>
                         ) : null}
@@ -885,7 +885,7 @@ const rid = selectedRiskId;
 
               <div>
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-slate-300">Outputs</div>
+                  <div className="text-sm text-slate-700">Outputs</div>
                   {editMode ? <Button variant="secondary" onClick={() => addTag("outputs")}>+ Add</Button> : null}
                 </div>
 
@@ -896,9 +896,9 @@ const rid = selectedRiskId;
                     data.outputs.map((x) => (
                       <div
                         key={x}
-                        className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+                        className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"
                       >
-                        <div className="text-sm text-slate-200">{x}</div>
+                        <div className="text-sm text-slate-800">{x}</div>
                         {editMode ? (
                           <Button variant="ghost" onClick={() => removeTag("outputs", x)}>Remove</Button>
                         ) : null}
@@ -912,32 +912,32 @@ const rid = selectedRiskId;
 
          <Section
   title="Related Standards"
-  subtitle="Derived from linked risks → controls → requirements"
+  subtitle="Derived from linked risks ÔåÆ controls ÔåÆ requirements"
 >
-  <div className="rounded-lg border border-slate-800 overflow-hidden">
-    <div className="grid grid-cols-2 bg-slate-950/50 text-xs text-slate-400 px-4 py-3">
+  <div className="rounded-lg border border-slate-200 overflow-hidden">
+    <div className="grid grid-cols-2 bg-white/50 text-xs text-slate-500 px-4 py-3">
       <div>Standard Code</div>
       <div>Name</div>
     </div>
 
     {standardsLoading ? (
-      <div className="px-4 py-4 text-sm text-slate-400">
+      <div className="px-4 py-4 text-sm text-slate-500">
         Loading...
       </div>
     ) : derivedStandards.length === 0 ? (
-      <div className="px-4 py-4 text-sm text-slate-200">
+      <div className="px-4 py-4 text-sm text-slate-800">
         No derived standards.
       </div>
     ) : (
       derivedStandards.map((s) => (
         <div
           key={s.id}
-          className="grid grid-cols-2 px-4 py-3 border-t border-slate-800 hover:bg-slate-950/40"
+          className="grid grid-cols-2 px-4 py-3 border-t border-slate-200 hover:bg-white/40"
         >
-          <div className="text-sm text-slate-100">
+          <div className="text-sm text-slate-900">
             {s.code ?? "-"}
           </div>
-          <div className="text-sm text-slate-200">
+          <div className="text-sm text-slate-800">
             {s.name}
           </div>
         </div>
@@ -989,8 +989,8 @@ const rid = selectedRiskId;
                   <button
                     className={`px-3 py-1.5 rounded-lg text-sm border ${
                       activeRiskTab === "risks"
-                        ? "border-slate-600 bg-slate-800 text-slate-100"
-                        : "border-slate-800 bg-transparent text-slate-300 hover:bg-slate-800/40"
+                        ? "border-slate-300 bg-slate-100 text-slate-900"
+                        : "border-slate-200 bg-transparent text-slate-700 hover:bg-slate-100/40"
                     }`}
                     onClick={() => setActiveRiskTab("risks")}
                   >
@@ -999,8 +999,8 @@ const rid = selectedRiskId;
                   <button
                     className={`px-3 py-1.5 rounded-lg text-sm border ${
                       activeRiskTab === "audit"
-                        ? "border-slate-600 bg-slate-800 text-slate-100"
-                        : "border-slate-800 bg-transparent text-slate-300 hover:bg-slate-800/40"
+                        ? "border-slate-300 bg-slate-100 text-slate-900"
+                        : "border-slate-200 bg-transparent text-slate-700 hover:bg-slate-100/40"
                     }`}
                     onClick={() => {
                       setActiveRiskTab("audit");
@@ -1012,8 +1012,8 @@ const rid = selectedRiskId;
                 </div>
 
                 {activeRiskTab === "risks" ? (
-                  <div className="rounded-lg border border-slate-800 overflow-hidden">
-                    <div className="grid grid-cols-12 bg-slate-950/50 text-xs text-slate-400 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="grid grid-cols-12 bg-white/50 text-xs text-slate-500 px-4 py-3">
                       <div className="col-span-3">Risk</div>
                       <div className="col-span-6">Title</div>
                       <div className="col-span-2">Severity</div>
@@ -1021,24 +1021,24 @@ const rid = selectedRiskId;
                     </div>
 
                     {riskLoading ? (
-                      <div className="px-4 py-4 text-sm text-slate-400">Loading...</div>
+                      <div className="px-4 py-4 text-sm text-slate-500">Loading...</div>
                     ) : risksToRender.length === 0 ? (
-                      <div className="px-4 py-4 text-sm text-slate-200">No linked risks.</div>
+                      <div className="px-4 py-4 text-sm text-slate-800">No linked risks.</div>
                     ) : (
                       <div>
                         {risksToRender.map((r) => (
                           <div
                             key={r.id}
-                            className="grid grid-cols-12 px-4 py-3 border-t border-slate-800 hover:bg-slate-950/40"
+                            className="grid grid-cols-12 px-4 py-3 border-t border-slate-200 hover:bg-white/40"
                           >
                             <div
                               className="col-span-3 cursor-pointer"
                               onClick={() => router.push(`/risks/${r.id}`)}
                               title="Open risk"
                             >
-                              <span className="text-slate-100 font-medium">{r.code || `#${r.id}`}</span>
+                              <span className="text-slate-900 font-medium">{r.code || `#${r.id}`}</span>
                             </div>
-                            <div className="col-span-6 text-sm text-slate-200">{r.title}</div>
+                            <div className="col-span-6 text-sm text-slate-800">{r.title}</div>
                             <div className="col-span-2">
                               {r.severity ? (
                                 <Badge label={r.severity} variant={severityVariant(r.severity)} />
@@ -1061,8 +1061,8 @@ const rid = selectedRiskId;
                     )}
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-slate-800 overflow-hidden">
-                    <div className="grid grid-cols-12 bg-slate-950/50 text-xs text-slate-400 px-4 py-3">
+                  <div className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="grid grid-cols-12 bg-white/50 text-xs text-slate-500 px-4 py-3">
                       <div className="col-span-3">Risk</div>
                       <div className="col-span-4">Action</div>
                       <div className="col-span-3">User</div>
@@ -1070,18 +1070,18 @@ const rid = selectedRiskId;
                     </div>
 
                     {auditLoading ? (
-                      <div className="px-4 py-4 text-sm text-slate-400">Loading...</div>
+                      <div className="px-4 py-4 text-sm text-slate-500">Loading...</div>
                     ) : auditToRender.length === 0 ? (
-                      <div className="px-4 py-4 text-sm text-slate-200">No audit entries.</div>
+                      <div className="px-4 py-4 text-sm text-slate-800">No audit entries.</div>
                     ) : (
                       <div>
                         {auditToRender.map((a, idx) => (
                           <div
                             key={`${a.risk_id}-${a.created_at || idx}`}
-                            className="grid grid-cols-12 px-4 py-3 border-t border-slate-800 hover:bg-slate-950/40"
+                            className="grid grid-cols-12 px-4 py-3 border-t border-slate-200 hover:bg-white/40"
                           >
                             <div className="col-span-3">
-                              <div className="text-sm text-slate-100 font-medium">
+                              <div className="text-sm text-slate-900 font-medium">
                                 {a.risk_code || `#${a.risk_id}`}
                               </div>
                               <div className="text-xs text-slate-500 truncate">{a.risk_title || ""}</div>
@@ -1092,8 +1092,8 @@ const rid = selectedRiskId;
                                 variant={String(a.action).toUpperCase().includes("UNLINK") ? "danger" : "success"}
                               />
                             </div>
-                            <div className="col-span-3 text-sm text-slate-200">{a.user?.full_name || "-"}</div>
-                            <div className="col-span-2 text-right text-xs text-slate-400">
+                            <div className="col-span-3 text-sm text-slate-800">{a.user?.full_name || "-"}</div>
+                            <div className="col-span-2 text-right text-xs text-slate-500">
                               {a.created_at ? formatDate(a.created_at) : "-"}
                             </div>
                           </div>
@@ -1101,9 +1101,9 @@ const rid = selectedRiskId;
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-800 bg-slate-950/30">
-                      <div className="text-xs text-slate-400">
-                        {auditTotal === 0 ? "Showing 0" : `Showing ${auditShowingStart}–${auditShowingEnd} of ${auditTotal}`}
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-white/30">
+                      <div className="text-xs text-slate-500">
+                        {auditTotal === 0 ? "Showing 0" : `Showing ${auditShowingStart}ÔÇô${auditShowingEnd} of ${auditTotal}`}
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1114,7 +1114,7 @@ const rid = selectedRiskId;
                         >
                           Prev
                         </Button>
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-500">
                           Page {auditPage} / {auditTotalPages}
                         </div>
                         <Button
@@ -1125,9 +1125,9 @@ const rid = selectedRiskId;
                           Next
                         </Button>
 
-                        <div className="w-px h-6 bg-slate-800 mx-1" />
+                        <div className="w-px h-6 bg-slate-100 mx-1" />
 
-                        <div className="text-xs text-slate-400">Rows</div>
+                        <div className="text-xs text-slate-500">Rows</div>
                         <Select
                           value={String(auditPageSize)}
                           onChange={(e) => {
@@ -1166,7 +1166,7 @@ const rid = selectedRiskId;
 
           <Section title="KPIs" subtitle="Define process KPIs (targets & current)">
             <div className="flex items-center justify-between">
-              <div className="text-sm text-slate-300">KPI List</div>
+              <div className="text-sm text-slate-700">KPI List</div>
               {editMode ? (
                 <Button variant="secondary" onClick={addKpi}>
                   + Add KPI
@@ -1174,8 +1174,8 @@ const rid = selectedRiskId;
               ) : null}
             </div>
 
-            <div className="rounded-lg border border-slate-800 overflow-hidden">
-              <div className="grid grid-cols-12 bg-slate-950/50 text-xs text-slate-400 px-4 py-3">
+            <div className="rounded-lg border border-slate-200 overflow-hidden">
+              <div className="grid grid-cols-12 bg-white/50 text-xs text-slate-500 px-4 py-3">
                 <div className="col-span-3">Name</div>
                 <div className="col-span-4">Formula</div>
                 <div className="col-span-2">Target</div>
@@ -1184,30 +1184,30 @@ const rid = selectedRiskId;
               </div>
 
               {(data.kpis || []).length === 0 ? (
-                <div className="px-4 py-4 text-sm text-slate-200">No KPIs.</div>
+                <div className="px-4 py-4 text-sm text-slate-800">No KPIs.</div>
               ) : (
                 <div>
                   {data.kpis.map((k, idx) => (
-                    <div key={idx} className="grid grid-cols-12 px-4 py-3 border-t border-slate-800">
+                    <div key={idx} className="grid grid-cols-12 px-4 py-3 border-t border-slate-200">
                       <div className="col-span-3">
                         {editMode ? (
                           <Input value={k.name} onChange={(e) => updateKpi(idx, { name: e.target.value })} />
                         ) : (
-                          <span className="text-sm text-slate-100">{k.name || "-"}</span>
+                          <span className="text-sm text-slate-900">{k.name || "-"}</span>
                         )}
                       </div>
                       <div className="col-span-4">
                         {editMode ? (
                           <Input value={k.formula} onChange={(e) => updateKpi(idx, { formula: e.target.value })} />
                         ) : (
-                          <span className="text-sm text-slate-200">{k.formula || "-"}</span>
+                          <span className="text-sm text-slate-800">{k.formula || "-"}</span>
                         )}
                       </div>
                       <div className="col-span-2">
                         {editMode ? (
                           <Input value={k.target} onChange={(e) => updateKpi(idx, { target: e.target.value })} />
                         ) : (
-                          <span className="text-sm text-slate-200">{k.target || "-"}</span>
+                          <span className="text-sm text-slate-800">{k.target || "-"}</span>
                         )}
                       </div>
                       <div className="col-span-2">
@@ -1217,7 +1217,7 @@ const rid = selectedRiskId;
                             onChange={(e) => updateKpi(idx, { current_value: e.target.value })}
                           />
                         ) : (
-                          <span className="text-sm text-slate-200">{k.current_value || "-"}</span>
+                          <span className="text-sm text-slate-800">{k.current_value || "-"}</span>
                         )}
                       </div>
                       <div className="col-span-1 text-right">
@@ -1260,9 +1260,9 @@ const rid = selectedRiskId;
     </>
   }
 >
-  <div className="rounded-lg border border-slate-800 overflow-hidden">
+  <div className="rounded-lg border border-slate-200 overflow-hidden">
 
-    <div className="grid grid-cols-12 bg-slate-950/50 text-xs text-slate-400 px-4 py-3">
+    <div className="grid grid-cols-12 bg-white/50 text-xs text-slate-500 px-4 py-3">
       <div className="col-span-4">Title</div>
       <div className="col-span-2">Status</div>
       <div className="col-span-2">Owner</div>
@@ -1271,20 +1271,20 @@ const rid = selectedRiskId;
     </div>
 
     {tasksLoading ? (
-      <div className="px-4 py-4 text-sm text-slate-400">
+      <div className="px-4 py-4 text-sm text-slate-500">
         Loading...
       </div>
     ) : tasks.length === 0 ? (
-      <div className="px-4 py-4 text-sm text-slate-200">
+      <div className="px-4 py-4 text-sm text-slate-800">
         No tasks for this process.
       </div>
     ) : (
       tasks.map((t) => (
         <div
           key={t.id}
-          className="grid grid-cols-12 px-4 py-3 border-t border-slate-800 hover:bg-slate-950/40"
+          className="grid grid-cols-12 px-4 py-3 border-t border-slate-200 hover:bg-white/40"
         >
-          <div className="col-span-4 text-sm text-slate-100">
+          <div className="col-span-4 text-sm text-slate-900">
             {t.title}
           </div>
 
@@ -1295,11 +1295,11 @@ const rid = selectedRiskId;
             />
           </div>
 
-          <div className="col-span-2 text-sm text-slate-200">
+          <div className="col-span-2 text-sm text-slate-800">
             {t.owner_role || "-"}
           </div>
 
-          <div className="col-span-2 text-sm text-slate-200">
+          <div className="col-span-2 text-sm text-slate-800">
             {t.due_date || "-"}
           </div>
 
@@ -1342,3 +1342,4 @@ async function safeText(res: Response) {
     return "";
   }
 }
+

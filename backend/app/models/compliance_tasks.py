@@ -68,7 +68,7 @@ class ComplianceTask(Base):
     description = Column(String, nullable=True)
 
     process = relationship("Process")
-    control = relationship(
-    "Control",
-    back_populates="tasks",
-)
+    control = relationship("Control", back_populates="tasks")
+
+    evidence_links = relationship("TaskEvidenceLink", back_populates="task", cascade="all, delete-orphan")
+

@@ -46,7 +46,7 @@ const CHOICE_SCORE_MAP: Record<string, number> = {
   catastrophic: 5,
 };
 
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 
 /* ================= COMPONENT ================= */
 
@@ -184,3 +184,4 @@ export default function RiskAssessmentWizardModal({
     </div>
   );
 }
+

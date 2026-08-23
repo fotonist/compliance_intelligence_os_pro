@@ -1,4 +1,4 @@
-from typing import Optional, Any, Dict, List
+﻿from typing import Optional, Any, Dict, List
 
 from fastapi import APIRouter, Depends, Query, Body, HTTPException
 from sqlalchemy.orm import Session
@@ -33,7 +33,7 @@ from app.models.gap_items import GapItem
 from app.models.compliance_tasks import ComplianceTask
 
 # -------------------------------------------------
-# MATURITY – TABLE BASED (MODEL IMPORT YOK)
+# MATURITY â€“ TABLE BASED (MODEL IMPORT YOK)
 # -------------------------------------------------
 standard_practices = Base.metadata.tables["standard_practices"]
 standard_process_areas = Base.metadata.tables["standard_process_areas"]
@@ -51,7 +51,7 @@ router = APIRouter(prefix="/matrix", tags=["Matrix"])
 
 
 # =================================================
-# C1 – RESOLVE ACTIVE DRAFT VERSION (WRITE GUARD)
+# C1 â€“ RESOLVE ACTIVE DRAFT VERSION (WRITE GUARD)
 # =================================================
 def resolve_draft_version(db: Session, standard_id: int) -> StandardVersion:
     standard = db.query(Standard).filter(Standard.id == standard_id).first()
@@ -77,7 +77,7 @@ def resolve_draft_version(db: Session, standard_id: int) -> StandardVersion:
 
 
 # =================================================
-# LAZY INIT – TABLE ENSURE (ALEMBIC YOK)
+# LAZY INIT â€“ TABLE ENSURE (ALEMBIC YOK)
 # =================================================
 DDL_MATRIX_COLUMNS = """
 CREATE TABLE IF NOT EXISTS matrix_column_configs (
@@ -232,6 +232,7 @@ def _control_coverage_status_expr_intelligence(
 @router.get("/")
 def get_matrix(
     standard_id: Optional[int] = Query(default=None),
+    standard_version_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -795,7 +796,6 @@ def get_matrix_columns(
             "visible": r.visible,
             "position": r.position,
         }
-        for r in rows
     ]
 
 
@@ -867,7 +867,7 @@ def generate_matrix_rows(
 
     standard_id: int = body["standard_id"]
 
-    draft_version = resolve_draft_version(
+    published_version = resolve_published_version(
         db,
         standard_id,
     )
@@ -895,7 +895,7 @@ def generate_matrix_rows(
         )
         or 1,
         standard_id=standard_id,
-        standard_version_id=draft_version.id,
+        standard_version_id=published_version.id,
         status="generated",
         created_by=getattr(
             user,
@@ -967,7 +967,7 @@ def generate_matrix_rows(
         "status": "ok",
         "matrix_instance_id": inst.id,
         "standard_id": standard_id,
-        "standard_version_id": draft_version.id,
+        "standard_version_id": published_version.id,
         "created": created,
         "skipped": skipped,
     }
@@ -979,6 +979,7 @@ def generate_matrix_rows(
 @router.get("/instances")
 def list_matrix_instances(
     standard_id: Optional[int] = Query(default=None),
+    standard_version_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -1006,10 +1007,14 @@ def list_matrix_instances(
         )
     )
 
-    if standard_id:
+    if standard_version_id:
         q = q.filter(
-            MatrixInstance.standard_id
-            == standard_id
+            MatrixInstance.standard_version_id == standard_version_id
+        )
+
+    elif standard_id:
+        q = q.filter(
+            MatrixInstance.standard_id == standard_id
         )
 
     items = (
@@ -1135,7 +1140,6 @@ def get_matrix_instance_rows(
                 "row_key": r.row_key,
                 "payload": r.payload,
             }
-            for r in rows
         ],
         "columns": [],
         "total": total,
@@ -1165,7 +1169,6 @@ def preview_matrix(
         "instance_id": instance_id,
         "rows": [
             r.payload
-            for r in rows
         ],
     }
 
@@ -1411,14 +1414,16 @@ def get_matrix_instance_summary(
     covered = summary.covered_controls or 0
     evidenced = summary.controls_with_approved_evidence or 0
 
-    compliance = (
+    coverage_percentage = (
         round(
-            (covered / total) * 100,
+            ((covered + (partial_controls * 0.5)) / total) * 100,
             1,
         )
         if total
         else 0
     )
+
+    compliance = coverage_percentage
 
     evidence_coverage = (
         round(
@@ -1444,34 +1449,64 @@ def get_matrix_instance_summary(
 # =================================================
 @router.get("/kpi")
 def get_matrix_kpi(
+    standard_id: Optional[int] = Query(default=None),
+    standard_version_id: Optional[int] = Query(default=None),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     tenant_id = user.tenant_id
 
-    result = get_matrix(
-        standard_id=None,
-        db=db,
-        user=user,
+    matrix_query = (
+        db.query(MatrixRow)
+        .join(
+            MatrixInstance,
+            MatrixRow.instance_id == MatrixInstance.id
+        )
+        .filter(
+            MatrixRow.tenant_id == tenant_id,
+            MatrixInstance.tenant_id == tenant_id,
+        )
     )
 
-    rows = result.get(
-        "rows",
-        []
-    )
+    if standard_version_id:
 
-    total = len(rows)
+        matrix_query = matrix_query.filter(
+            MatrixInstance.standard_version_id == standard_version_id
+        )
 
-    covered = sum(
-        1
+    elif standard_id:
+
+        matrix_query = matrix_query.filter(
+            MatrixInstance.standard_id == standard_id
+        )
+
+    rows = matrix_query.all()
+
+    control_ids = [
+        r.control_id
         for r in rows
-        if r.get("coverage_status")
-        == "COVERED"
-    )
+        if r.control_id
+    ]
+
+    total = len(control_ids)
+
+    covered = (
+        db.query(
+            func.count(
+                func.distinct(Evidence.control_id)
+            )
+        )
+        .filter(
+            Evidence.tenant_id == tenant_id,
+            Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
+            func.lower(Evidence.status) == "approved",
+        )
+        .scalar()
+    ) or 0
 
     # -----------------------------
     # Evidence KPI
-    # -----------------------------
 
     evidence_total = (
         db.query(
@@ -1485,15 +1520,17 @@ def get_matrix_kpi(
         .scalar()
     ) or 0
 
-    linked_evidence = sum(
-        int(
-            r.get(
-                "evidence_count"
-            )
-            or 0
+    linked_evidence = (
+        db.query(
+            func.count(Evidence.id)
         )
-        for r in rows
-    )
+        .filter(
+            Evidence.tenant_id == tenant_id,
+            Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
+        )
+        .scalar()
+    ) or 0
 
     approved_evidence = (
         db.query(
@@ -1503,6 +1540,7 @@ def get_matrix_kpi(
             Evidence.tenant_id
             == tenant_id,
             Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
             func.lower(
                 Evidence.status
             )
@@ -1519,6 +1557,7 @@ def get_matrix_kpi(
             Evidence.tenant_id
             == tenant_id,
             Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
             func.lower(
                 Evidence.status
             )
@@ -1535,6 +1574,7 @@ def get_matrix_kpi(
             Evidence.tenant_id
             == tenant_id,
             Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
             func.lower(
                 Evidence.status
             )
@@ -1551,6 +1591,7 @@ def get_matrix_kpi(
             Evidence.tenant_id
             == tenant_id,
             Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
             func.lower(
                 Evidence.status
             )
@@ -1559,9 +1600,48 @@ def get_matrix_kpi(
         .scalar()
     ) or 0
 
+    draft_evidence = (
+        db.query(
+            func.count(Evidence.id)
+        )
+        .filter(
+            Evidence.tenant_id
+            == tenant_id,
+            Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
+            func.lower(
+                Evidence.status
+            )
+            == "draft",
+        )
+        .scalar()
+    ) or 0
+
+    # Evidence Assurance Intelligence
     # -----------------------------
+
+    partial_controls = (
+        db.query(
+            func.count(
+                func.distinct(Evidence.control_id)
+            )
+        )
+        .filter(
+            Evidence.tenant_id == tenant_id,
+            Evidence.is_deleted.is_(False),
+            Evidence.control_id.in_(control_ids),
+            func.lower(Evidence.status).in_(
+                [
+                    "draft",
+                    "waiting_approval",
+                    "uploaded",
+                ]
+            ),
+        )
+        .scalar()
+    ) or 0
+
     # Risk KPI
-    # -----------------------------
 
     critical_risks = (
         db.query(
@@ -1570,6 +1650,7 @@ def get_matrix_kpi(
         .filter(
             Risk.tenant_id
             == tenant_id,
+            Risk.control_id.in_(control_ids),
             func.upper(
                 Risk.risk_level
             )
@@ -1585,6 +1666,7 @@ def get_matrix_kpi(
         .filter(
             Risk.tenant_id
             == tenant_id,
+            Risk.control_id.in_(control_ids),
             func.upper(
                 Risk.risk_level
             )
@@ -1593,14 +1675,16 @@ def get_matrix_kpi(
         .scalar()
     ) or 0
 
-    compliance = (
+    coverage_percentage = (
         round(
-            (covered / total) * 100,
+            ((covered + (partial_controls * 0.5)) / total) * 100,
             1,
         )
         if total
         else 0
     )
+
+    compliance = coverage_percentage
 
     return {
         "compliance_percentage": compliance,
@@ -1608,7 +1692,8 @@ def get_matrix_kpi(
         "controls": {
             "total": total,
             "covered": covered,
-            "not_covered": total - covered,
+            "partial": partial_controls,
+            "not_covered": total - covered - partial_controls,
         },
 
         "evidence": {
@@ -1617,6 +1702,7 @@ def get_matrix_kpi(
             "pending": pending_evidence,
             "uploaded": uploaded_evidence,
             "rejected": rejected_evidence,
+            "draft": draft_evidence,
             "linked": linked_evidence,
         },
 
@@ -1629,3 +1715,70 @@ def get_matrix_kpi(
             ),
         },
     }
+# =================================================
+# RESOLVE ACTIVE PUBLISHED VERSION (MATRIX READ)
+# =================================================
+def resolve_published_version(
+    db: Session,
+    standard_id: int,
+) -> StandardVersion:
+
+    standard = (
+        db.query(Standard)
+        .filter(
+            Standard.id == standard_id
+        )
+        .first()
+    )
+
+    if not standard:
+        raise HTTPException(
+            status_code=404,
+            detail="Standard not found",
+        )
+
+
+    version = (
+        db.query(StandardVersion)
+        .filter(
+            StandardVersion.standard_id == standard_id,
+            StandardVersion.status == "published",
+        )
+        .order_by(
+            StandardVersion.id.desc()
+        )
+        .first()
+    )
+
+
+    if not version:
+        raise HTTPException(
+            status_code=409,
+            detail="No published standard version available.",
+        )
+
+
+    return version
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -3,24 +3,22 @@
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from logging.config import fileConfig
+from dotenv import load_dotenv
 import os
 import sys
 
-# Ensure project root is in sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+load_dotenv(
+    os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", ".env")
+    )
+)
 
 config = context.config
 fileConfig(config.config_file_name)
 
-# ------------------------------------------------------------------
-# IMPORTANT: Use the SAME Base used by ALL models
-# ------------------------------------------------------------------
 from app.db.base import Base
-
-# ------------------------------------------------------------------
-# EXPLICIT MODEL IMPORTS (NO WILDCARD)
-# This guarantees metadata is fully populated before autogenerate
-# ------------------------------------------------------------------
 
 # --- Core / Tenancy ---
 from app.models.tenants import Tenant
@@ -69,16 +67,24 @@ from app.models.practice_evidence_link import PracticeEvidenceLink
 from app.models.maturity_workspace_sessions import MaturityWorkspaceSession
 
 # --- Compliance Engine ---
-from app.models.compliance_task import ComplianceTask
+from app.models.compliance_tasks import ComplianceTask
 
-# ------------------------------------------------------------------
-# TARGET METADATA
-# ------------------------------------------------------------------
 target_metadata = Base.metadata
 
 
+def get_database_url() -> str:
+    database_url = os.getenv("DATABASE_URL")
+
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is not defined in backend/.env"
+        )
+
+    return database_url.strip()
+
+
 def run_migrations_offline():
-    url = config.get_main_option("sqlalchemy.url")
+    url = get_database_url()
 
     context.configure(
         url=url,
@@ -94,8 +100,16 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    database_url = get_database_url()
+
+    configuration = config.get_section(
+        config.config_ini_section
+    )
+
+    configuration["sqlalchemy.url"] = database_url
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -116,3 +130,6 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()
+
+# --- Company Foundation ---
+from app.models.company_objective import CompanyObjective
