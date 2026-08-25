@@ -95,7 +95,7 @@ import app.models.audit_finding_records
 import app.models.audit_finding_workflow_events
 import app.models.actions
 import app.models.requirements
-
+import app.models.governance_procedure
 # ==============================
 # SEED
 # ==============================
@@ -234,4 +234,4 @@ def intelligence_health():
 
 
 
-import app.models.governance_procedure
+
