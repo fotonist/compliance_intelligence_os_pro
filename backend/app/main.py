@@ -12,6 +12,7 @@ from app.api.compliance_object import router as compliance_object_router
 # ==============================
 from app.routes.user import router as user_router
 from app.routes.roles import router as roles_router
+from app.routes.compliance_obligations import router as compliance_obligations_router
 from app.api import auth, assessments
 from app.api.executive_summary import router as executive_summary_router
 from app.routes.matrix import router as matrix_router
@@ -107,6 +108,7 @@ from app.seed.iso15504_2006 import seed_iso15504_2006
 # ==============================
 
 application = FastAPI()
+app = application
 
 # ==============================
 # CORS
@@ -203,6 +205,7 @@ application.include_router(process_readiness_router)
 application.include_router(analytics_router)
 application.include_router(analytics_control_router)
 application.include_router(roles_router)
+application.include_router(compliance_obligations_router)
 application.include_router(maturity_router)
 application.include_router(clause_router)
 application.include_router(risk_appetite_router)

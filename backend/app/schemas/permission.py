@@ -1,32 +1,57 @@
-from datetime import datetime
-from typing import Optional
+﻿from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
+
+# ==========================================================
+# Permission Base
+# ==========================================================
 
 class PermissionBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    category: Optional[str] = None
+    code: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+    )
 
+    description: Optional[str] = Field(
+        default=None,
+        max_length=255,
+    )
+
+
+# ==========================================================
+# Permission Create
+# ==========================================================
 
 class PermissionCreate(PermissionBase):
     pass
 
 
-class PermissionUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    category: Optional[str] = None
-    is_active: Optional[bool] = None
+# ==========================================================
+# Permission Update
+# ==========================================================
 
+class PermissionUpdate(BaseModel):
+    code: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+
+    description: Optional[str] = Field(
+        default=None,
+        max_length=255,
+    )
+
+
+# ==========================================================
+# Permission Read
+# ==========================================================
 
 class Permission(PermissionBase):
     id: int
 
-    is_active: bool
-
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(
+        from_attributes=True
+    )

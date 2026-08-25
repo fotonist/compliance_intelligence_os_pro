@@ -4,6 +4,7 @@ from app.db.base import Base
 from app.models.standards import Standard
 from app.models.clauses import Clause
 from app.models.requirements import Requirement
+from app.models.compliance_obligation import ComplianceObligation
 from app.models.controls import Control
 
 # --- Standard Version ---

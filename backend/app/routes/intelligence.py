@@ -75,7 +75,7 @@ def _control_ai_priority(worst_severity: float, avg_exposure: float, avg_escalat
 @router.get("/overview", response_model=IntelligenceOverviewResponse)
 def get_intelligence_overview(
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission("risk.intelligence.view")),
+    user: User = Depends(require_permission("executive.view")),
     scope=Depends(require_tenant_scope()),
 ):
     tenant_id = user.tenant_id
@@ -297,11 +297,18 @@ def get_intelligence_overview(
 @router.get("/dashboard")
 def get_intelligence_dashboard(
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission("risk.intelligence.view")),
+    user: User = Depends(require_permission("executive.dashboard")),
     scope=Depends(require_tenant_scope()),
 ):
     tenant_id = user.tenant_id
-    row = db.execute(text("SELECT * FROM analytics.v_executive_dashboard WHERE tenant_id = :tenant_id LIMIT 1"), {"tenant_id": tenant_id}).mappings().first()
+    row = db.execute(
+        text(
+            "SELECT * FROM analytics.v_dashboard_summary "
+            "WHERE tenant_id = :tenant_id LIMIT 1"
+        ),
+        {"tenant_id": tenant_id},
+    ).mappings().first()
+
     return dict(row) if row else {}
 
 
@@ -484,7 +491,11 @@ def get_control_health(
 
 
 @router.get("/readiness/processes")
-def get_process_readiness(db: Session = Depends(get_db)):
+def get_process_readiness(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission("executive.view")),
+    scope=Depends(require_tenant_scope()),
+):
     result = db.execute(text("SELECT tenant_id, process_id, process_name, control_count FROM analytics.v_process_readiness ORDER BY control_count DESC")).mappings().all()
     return list(result)
 

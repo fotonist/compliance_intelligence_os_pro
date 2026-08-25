@@ -25,6 +25,9 @@ class GovernancePolicyCategory(str, Enum):
 
 class GovernancePolicyBase(BaseModel):
 
+    policy_code: str
+    title: str
+
     description: Optional[str] = None
 
     category: GovernancePolicyCategory = (
@@ -100,4 +103,5 @@ class GovernancePolicy(
 class GovernancePolicyList(BaseModel):
 
     items: list[GovernancePolicy] = []
+
 

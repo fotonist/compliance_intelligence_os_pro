@@ -18,7 +18,7 @@ router = APIRouter(prefix="/ai", tags=["AI"])
 def ai_dashboard_insights(
     payload: Dict[str, Any],
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission("executive.view")),
+    user: User = Depends(require_permission("ai.dashboard")),
     scope=Depends(require_tenant_scope()),
 ):
     """

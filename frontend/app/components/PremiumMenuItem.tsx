@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -19,7 +19,16 @@ const PREMIUM_ROUTES: Record<string, string> = {
   "Findings": "/audit/findings",
   "Corrective Actions": "/audit/corrective-actions",
   "Audit Reports": "/audit/reports",
+
+  "Governance Dashboard": "/governance/dashboard",
   "Policies & Procedures": "/governance",
+  "Roles & Responsibilities": "/governance/roles",
+  "Compliance Obligations": "/compliance-obligations",
+  "Decision Registers": "/governance/decisions",
+  "Governance Meetings": "/governance/meetings",
+  "Committees": "/governance/committees",
+  "Approvals & Delegations": "/governance/approvals",
+  "Document Control": "/governance/documents",
 };
 
 function normalizeRole(role: unknown): string {
@@ -51,7 +60,14 @@ export default function PremiumMenuItem({ label }: Props) {
 
   const route = PREMIUM_ROUTES[label];
   const active =
-    !!route && (pathname === route || pathname.startsWith(`${route}/`));
+    !!route &&
+    (
+      pathname === route ||
+      (
+        route !== "/governance" &&
+        pathname.startsWith(`${route}/`)
+      )
+    );
 
   useEffect(() => {
     let cancelled = false;
@@ -131,10 +147,10 @@ export default function PremiumMenuItem({ label }: Props) {
         type="button"
         onClick={() => route && router.push(route)}
         disabled={!route}
-        className={`w-full flex items-center px-3 py-2 rounded text-sm hover:bg-slate-800 hover:text-slate-100 ${
+        className={`w-full flex items-center gap-2 rounded-md py-1.5 px-3 text-[12px] transition ${
           active
-            ? "bg-slate-800 font-medium text-slate-100"
-            : "text-slate-400"
+            ? "bg-[#eaf1fb] font-semibold text-[#0f2747]"
+            : "text-slate-600 hover:bg-slate-50 hover:text-[#0f2747]"
         } ${route ? "cursor-pointer" : "cursor-default"}`}
       >
         <span>{label}</span>
@@ -155,14 +171,14 @@ export default function PremiumMenuItem({ label }: Props) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full flex items-center justify-between px-3 py-2 rounded text-sm text-slate-400 hover:bg-slate-800 cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 rounded-md py-1.5 px-3 text-[12px] text-slate-600 transition hover:bg-slate-50 hover:text-[#0f2747]"
       >
         <div className="flex items-center gap-2">
           <Lock size={14} className="text-amber-300" />
           <span>{label}</span>
         </div>
 
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
           PRO
         </span>
       </button>
@@ -244,3 +260,6 @@ export default function PremiumMenuItem({ label }: Props) {
     </>
   );
 }
+
+
+

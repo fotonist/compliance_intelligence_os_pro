@@ -45,7 +45,7 @@ class GovernanceProcedureDocument(Base):
     )
 
     version = Column(
-        Integer,
+        String(50),
         nullable=False,
     )
 
