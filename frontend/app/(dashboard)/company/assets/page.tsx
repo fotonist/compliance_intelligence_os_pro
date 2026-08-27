@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -114,7 +114,7 @@ const EMPTY_FORM: AssetForm = {
   notes: "",
 };
 
-const ASSET_TYPES = [
+const ASSET_TYPES: [string, string][] = [
   ["information_system", "Information System"],
   ["application", "Application"],
   ["database", "Database"],
@@ -2041,3 +2041,4 @@ export default function AssetsPage() {
     </div>
   );
 }
+
