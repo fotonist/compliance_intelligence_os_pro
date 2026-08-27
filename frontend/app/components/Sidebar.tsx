@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -652,6 +652,14 @@ export default function Sidebar() {
               <Users size={14} />
               Users
             </Link>
+            <Link
+              href="/admin/tenants"
+              className={itemClass("/admin/tenants")}
+            >
+              <Building2 size={14} />
+              Tenants
+            </Link>
+
 
             <PremiumMenuItem label="Roles & Permissions" />
             <PremiumMenuItem label="Departments" />

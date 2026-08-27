@@ -1,4 +1,4 @@
-﻿const BACKEND_URL =
+const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://compliance-intelligence-os-pro-2.onrender.com";
 
@@ -433,6 +433,103 @@ export async function rejectLicenseRequest(
     throw new Error(
       detail || "Failed to reject license request"
     );
+  }
+
+  return res.json();
+}
+
+ // =========================================================
+// TENANTS
+// =========================================================
+
+export type AdminTenant = {
+  id: number;
+  code: string;
+  name: string;
+  status: "active" | "suspended" | string;
+  created_at?: string | null;
+  user_count: number;
+};
+
+export async function fetchTenants(): Promise<AdminTenant[]> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/tenants`,
+    {
+      headers: authHeaders(),
+    }
+  );
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || "Failed to load tenants");
+  }
+
+  return res.json();
+}
+
+export async function fetchTenant(
+  tenantId: number
+): Promise<AdminTenant> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/tenants/${tenantId}`,
+    {
+      headers: authHeaders(),
+    }
+  );
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || "Failed to load tenant");
+  }
+
+  return res.json();
+}
+
+export async function createTenant(payload: {
+  code: string;
+  name: string;
+  status?: "active" | "suspended";
+}): Promise<AdminTenant> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/tenants`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        code: payload.code,
+        name: payload.name,
+        status: payload.status ?? "active",
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || "Failed to create tenant");
+  }
+
+  return res.json();
+}
+
+export async function updateTenant(
+  tenantId: number,
+  payload: {
+    name?: string;
+    status?: "active" | "suspended";
+  }
+): Promise<AdminTenant> {
+  const res = await fetch(
+    `${BACKEND_URL}/admin/tenants/${tenantId}`,
+    {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || "Failed to update tenant");
   }
 
   return res.json();
