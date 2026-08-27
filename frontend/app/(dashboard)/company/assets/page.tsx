@@ -130,19 +130,19 @@ const ASSET_TYPES: [string, string][] = [
   ["other", "Other"],
 ];
 
-const CRITICALITIES = [
+const CRITICALITIES: [string, string][] = [
   ["critical", "Critical"],
   ["high", "High"],
   ["medium", "Medium"],
   ["low", "Low"],
 ];
 
-const STATUSES = [
+const STATUSES: [string, string][] = [
   ["active", "Active"],
   ["inactive", "Inactive"],
 ];
 
-const LIFECYCLE = [
+const LIFECYCLE: [string, string][] = [
   ["planned", "Planned"],
   ["in_service", "In Service"],
   ["maintenance", "Maintenance"],
@@ -150,7 +150,7 @@ const LIFECYCLE = [
   ["retired", "Retired"],
 ];
 
-const CLASSIFICATIONS = [
+const CLASSIFICATIONS: [string, string][] = [
   ["public", "Public"],
   ["internal", "Internal"],
   ["confidential", "Confidential"],
@@ -159,7 +159,7 @@ const CLASSIFICATIONS = [
 ];
 
 function humanize(value?: string | null) {
-  if (!value) return "—";
+  if (!value) return "Ã¢â‚¬â€";
 
   return value
     .replace(/_/g, " ")
@@ -167,7 +167,7 @@ function humanize(value?: string | null) {
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "—";
+  if (!value) return "Ã¢â‚¬â€";
 
   const date = new Date(value);
 
@@ -1194,7 +1194,7 @@ export default function AssetsPage() {
                             <div className="mt-0.5 text-xs text-slate-500">
                               {asset.code}
                               {asset.serial_number
-                                ? ` · SN ${asset.serial_number}`
+                                ? ` Ã‚Â· SN ${asset.serial_number}`
                                 : ""}
                             </div>
                           </div>
@@ -1234,7 +1234,7 @@ export default function AssetsPage() {
                     </td>
 
                     <td className="px-4 py-4 text-sm text-slate-600">
-                      {asset.department || "—"}
+                      {asset.department || "Ã¢â‚¬â€"}
                     </td>
 
                     <td className="px-4 py-4">
@@ -1243,7 +1243,7 @@ export default function AssetsPage() {
                           size={14}
                           className="text-slate-400"
                         />
-                        {asset.location || "—"}
+                        {asset.location || "Ã¢â‚¬â€"}
                       </div>
                     </td>
 
@@ -1412,7 +1412,7 @@ export default function AssetsPage() {
                     </div>
                     <div className="mt-1 text-sm font-semibold text-slate-900">
                       {detailAsset.serial_number ||
-                        "—"}
+                        "Ã¢â‚¬â€"}
                     </div>
                   </div>
 
@@ -1471,7 +1471,7 @@ export default function AssetsPage() {
                     </div>
                     <div className="mt-1 text-sm font-semibold text-slate-900">
                       {detailAsset.department ||
-                        "—"}
+                        "Ã¢â‚¬â€"}
                     </div>
                   </div>
 
@@ -1481,7 +1481,7 @@ export default function AssetsPage() {
                     </div>
                     <div className="mt-1 text-sm font-semibold text-slate-900">
                       {detailAsset.location ||
-                        "—"}
+                        "Ã¢â‚¬â€"}
                     </div>
                   </div>
                 </div>
@@ -1498,7 +1498,7 @@ export default function AssetsPage() {
                     </div>
                     <div className="mt-1 text-sm font-semibold text-slate-900">
                       {detailAsset.manufacturer ||
-                        "—"}
+                        "Ã¢â‚¬â€"}
                     </div>
                   </div>
 
@@ -1508,7 +1508,7 @@ export default function AssetsPage() {
                     </div>
                     <div className="mt-1 text-sm font-semibold text-slate-900">
                       {detailAsset.model_number ||
-                        "—"}
+                        "Ã¢â‚¬â€"}
                     </div>
                   </div>
 
@@ -1518,7 +1518,7 @@ export default function AssetsPage() {
                     </div>
                     <div className="mt-1 text-sm font-semibold text-slate-900">
                       {detailAsset.serial_number ||
-                        "—"}
+                        "Ã¢â‚¬â€"}
                     </div>
                   </div>
 
