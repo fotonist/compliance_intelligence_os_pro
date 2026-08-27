@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 
@@ -120,7 +120,7 @@ function userName(
   users: User[],
   id?: number | null
 ) {
-  if (!id) return "—";
+  if (!id) return "â€”";
 
   const user = users.find(
     (item) => item.id === id
@@ -134,12 +134,12 @@ function userName(
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "—";
+  if (!value) return "â€”";
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "—";
+    return "â€”";
   }
 
   return date.toLocaleDateString(undefined, {
@@ -205,7 +205,7 @@ function countStatus<T extends { status: string }>(
   return items.filter((item) => item.status === status).length;
 }
 
-export default function GovernancePage() {
+function GovernancePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -905,7 +905,7 @@ export default function GovernancePage() {
                 onClick={() => setToast(null)}
                 className="text-slate-400 hover:text-slate-700"
               >
-                ×
+                Ã—
               </button>
             </div>
           </div>
@@ -942,7 +942,7 @@ export default function GovernancePage() {
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className={refreshing ? "animate-spin" : ""}>
-                ↻
+                â†»
               </span>
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
@@ -1091,7 +1091,7 @@ export default function GovernancePage() {
             <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(280px,1fr)_180px_200px_auto]">
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  ⌕
+                  âŒ•
                 </span>
 
                 <input
@@ -1609,7 +1609,7 @@ export default function GovernancePage() {
                 onClick={() => setPolicyModalOpen(false)}
                 className="rounded-lg p-2 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
-                ×
+                Ã—
               </button>
             </div>
 
@@ -1944,7 +1944,7 @@ export default function GovernancePage() {
                 onClick={() => setProcedureModalOpen(false)}
                 className="rounded-lg p-2 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
-                ×
+                Ã—
               </button>
             </div>
 
@@ -1973,7 +1973,7 @@ export default function GovernancePage() {
                         key={policy.id}
                         value={policy.id}
                       >
-                        {policy.policy_code} — {policy.title}
+                        {policy.policy_code} â€” {policy.title}
                       </option>
                     ))}
                 </select>
@@ -2245,19 +2245,18 @@ export default function GovernancePage() {
   );
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+export default function GovernancePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center">
+          <div className="text-sm text-slate-500">
+            Loading governance...
+          </div>
+        </div>
+      }
+    >
+      <GovernancePageContent />
+    </Suspense>
+  );
+}
