@@ -1,4 +1,4 @@
-﻿import os
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -70,6 +70,7 @@ from app.routes.department import router as department_router
 from app.routes.governance import router as governance_router
 from app.routes.decision_register import router as decision_register_router
 from app.routes.admin_tenants import router as admin_tenants_router
+from app.routes.admin_users import router as admin_users_router
 
 # ==============================
 # MODELS (metadata load safety)
@@ -193,6 +194,7 @@ application.include_router(department_router)
 application.include_router(governance_router)
 application.include_router(decision_register_router)
 application.include_router(admin_tenants_router)
+application.include_router(admin_users_router)
 application.include_router(process_risk_router)
 application.include_router(coverage_router)
 application.include_router(readiness.router)
