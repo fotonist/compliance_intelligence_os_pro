@@ -120,7 +120,7 @@ function userName(
   users: User[],
   id?: number | null
 ) {
-  if (!id) return "â€”";
+  if (!id) return "—";
 
   const user = users.find(
     (item) => item.id === id
@@ -134,12 +134,12 @@ function userName(
 }
 
 function formatDate(value?: string | null) {
-  if (!value) return "â€”";
+  if (!value) return "—";
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "â€”";
+    return "—";
   }
 
   return date.toLocaleDateString(undefined, {
@@ -905,7 +905,7 @@ function GovernancePageContent() {
                 onClick={() => setToast(null)}
                 className="text-slate-400 hover:text-slate-700"
               >
-                Ã—
+                ×
               </button>
             </div>
           </div>
@@ -942,7 +942,7 @@ function GovernancePageContent() {
               className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className={refreshing ? "animate-spin" : ""}>
-                â†»
+                ↻
               </span>
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
@@ -1091,7 +1091,7 @@ function GovernancePageContent() {
             <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(280px,1fr)_180px_200px_auto]">
               <div className="relative">
                 <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                  âŒ•
+                  ⌕
                 </span>
 
                 <input
@@ -1609,7 +1609,7 @@ function GovernancePageContent() {
                 onClick={() => setPolicyModalOpen(false)}
                 className="rounded-lg p-2 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
-                Ã—
+                ×
               </button>
             </div>
 
@@ -1944,7 +1944,7 @@ function GovernancePageContent() {
                 onClick={() => setProcedureModalOpen(false)}
                 className="rounded-lg p-2 text-xl leading-none text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
-                Ã—
+                ×
               </button>
             </div>
 
@@ -1973,7 +1973,7 @@ function GovernancePageContent() {
                         key={policy.id}
                         value={policy.id}
                       >
-                        {policy.policy_code} â€” {policy.title}
+                        {policy.policy_code} — {policy.title}
                       </option>
                     ))}
                 </select>
