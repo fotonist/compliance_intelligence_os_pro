@@ -2519,9 +2519,7 @@ export default function ProcedureDetailPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        router.push(
-                          `/governance/policies/${policy.id}`
-                        )
+                        router.push(`/governance?policyId=${policy.id}`)
                       }
                       className="mt-5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                     >

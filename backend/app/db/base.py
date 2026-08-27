@@ -49,7 +49,10 @@ from app.models.maturity_practice_evaluation import MaturityPracticeEvaluation
 # --- Governance Control Links ---
 from app.models.governance_procedure_control import GovernanceProcedureControl
 
+from app.models.intelligence_model_config import IntelligenceModelConfig
+
 # --- Governance ---
 from app.models.governance_policy import GovernancePolicy
 from app.models.governance_procedure import GovernanceProcedure
+
 

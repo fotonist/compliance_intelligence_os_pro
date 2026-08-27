@@ -1,4 +1,5 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, and_
 from fastapi.responses import FileResponse
@@ -1513,11 +1514,14 @@ def governance_dashboard(
                 / current_document_total
             ) * 30
 
-        rejection_penalty = 0
+        rejection_quality = 0
 
         if current_document_total > 0:
-            rejection_penalty = (
-                current_rejected_total
+            rejection_quality = (
+                (
+                    current_document_total
+                    - current_rejected_total
+                )
                 / current_document_total
             ) * 20
 
@@ -1528,20 +1532,63 @@ def governance_dashboard(
                     100,
                     current_coverage
                     + approval_quality
-                    + 20
-                    - rejection_penalty
+                    + rejection_quality
                 )
             )
         )
 
 
-    review_health = 100
+    # -----------------------------
+    # REVIEW COMPLIANCE
+    # -----------------------------
+    # Review health reflects the review-date readiness of all
+    # active governance policies.
+    #
+    # No review date      -> 0
+    # Overdue review      -> 0
+    # Current/future date -> 100
+    #
+    # This prevents policies without a review date from being
+    # silently excluded and producing an artificial 100% score.
 
-    if len(upcoming_reviews) > 0:
-        review_health = 90
+    today = date.today()
+
+    total_active_policies = db.execute(
+        select(func.count())
+        .select_from(GovernancePolicy)
+        .where(
+            GovernancePolicy.tenant_id == tenant_id,
+            GovernancePolicy.is_deleted == False,
+            GovernancePolicy.status != "archived",
+        )
+    ).scalar() or 0
+
+    compliant_review_policies = db.execute(
+        select(func.count())
+        .select_from(GovernancePolicy)
+        .where(
+            GovernancePolicy.tenant_id == tenant_id,
+            GovernancePolicy.is_deleted == False,
+            GovernancePolicy.status != "archived",
+            GovernancePolicy.review_date.is_not(None),
+            GovernancePolicy.review_date >= today,
+        )
+    ).scalar() or 0
+
+    if total_active_policies > 0:
+        review_health = round(
+            (
+                compliant_review_policies
+                / total_active_policies
+            ) * 100
+        )
+    else:
+        review_health = 0
 
 
-    approval_health = 0
+    # -----------------------------
+    # APPROVAL HEALTH
+    # -----------------------------
 
     total_policy_states = (
         policy_summary["draft"]
@@ -1556,15 +1603,56 @@ def governance_dashboard(
                 / total_policy_states
             ) * 100
         )
+    else:
+        approval_health = 0
 
 
-    governance_health = round(
-        (
-            policy_health
-            + document_health_score
-            + review_health
-            + approval_health
-        ) / 4
+    # -----------------------------
+    # PROCEDURE HEALTH
+    # -----------------------------
+
+    procedure_total = procedure_summary["total"]
+
+    if procedure_total > 0:
+        procedure_approved = procedure_summary["approved"]
+
+        procedure_health = round(
+            (
+                procedure_approved
+                / procedure_total
+            ) * 100
+        )
+    else:
+        procedure_health = 0
+
+
+    # -----------------------------
+    # GOVERNANCE HEALTH
+    # -----------------------------
+    # Only active dimensions with actual data participate.
+    # This prevents an empty governance area from becoming 100.
+
+    health_components = [
+        policy_health if policy_summary["total"] > 0 else None,
+        procedure_health if procedure_total > 0 else None,
+        document_health_score if procedure_total_for_documents > 0 else None,
+        review_health if total_active_policies > 0 else None,
+        approval_health if total_policy_states > 0 else None,
+    ]
+
+    active_health_components = [
+        value
+        for value in health_components
+        if value is not None
+    ]
+
+    governance_health = (
+        round(
+            sum(active_health_components)
+            / len(active_health_components)
+        )
+        if active_health_components
+        else 0
     )
 
 

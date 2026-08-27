@@ -291,8 +291,6 @@ class ExposureEngine:
             float(inherent)
             * (1.0 - float(evidence_quality))
             * (1.0 - float(density_factor) * 0.3)
-            * float(pressure_factor)
-            * float(velocity_factor)
         )
         if residual < 0.0:
             residual = 0.0

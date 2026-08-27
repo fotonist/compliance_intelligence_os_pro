@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -23,6 +23,7 @@ import {
   PanelLeftOpen,
   Scale,
   Settings,
+  Settings2,
   Shield,
   ShieldCheck,
   Target,
@@ -217,18 +218,25 @@ export default function Sidebar() {
           }`}
         >
           <div
-            className={`flex items-center gap-2 text-lg font-bold tracking-tight text-[#0f2747] ${
+            className={`flex items-center ${
               collapsed ? "justify-center" : ""
             }`}
-            title="Compliance OS"
+            title="ComplianceOS PRO"
           >
-            <ShieldCheck
-              size={21}
-              className="shrink-0 text-emerald-500"
-            />
-
-            {!collapsed && (
-              <span>COMPLIANCE OS</span>
+            {collapsed ? (
+              <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg bg-white">
+                <img
+                  src="/complianceos-pro-logo.png"
+                  alt="ComplianceOS PRO"
+                  className="h-8 w-auto max-w-none object-contain"
+                />
+              </div>
+            ) : (
+              <img
+                src="/complianceos-pro-logo.png"
+                alt="ComplianceOS PRO"
+                className="h-[58px] w-auto max-w-[170px] object-contain object-left"
+              />
             )}
           </div>
 
@@ -470,6 +478,14 @@ export default function Sidebar() {
             >
               <ShieldCheck size={14} />
               Control Health
+            </Link>
+
+            <Link
+              href="/intelligence/configuration"
+              className={itemClass("/intelligence/configuration")}
+            >
+              <Settings2 size={14} />
+              Model Configuration
             </Link>
 
             <Link

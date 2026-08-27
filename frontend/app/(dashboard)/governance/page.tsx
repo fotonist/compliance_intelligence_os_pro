@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 
 
@@ -207,6 +207,7 @@ function countStatus<T extends { status: string }>(
 
 export default function GovernancePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [procedures, setProcedures] = useState<Procedure[]>([]);
@@ -432,6 +433,24 @@ export default function GovernancePage() {
     }
   }
 
+  useEffect(() => {
+    const policyIdParam = searchParams.get("policyId");
+
+    if (!policyIdParam) {
+      return;
+    }
+
+    const policyId = Number(policyIdParam);
+
+    if (!Number.isInteger(policyId) || policyId <= 0) {
+      router.replace("/governance");
+      return;
+    }
+
+    openEditPolicy(policyId).finally(() => {
+      router.replace("/governance");
+    });
+  }, [searchParams, router]);
   async function savePolicy() {
     if (!policyForm.policy_code.trim()) {
       showToast("error", "Policy code is required.");

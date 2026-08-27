@@ -79,3 +79,11 @@ from app.models.governance_document_history import GovernanceDocumentHistory
 
 
 
+
+# --- Decision Register ---
+from app.models.decision_register import DecisionRegister
+from app.models.decision_register_history import DecisionRegisterHistory
+from app.models.decision_register_risk import DecisionRegisterRisk
+from app.models.decision_register_control import DecisionRegisterControl
+from app.models.decision_register_process import DecisionRegisterProcess
+from app.models.decision_register_task import DecisionRegisterTask

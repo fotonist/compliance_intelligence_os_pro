@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 from typing import Any, Dict, Optional, List
@@ -66,7 +66,7 @@ def calculate_risk_level(score: Optional[int]) -> Optional[str]:
 
 
 # -------------------------------------------------
-# Assess Risk (HISTORY WRITE ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ CANONICAL)
+# Assess Risk (HISTORY WRITE ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ CANONICAL)
 # -------------------------------------------------
 
 @router.post("/{risk_id}/assess")
@@ -102,7 +102,7 @@ def assess_risk(
     else:
         new_risk_level = "LOW"
 
-    # ÃƒÆ’Ã‚Â¢Ãƒâ€¦Ã¢â‚¬Å“ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ HISTORY INSERT (FULL SNAPSHOT)
+    # ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ HISTORY INSERT (FULL SNAPSHOT)
     db.execute(
         text(
             """
@@ -675,7 +675,7 @@ def get_related_evidences(
     ]
 
 
-# ------------------------------------------------------ (FINAL ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ DYNAMIC & SAFE)
+# ------------------------------------------------------ (FINAL ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ DYNAMIC & SAFE)
 # ------------------------------------------------------
 @router.delete("/{risk_id}")
 def delete_risk(
@@ -770,133 +770,3 @@ def delete_risk(
 # Create Risk
 # -------------------------------------------------
 
-class RiskCreateIn(BaseModel):
-    title: str
-    description: Optional[str] = None
-    likelihood: int = Field(ge=1, le=5)
-    impact: int = Field(ge=1, le=5)
-    process_id: int
-    source_type: Optional[str] = "STANDARD"
-    source_id: Optional[int] = None
-    action: Optional[str] = "assessment"
-
-# -----------------------------------------------------------------------------------------
-# CREATE RISK
-# ------------------------------------------------------------------------------------------
-@router.post("/", status_code=201)
-def create_risk(
-    payload: RiskCreateIn,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    tenant_id = current_user.tenant_id
-
-    score = payload.likelihood * payload.impact
-
-    if score >= 15:
-        risk_level = "HIGH"
-    elif score >= 8:
-        risk_level = "MEDIUM"
-    else:
-        risk_level = "LOW"
-
-    # 1ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢Ãƒâ€ Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â£ Insert base Risk
-    result = db.execute(
-        text(
-            """
-          INSERT INTO risks (
-    tenant_id,
-    process_id,
-    title,
-    description,
-    likelihood,
-    impact,
-    score,
-    risk_level,
-    source_type,
-    source_id,
-    action,
-    status,
-    created_at
-)
-           VALUES (
-    :tenant_id,
-    :process_id,
-    :title,
-    :description,
-    :likelihood,
-    :impact,
-    :score,
-    :risk_level,
-    :source_type,
-    :source_id,
-    :action,
-    'OPEN',
-    NOW()
-)
-            RETURNING id
-            """
-        ),
-        {
-         "tenant_id": tenant_id,
-    "process_id": payload.process_id,
-    "title": payload.title,
-    "description": payload.description,
-    "likelihood": payload.likelihood,
-    "impact": payload.impact,
-    "score": score,
-    "risk_level": risk_level,
-    "source_type": payload.source_type,
-    "source_id": payload.source_id,
-    "action": payload.action,
-},
-    )
-
-    new_risk_id = result.scalar()
-
-    # 2ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¢Ãƒâ€ Ã¢â‚¬â„¢Ãƒâ€šÃ‚Â£ Insert immutable RiskVersion (v1)
-    db.execute(
-        text(
-            """
-            INSERT INTO risk_versions (
-                tenant_id,
-                risk_id,
-                version_number,
-                impact,
-                likelihood,
-                score,
-                risk_level,
-                status,
-                treatment,
-                action,
-                created_at
-            )
-            VALUES (
-                :tenant_id,
-                :risk_id,
-                1,
-                :impact,
-                :likelihood,
-                :score,
-                :risk_level,
-                'OPEN',
-                NULL,
-                :action,
-                NOW()
-            )
-            """
-        ),
-        {
-            "tenant_id": tenant_id,
-            "risk_id": new_risk_id,
-            "impact": payload.impact,
-            "likelihood": payload.likelihood,
-            "score": score,
-            "risk_level": risk_level,
-            "action": payload.action,
-        },
-    )
-
-    db.commit()
-
-    return {"id": new_risk_id}

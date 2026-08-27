@@ -68,6 +68,7 @@ from app.routes.location import router as location_router
 from app.routes.stakeholder import router as stakeholder_router
 from app.routes.department import router as department_router
 from app.routes.governance import router as governance_router
+from app.routes.decision_register import router as decision_register_router
 
 # ==============================
 # MODELS (metadata load safety)
@@ -189,6 +190,7 @@ application.include_router(location_router)
 application.include_router(stakeholder_router)
 application.include_router(department_router)
 application.include_router(governance_router)
+application.include_router(decision_register_router)
 application.include_router(process_risk_router)
 application.include_router(coverage_router)
 application.include_router(readiness.router)
@@ -235,3 +237,5 @@ def intelligence_health():
 
 
 import app.models.governance_procedure
+
+

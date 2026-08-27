@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 
@@ -208,6 +208,7 @@ export default function GovernanceDashboardPage() {
       description: "Policy approval maturity",
       icon: ShieldCheck,
     },
+
 
     {
       title: "Approval Health",

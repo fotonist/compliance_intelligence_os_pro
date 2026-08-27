@@ -1,4 +1,4 @@
-from typing import Optional
+﻿from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -64,43 +64,98 @@ def validate_source(
 
     source_type = source_type.upper()
 
-    source_tables = {
-        "STANDARD": ("standards", "standard_id"),
-        "REQUIREMENT": ("requirements", "requirement_id"),
-        "CONTROL": ("controls", "control_id"),
-    }
-
-    if source_type not in source_tables:
+    if source_type not in {"STANDARD", "REQUIREMENT", "CONTROL"}:
         raise HTTPException(
             status_code=400,
             detail="source_type must be STANDARD, REQUIREMENT, or CONTROL",
         )
 
-    table_name, target_name = source_tables[source_type]
+    # -------------------------------------------------
+    # STANDARD
+    # -------------------------------------------------
+    if source_type == "STANDARD":
+        exists = db.execute(
+            text(
+                """
+                SELECT s.id
+                FROM standards s
+                WHERE s.id = :source_id
+                """
+            ),
+            {"source_id": source_id},
+        ).scalar()
 
-    exists = db.execute(
-        text(
-            f"""
-            SELECT id
-            FROM {table_name}
-            WHERE id = :source_id
-            """
-        ),
-        {"source_id": source_id},
-    ).scalar()
+        if exists is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Standard not found",
+            )
 
-    if exists is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"{source_type.title()} not found",
-        )
-
-    if target_name == "standard_id":
         standard_id = source_id
-    elif target_name == "requirement_id":
-        requirement_id = source_id
+
+    # -------------------------------------------------
+    # REQUIREMENT
+    # -------------------------------------------------
+    elif source_type == "REQUIREMENT":
+        row = db.execute(
+            text(
+                """
+                SELECT
+                    r.id,
+                    sv.standard_id
+                FROM requirements r
+                JOIN clauses c
+                    ON c.id = r.clause_id
+                JOIN standard_versions sv
+                    ON sv.id = c.standard_version_id
+                JOIN standards s
+                    ON s.id = sv.standard_id
+                WHERE r.id = :source_id
+                """
+            ),
+            {"source_id": source_id},
+        ).mappings().first()
+
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Requirement not found",
+            )
+
+        requirement_id = row["id"]
+        standard_id = row["standard_id"]
+
+    # -------------------------------------------------
+    # CONTROL
+    # -------------------------------------------------
     else:
-        control_id = source_id
+        row = db.execute(
+            text(
+                """
+                SELECT
+                    c.id,
+                    sv.standard_id,
+                    c.requirement_id
+                FROM controls c
+                JOIN standard_versions sv
+                    ON sv.id = c.standard_version_id
+                JOIN standards s
+                    ON s.id = sv.standard_id
+                WHERE c.id = :source_id
+                """
+            ),
+            {"source_id": source_id},
+        ).mappings().first()
+
+        if row is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Control not found",
+            )
+
+        control_id = row["id"]
+        standard_id = row["standard_id"]
+        requirement_id = row["requirement_id"]
 
     return standard_id, requirement_id, control_id
 
@@ -479,5 +534,6 @@ def update_risk(
         "risk_level": risk_level,
         "status": status,
     }
+
 
 

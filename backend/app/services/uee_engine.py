@@ -90,12 +90,50 @@ class UEEEngine:
             "task_pressure": task_pressure_index,
         }
 
+        # -------------------------------------------------------------
+        # EFFECTIVE WEIGHTS
+        # -------------------------------------------------------------
+        # An unassessed maturity dimension must NOT contribute zero
+        # exposure to the composite. Zero exposure means "measured and
+        # currently healthy"; "not assessed" means "no measurement".
+        #
+        # Therefore, when no active maturity assessment exists, remove
+        # the maturity weight and normalize the remaining dimensions.
+        maturity_assessed = not any(
+            warning == "maturity:no_active_assessment"
+            for warning in warnings
+        )
+
+        effective_weight_values = {
+            "risk": float(weights.risk),
+            "coverage": float(weights.coverage),
+            "maturity": float(weights.maturity) if maturity_assessed else 0.0,
+            "evidence": float(weights.evidence),
+            "task_pressure": float(weights.task_pressure),
+        }
+
+        effective_weight_total = sum(effective_weight_values.values())
+
+        if effective_weight_total <= 0:
+            effective_weight_values = {
+                "risk": 1.0,
+                "coverage": 0.0,
+                "maturity": 0.0,
+                "evidence": 0.0,
+                "task_pressure": 0.0,
+            }
+        else:
+            effective_weight_values = {
+                key: value / effective_weight_total
+                for key, value in effective_weight_values.items()
+            }
+
         unified_exposure_score = self._clamp_0_100(
-            risk_index * weights.risk
-            + coverage_index * weights.coverage
-            + maturity_index * weights.maturity
-            + evidence_index * weights.evidence
-            + task_pressure_index * weights.task_pressure
+            risk_index * effective_weight_values["risk"]
+            + coverage_index * effective_weight_values["coverage"]
+            + maturity_index * effective_weight_values["maturity"]
+            + evidence_index * effective_weight_values["evidence"]
+            + task_pressure_index * effective_weight_values["task_pressure"]
         )
 
         # Control Health is a hard gate. If controls exist but none are covered,
@@ -121,13 +159,7 @@ class UEEEngine:
             task_pressure_index=task_pressure_index,
             unified_exposure_score=unified_exposure_score,
             compliance_health_index=compliance_health_index,
-            weights={
-                "risk": weights.risk,
-                "coverage": weights.coverage,
-                "maturity": weights.maturity,
-                "evidence": weights.evidence,
-                "task_pressure": weights.task_pressure,
-            },
+            weights=effective_weight_values,
             components=components,
             source_stats={
                 "risk": risk_stats,
@@ -187,70 +219,139 @@ class UEEEngine:
             pass
         return self._default_weights
 
-    def _compute_risk_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
+    def _compute_risk_index(
+        self,
+        db: Session,
+        tenant_id: int,
+    ) -> Tuple[float, Dict[str, Any], list[str]]:
+        """
+        Tenant-scoped risk exposure index.
+
+        Source of truth:
+            analytics.v_risk_exposure_uee
+
+        The view exposes the current risk score directly, therefore
+        no dependency is placed on the non-existent legacy
+        analytics.v_risk_exposure view.
+        """
         stats: Dict[str, Any] = {}
         warnings: list[str] = []
+
         try:
-            row = db.execute(text("""
-                SELECT
-                    COUNT(*)::bigint AS n,
-                    AVG(exposure_score)::numeric AS avg_exposure_score,
-                    AVG(risk_score)::numeric AS avg_risk_score,
-                    SUM(CASE WHEN is_covered THEN 1 ELSE 0 END)::bigint AS covered_n
-                FROM analytics.v_risk_exposure
-                WHERE tenant_id = :tenant_id
-            """), {"tenant_id": tenant_id}).mappings().first()
+            row = db.execute(
+                text("""
+                    SELECT
+                        COUNT(*)::bigint AS n,
+                        COALESCE(AVG(score), 0)::numeric AS avg_score
+                    FROM analytics.v_risk_exposure_uee
+                    WHERE tenant_id = :tenant_id
+                """),
+                {"tenant_id": tenant_id},
+            ).mappings().first()
+
             n = int(row["n"] or 0)
+            avg_score = float(row["avg_score"] or 0.0)
+
             stats["row_count"] = n
-            stats["covered_count"] = int(row["covered_n"] or 0)
+            stats["avg_risk_score"] = avg_score
+            stats["source"] = "analytics.v_risk_exposure_uee"
+
             if n <= 0:
                 warnings.append("risk:no_rows")
                 return 0.0, stats, warnings
-            if row["avg_exposure_score"] is not None:
-                value = self._clamp_0_100(float(row["avg_exposure_score"]))
-                stats["avg_exposure_score"] = value
-                return value, stats, warnings
-            if row["avg_risk_score"] is not None:
-                value = self._normalize_unknown_scale(float(row["avg_risk_score"]))
-                stats["avg_risk_score"] = float(row["avg_risk_score"])
-                warnings.append("risk:used_avg_risk_score_normalization")
-                return value, stats, warnings
-            warnings.append("risk:missing_scores")
-            return 0.0, stats, warnings
+
+            # Risk scores in the current model use a 1-25 scale.
+            # Normalize to the common 0-100 exposure scale.
+            value = self._clamp_0_100(
+                (avg_score / 25.0) * 100.0
+            )
+
+            stats["normalized_risk_exposure"] = value
+
+            return value, stats, warnings
+
         except Exception as e:
             try:
                 db.rollback()
             except Exception:
                 pass
-            warnings.append(f"risk:query_failed:{type(e).__name__}")
+
+            warnings.append(
+                f"risk:query_failed:{type(e).__name__}"
+            )
             return 0.0, stats, warnings
 
-    def _compute_evidence_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
+    def _compute_evidence_index(
+        self,
+        db: Session,
+        tenant_id: int,
+    ) -> Tuple[float, Dict[str, Any], list[str]]:
+        """
+        Tenant-scoped evidence exposure.
+
+        Evidence quality:
+            approved_files / total_files
+
+        Evidence exposure:
+            (1 - evidence_quality) * 100
+
+        No analytics view is used here because
+        analytics.v_evidence_intelligence does not expose tenant_id.
+        """
+
         stats: Dict[str, Any] = {}
         warnings: list[str] = []
+
         try:
-            row = db.execute(text("""
-                SELECT COUNT(*)::bigint AS n,
-                       COALESCE(AVG(evidence_quality_score), 0)::numeric AS avg_quality
-                FROM analytics.v_evidence_intelligence
-                WHERE tenant_id = :tenant_id
-            """), {"tenant_id": tenant_id}).mappings().first()
-            n = int(row["n"] or 0)
-            stats["row_count"] = n
-            if n <= 0:
-                warnings.append("evidence:no_rows")
+            row = db.execute(
+                text("""
+                    SELECT
+                        COUNT(ef.id)::bigint AS total_files,
+                        COUNT(ef.id) FILTER (
+                            WHERE LOWER(COALESCE(ef.status::text, ''))
+                                = 'approved'
+                        )::bigint AS approved_files
+                    FROM public.evidence_files ef
+                    WHERE ef.tenant_id = :tenant_id
+                """),
+                {"tenant_id": tenant_id},
+            ).mappings().first()
+
+            total_files = int(row["total_files"] or 0)
+            approved_files = int(row["approved_files"] or 0)
+
+            stats.update({
+                "total_files": total_files,
+                "approved_files": approved_files,
+                "source": "public.evidence_files",
+            })
+
+            if total_files <= 0:
+                warnings.append("evidence:no_files")
                 return 100.0, stats, warnings
-            value = self._clamp_0_100(float(row["avg_quality"] or 0))
-            stats["avg_quality"] = value
-            stats["source"] = "analytics.v_evidence_intelligence"
-            # quality is positive; convert to exposure/pressure
-            return 100.0 - value, stats, warnings
+
+            quality = (
+                float(approved_files)
+                / float(total_files)
+            ) * 100.0
+
+            quality = self._clamp_0_100(quality)
+            exposure = 100.0 - quality
+
+            stats["evidence_quality"] = quality
+            stats["evidence_exposure"] = exposure
+
+            return exposure, stats, warnings
+
         except Exception as e:
             try:
                 db.rollback()
             except Exception:
                 pass
-            warnings.append(f"evidence:query_failed:{type(e).__name__}")
+
+            warnings.append(
+                f"evidence:query_failed:{type(e).__name__}"
+            )
             return 100.0, stats, warnings
 
     def _compute_maturity_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
@@ -286,7 +387,7 @@ class UEEEngine:
                 return 0.0, stats, warnings
             # Exposure: covered=0, partial=50, uncovered=100.
             exposure = ((partial * 50.0) + (uncovered * 100.0)) / total
-            stats["coverage_health"] = (covered / total) * 100.0
+            stats["coverage_health"] = (covered / float(total)) * 100.0
             return self._clamp_0_100(exposure), stats, warnings
         except Exception as e:
             try:

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -250,6 +250,17 @@ export default function CreateRiskPage() {
       setSaving(true);
       setError(null);
 
+      console.log("CREATE RISK PAYLOAD", {
+        title: title.trim(),
+        description: description.trim(),
+        likelihood,
+        impact,
+        process_id: Number(processId),
+        source_type: sourceType,
+        source_id: Number(sourceId),
+        action: "assessment",
+      });
+
       await apiFetch("/risks/", {
         method: "POST",
         body: JSON.stringify({
@@ -492,3 +503,4 @@ export default function CreateRiskPage() {
     </div>
   );
 }
+

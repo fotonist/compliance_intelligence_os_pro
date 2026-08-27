@@ -1,4 +1,4 @@
-# C:\Projects\compliance_app\backend\app\routes\uee.py
+﻿# C:\Projects\compliance_app\backend\app\routes\uee.py
 
 from typing import Any, Dict
 
@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.services.uee_engine import UEEEngine
+from app.services.uee_config_provider import get_active_uee_weights
 
 router = APIRouter(prefix="/uee", tags=["UEE"])
 
-engine = UEEEngine()
+engine = UEEEngine(weights_provider=get_active_uee_weights)
 
 
 @router.get("/summary")
