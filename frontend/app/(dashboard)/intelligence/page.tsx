@@ -1,22 +1,33 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
-  Bell,
+  Activity,
+  ArrowDownRight,
+  ArrowUpRight,
   BrainCircuit,
+  CheckCircle2,
+  ChevronRight,
   CircleDot,
-  Globe2,
-  LineChart as LineChartIcon,
+  Clock3,
+  Database,
+  FileCheck2,
+  BadgeCheck,
+  ClipboardCheck,
+  Gauge,
+  Layers3,
+  RefreshCw,
+  ShieldAlert,
   ShieldCheck,
-  TrendingUp,
-  Triangle,
+  Target,
   X,
 } from "lucide-react";
-import { apiFetch } from "@/app/lib/api";
 import {
   Bar,
   BarChart,
+  CartesianGrid,
+  Cell,
   Line,
   LineChart,
   ResponsiveContainer,
@@ -24,26 +35,33 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { apiFetch } from "@/app/lib/api";
 
-type OverviewSummary = {
+type IntelligenceSummary = {
   total_risks: number;
-  open_risks?: number;
+  open_risks: number;
   forecasted_risks: number;
   high_probability_risks: number;
   executive_alerts: number;
   avg_escalation_probability: number;
   avg_expected_score_delta: number;
-};
 
-type TopControl = {
-  control_id: number;
-  control_code?: string | null;
-  control_title?: string | null;
-  risk_count: number;
-  avg_escalation_probability: number;
-  max_escalation_probability: number;
-  expected_score_delta_sum: number;
-  ai_priority_score: number;
+  forecast_coverage: number;
+  forecast_coverage_percent: number;
+  baseline_forecast_risks: number;
+  ml_forecast_risks: number;
+  insufficient_history_risks: number;
+  latest_forecast_at?: string | null;
+
+  total_inherent_exposure: number;
+  total_residual_exposure: number;
+  total_unified_exposure: number;
+  exposure_delta: number;
+  exposure_delta_percent: number;
+
+  covered_risks: number;
+  uncovered_risks: number;
+  coverage_percent: number;
 };
 
 type TopRisk = {
@@ -52,707 +70,291 @@ type TopRisk = {
   current_score?: number | null;
   risk_level?: string | null;
   status?: string | null;
+
   escalation_probability_30d: number;
   expected_score_delta: number;
+
   model_version?: string | null;
+  forecast_mode?: string | null;
+  forecast_status?: string | null;
+  forecast_created_at?: string | null;
+
+  inherent_exposure: number;
+  residual_exposure: number;
+  unified_score: number;
+
+  evidence_quality: number;
+  linked_evidence_count: number;
+  approved_evidence_count: number;
+
+  density_factor: number;
+  pressure_factor: number;
+  velocity_factor: number;
+
+  is_covered: boolean;
+
+  historical_change_count: number;
+  changes_90d: number;
+  avg_delta_90d: number;
+  max_delta_90d: number;
+
+  control_id?: number | null;
   control_code?: string | null;
-  process_names?: string[];
+  control_title?: string | null;
+
+  process_ids: number[];
+  process_names: string[];
 };
 
-type ExecAlert = {
+type TopControl = {
+  control_id: number;
+  control_code?: string | null;
+  control_title?: string | null;
+
+  risk_count: number;
+  avg_escalation_probability: number;
+  max_escalation_probability: number;
+  expected_score_delta_sum: number;
+  ai_priority_score: number;
+
+  covered_risk_count: number;
+  uncovered_risk_count: number;
+  avg_unified_exposure: number;
+  max_unified_exposure: number;
+};
+
+type ExecutiveAlert = {
   risk_id: number;
   title?: string | null;
   current_score?: number | null;
   risk_level?: string | null;
+
   escalation_probability_30d: number;
-  expected_score_delta?: number | null;
+  expected_score_delta: number;
+
+  residual_exposure: number;
+  unified_score: number;
+
+  model_version?: string | null;
+  forecast_mode?: string | null;
+  forecast_status?: string | null;
+  forecast_created_at?: string | null;
+
+  linked_evidence_count: number;
+  approved_evidence_count: number;
+  is_covered: boolean;
+
+  control_id?: number | null;
   control_code?: string | null;
-  process_names?: string[];
+  process_names: string[];
 };
 
 type Overview = {
-  summary: OverviewSummary;
-  top_controls: TopControl[];
+  summary: IntelligenceSummary;
   top_risks: TopRisk[];
-  executive_alerts: ExecAlert[];
+  top_controls: TopControl[];
+  executive_alerts: ExecutiveAlert[];
 };
 
 type ControlHealth = {
-  summary: any;
-  trend: any[];
-  top_risks: any[];
-  process_distribution: any[];
+  control: {
+    control_id: number;
+    control_code?: string | null;
+    control_title?: string | null;
+  };
+  health: {
+    health_index: number;
+    coverage_health: number;
+    evidence_quality: number;
+    risk_health: number;
+    gap_health?: number | null;
+    remediation_health?: number | null;
+  };
+  metrics: {
+    evidence_count: number;
+    approved_evidence_count: number;
+    risk_count: number;
+    gap_count: number;
+    open_task_count: number;
+    worst_risk_score: number;
+    worst_gap_severity: number;
+  };
+  risks: Array<{
+    id: number;
+    title?: string | null;
+    score?: number | null;
+    likelihood?: number | null;
+    impact?: number | null;
+    risk_level?: string | null;
+    escalation_probability_30d?: number | null;
+  }>;
+  gaps: Array<Record<string, unknown>>;
+  tasks: Array<Record<string, unknown>>;
 };
 
-type IntelligenceStatus = "checking" | "active" | "offline";
+type EngineStatus = "checking" | "active" | "offline";
 
-export default function IntelligencePage() {
-  const [overview, setOverview] = useState<Overview | null>(null);
-  const [selectedControl, setSelectedControl] = useState<number | null>(null);
-  const [controlHealth, setControlHealth] = useState<ControlHealth | null>(
-    null
-  );
-  const [escalationDist, setEscalationDist] = useState<any[]>([]);
-  const [exposureMatrix, setExposureMatrix] = useState<any[]>([]);
-
-  const [intelligenceStatus, setIntelligenceStatus] =
-    useState<IntelligenceStatus>("checking");
-
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const checkIntelligenceHealth = async () => {
-      try {
-        const res = await apiFetch("/health/intelligence");
-
-        if (!res.ok) {
-          throw new Error(
-            `Intelligence health check failed: ${res.status}`
-          );
-        }
-
-        const data = await res.json();
-
-        if (!mounted) return;
-
-        if (data?.status === "active") {
-          setIntelligenceStatus("active");
-        } else {
-          setIntelligenceStatus("offline");
-        }
-      } catch (error) {
-        console.error(
-          "Intelligence engine health check failed:",
-          error
-        );
-
-        if (mounted) {
-          setIntelligenceStatus("offline");
-        }
-      }
-    };
-
-    checkIntelligenceHealth();
-
-    const interval = window.setInterval(
-      checkIntelligenceHealth,
-      10000
-    );
-
-    return () => {
-      mounted = false;
-      window.clearInterval(interval);
-    };
-  }, []);
-
-  async function loadAll() {
-    try {
-      const [overviewRes, escRes, matrixRes] = await Promise.all([
-        apiFetch("/company/intelligence/overview"),
-        apiFetch("/company/intelligence/escalation-distribution"),
-        apiFetch("/company/intelligence/exposure-coverage"),
-      ]);
-
-      setOverview(await overviewRes.json());
-      setEscalationDist(await escRes.json());
-      setExposureMatrix(await matrixRes.json());
-    } catch (error) {
-      console.error("Matrix Intelligence load error:", error);
-    }
+const fmtNumber = (value: number | null | undefined, digits = 0) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "—";
   }
 
-  async function openControl(controlId: number) {
-    setSelectedControl(controlId);
+  return Number(value).toLocaleString("en-US", {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  });
+};
 
-    try {
-      const res = await apiFetch(
-        `/company/intelligence/control/${controlId}`
-      );
-
-      setControlHealth(await res.json());
-    } catch (error) {
-      console.error("Control health load error:", error);
-    }
+const fmtPercent = (value: number | null | undefined, digits = 0) => {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "—";
   }
 
-  if (!overview) {
-    return (
-      <div className="min-h-screen bg-[#020b16] p-8 text-white">
-        <div className="rounded-xl border border-[#163047] bg-[#071523] p-6 text-slate-400">
-          Loading Matrix Intelligence...
-        </div>
-      </div>
-    );
+  return `${(Number(value) * 100).toFixed(digits)}%`;
+};
+
+const fmtDateTime = (value?: string | null) => {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const titleCase = (value?: string | null) => {
+  if (!value) return "—";
+
+  return value
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+function riskTone(level?: string | null) {
+  switch ((level || "").toLowerCase()) {
+    case "critical":
+      return "border-rose-400/30 bg-rose-400/10 text-rose-300";
+    case "high":
+      return "border-red-400/30 bg-red-400/10 text-red-300";
+    case "medium":
+      return "border-amber-400/30 bg-amber-400/10 text-amber-300";
+    case "low":
+      return "border-emerald-400/30 bg-emerald-600/10 text-emerald-300";
+    default:
+      return "border-slate-600 bg-slate-100/60 text-slate-500";
   }
+}
 
-  const summary = overview.summary;
+function probabilityTone(value: number) {
+  if (value >= 0.7) return "text-rose-300";
+  if (value >= 0.4) return "text-amber-300";
+  return "text-emerald-600";
+}
 
-  const riskUniverse = Number(summary.total_risks || 0);
-  const openRisks = Number(summary.open_risks ?? 40);
-  const forecasted = Number(summary.forecasted_risks || 0);
-  const highProbability = Number(
-    summary.high_probability_risks || 0
-  );
-  const executiveAlerts = Number(
-    summary.executive_alerts || 0
-  );
-
-  const avgEscalation = Math.round(
-    (Number(summary.avg_escalation_probability) || 0) * 100
-  );
-
-  const avgDelta =
-    summary.avg_expected_score_delta == null
-      ? null
-      : Number(summary.avg_expected_score_delta).toFixed(2);
-
-  const engineIsActive = intelligenceStatus === "active";
-  const engineIsChecking =
-    intelligenceStatus === "checking";
-
+function Card({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="min-h-screen bg-[#020b16] px-3 py-4 text-white sm:px-5 lg:px-6">
-      <div className="mx-auto max-w-[1500px]">
-        <header className="mb-4 flex items-center justify-between border-b border-[#132a3d] pb-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-400/40 bg-[#061a2a] shadow-[0_0_18px_rgba(34,211,238,0.10)]">
-              <BrainCircuit
-                className="h-6 w-6 text-cyan-300"
-                strokeWidth={1.6}
-              />
-            </div>
+    <div
+      className={`rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
 
-            <div className="min-w-0">
-              <h1 className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl">
-                Matrix Intelligence
-              </h1>
-
-              <p className="truncate text-[11px] text-slate-400 sm:text-xs">
-                AI Risk Forecasting &amp; Predictive Compliance
-                (Tenant-wide)
-              </p>
-            </div>
-          </div>
-
-          <div
-            className={`hidden items-center gap-2 rounded-md border px-3 py-2 text-[10px] sm:flex ${
-              engineIsActive
-                ? "border-emerald-400/20 bg-emerald-400/5 text-emerald-300"
-                : engineIsChecking
-                  ? "border-amber-400/20 bg-amber-400/5 text-amber-300"
-                  : "border-red-400/20 bg-red-400/5 text-red-300"
-            }`}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                engineIsActive
-                  ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]"
-                  : engineIsChecking
-                    ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]"
-                    : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]"
-              } ${
-                engineIsActive || engineIsChecking
-                  ? "animate-pulse"
-                  : ""
-              }`}
-            />
-
-            {engineIsActive
-              ? "Real-time Intelligence"
-              : engineIsChecking
-                ? "Checking Intelligence"
-                : "Intelligence Offline"}
-          </div>
-        </header>
-
-        <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
-          <MetricCard
-            label="Risk Universe"
-            value={riskUniverse}
-            icon={<Globe2 />}
-            tone="cyan"
-            sub="Total risks in universe"
-          />
-
-          <MetricCard
-            label="Open Risks"
-            value={openRisks}
-            icon={<ShieldCheck />}
-            tone="green"
-            sub="Currently active risks"
-          />
-
-          <MetricCard
-            label="Forecasted Risks"
-            value={forecasted}
-            icon={<TrendingUp />}
-            tone="purple"
-            sub="AI forecasted risks"
-          />
-
-          <MetricCard
-            label="High Prob (≥70%)"
-            value={highProbability}
-            icon={<AlertTriangle />}
-            tone="red"
-            sub="High escalation probability"
-          />
-
-          <MetricCard
-            label="Exec Alerts"
-            value={executiveAlerts}
-            icon={<Bell />}
-            tone="orange"
-            sub="For executive attention"
-          />
-
-          <MetricCard
-            label="Avg Escalation Prob"
-            value={`${avgEscalation}%`}
-            icon={<LineChartIcon />}
-            tone="cyan"
-            sub="Average escalation probability"
-          />
-
-          <MetricCard
-            label="Avg Score Delta"
-            value={avgDelta == null ? "No forecast" : `+${avgDelta}`}
-            icon={<Triangle />}
-            tone="purple"
-            sub="Average score change"
-          />
-        </section>
-
-        <section className="mt-3 rounded-lg border border-[#163047] bg-[#061321] p-2 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
-          <SectionTitle title="Executive Escalation Alerts" />
-
-          <DataTable>
-            <TableHead
-              columns={[
-                "Risk",
-                "Score",
-                "Level",
-                "Escalation Prob",
-                "Expected Δ",
-                "Control",
-                "Processes",
-              ]}
-            />
-
-            <tbody>
-              {overview.executive_alerts.length === 0 ? (
-                <EmptyRow colSpan={7} />
-              ) : (
-                overview.executive_alerts.map((r) => (
-                  <tr
-                    key={r.risk_id}
-                    className="border-t border-[#173047] transition hover:bg-[#0a1b2b]"
-                  >
-                    <td className="px-3 py-3 font-medium text-slate-100">
-                      {r.risk_id} — {r.title || "Risk"}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-300">
-                      {r.current_score ?? "—"}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <RiskBadge level={r.risk_level} />
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <ProbabilityBadge
-                        value={r.escalation_probability_30d}
-                      />
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {Number(
-                        r.expected_score_delta || 0
-                      ).toFixed(2)}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {r.control_code || "—"}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-300">
-                      {r.process_names?.length ? r.process_names.join(", ") : "No process linked"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </DataTable>
-        </section>
-
-        <section className="mt-3 rounded-lg border border-[#163047] bg-[#061321] p-2 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
-          <SectionTitle title="Escalation Watchlist (Top Risks)" />
-
-          <DataTable>
-            <TableHead
-              columns={[
-                "Risk",
-                "Score",
-                "Level",
-                "Status",
-                "Escalation Prob",
-                "Expected Δ",
-                "Control",
-                "Processes",
-                "Model",
-              ]}
-            />
-
-            <tbody>
-              {overview.top_risks.length === 0 ? (
-                <EmptyRow colSpan={9} />
-              ) : (
-                overview.top_risks.map((r) => (
-                  <tr
-                    key={r.risk_id}
-                    className="border-t border-[#173047] transition hover:bg-[#0a1b2b]"
-                  >
-                    <td className="px-3 py-3 font-medium text-slate-100">
-                      {r.risk_id} — {r.title || "Risk"}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {r.current_score ?? "—"}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <RiskBadge level={r.risk_level} />
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <StatusBadge
-                        status={r.status || "OPEN"}
-                      />
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <ProbabilityBadge
-                        value={r.escalation_probability_30d}
-                      />
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {Number(
-                        r.expected_score_delta || 0
-                      ).toFixed(2)}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {r.control_code || "—"}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-300">
-                      {r.process_names?.length
-                        ? r.process_names.join(", ")
-                        : "No process linked"}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-300">
-                      {r.model_version || "Model unavailable"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </DataTable>
-        </section>
-
-        <section className="mt-3 rounded-lg border border-[#163047] bg-[#061321] p-2 shadow-[0_8px_30px_rgba(0,0,0,0.18)]">
-          <SectionTitle title="AI Priority Controls (Top Controls)" />
-
-          <DataTable>
-            <TableHead
-              columns={[
-                "Control",
-                "Risk Count",
-                "Avg Prob",
-                "Max Prob",
-                "Δ Sum",
-                "AI Priority",
-              ]}
-            />
-
-            <tbody>
-              {overview.top_controls.length === 0 ? (
-                <EmptyRow colSpan={6} />
-              ) : (
-                overview.top_controls.map((c) => (
-                  <tr
-                    key={c.control_id}
-                    onClick={() =>
-                      openControl(c.control_id)
-                    }
-                    className="cursor-pointer border-t border-[#173047] transition hover:bg-[#0a1b2b]"
-                  >
-                    <td className="px-3 py-3 font-semibold text-slate-100">
-                      {c.control_code ||
-                        `Control #${c.control_id}`}
-                      {c.control_title
-                        ? ` — ${c.control_title}`
-                        : ""}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {c.risk_count}
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {Math.round(
-                        (c.avg_escalation_probability || 0) *
-                          100
-                      )}
-                      %
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {Math.round(
-                        (c.max_escalation_probability || 0) *
-                          100
-                      )}
-                      %
-                    </td>
-
-                    <td className="px-3 py-3 text-slate-200">
-                      {Number(
-                        c.expected_score_delta_sum || 0
-                      ).toFixed(2)}
-                    </td>
-
-                    <td className="px-3 py-3">
-                      <span className="font-bold text-emerald-400">
-                        {Number(
-                          c.ai_priority_score || 0
-                        ).toFixed(2)}
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </DataTable>
-        </section>
-
-        <section className="mt-3 rounded-lg border border-[#163047] bg-[#061321] p-4">
-          <SectionTitle title="Escalation Probability Distribution" />
-
-          <div className="h-64">
-            <ResponsiveContainer
-              width="100%"
-              height="100%"
-            >
-              <BarChart data={escalationDist}>
-                <XAxis
-                  dataKey="probability_bucket"
-                  stroke="#71869a"
-                />
-
-                <YAxis stroke="#71869a" />
-
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#071523",
-                    border: "1px solid #163047",
-                    color: "#fff",
-                  }}
-                />
-
-                <Bar
-                  dataKey="risk_count"
-                  fill="#26b9ff"
-                  radius={[3, 3, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
-        <section className="mt-3 rounded-lg border border-[#163047] bg-[#061321] p-4">
-          <SectionTitle title="Exposure vs Coverage Matrix" />
-
-          <ExposureMatrix data={exposureMatrix} />
-        </section>
-
-        {selectedControl && controlHealth && (
-          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[600px] overflow-y-auto border-l border-[#1b3a52] bg-[#071523] p-6 shadow-2xl">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-xl font-bold">
-                Control Health
-              </h2>
-
-              <X
-                className="cursor-pointer text-slate-300"
-                onClick={() => {
-                  setSelectedControl(null);
-                  setControlHealth(null);
-                }}
-              />
-            </div>
-
-            <div className="mb-6 grid grid-cols-2 gap-4">
-              <MetricCard
-                label="Linked Risks"
-                value={
-                  controlHealth.summary?.linked_risk_count ?? 0
-                }
-                compact
-              />
-
-              <MetricCard
-                label="High Risks"
-                value={
-                  controlHealth.summary?.high_risk_count ?? 0
-                }
-                compact
-              />
-
-              <MetricCard
-                label="Critical Risks"
-                value={
-                  controlHealth.summary?.critical_risk_count ?? 0
-                }
-                compact
-              />
-
-              <MetricCard
-                label="Avg Esc Prob"
-                value={`${Math.round(
-                  (Number(
-                    controlHealth.summary
-                      ?.avg_escalation_probability
-                  ) || 0) * 100
-                )}%`}
-                compact
-              />
-            </div>
-
-            <div className="h-48">
-              <ResponsiveContainer
-                width="100%"
-                height="100%"
-              >
-                <LineChart data={controlHealth.trend}>
-                  <XAxis dataKey="date" hide />
-
-                  <YAxis stroke="#71869a" />
-
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#071523",
-                      border: "1px solid #163047",
-                    }}
-                  />
-
-                  <Line
-                    type="monotone"
-                    dataKey="avg_score"
-                    stroke="#26b9ff"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+function CardHeader({
+  eyebrow,
+  title,
+  description,
+  action,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+      <div className="min-w-0">
+        {eyebrow && (
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+            {eyebrow}
           </div>
         )}
+
+        <h2 className="text-base font-semibold text-slate-900">
+          {title}
+        </h2>
+
+        {description && (
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            {description}
+          </p>
+        )}
       </div>
+
+      {action && (
+        <div className="shrink-0">
+          {action}
+        </div>
+      )}
     </div>
   );
 }
 
-function SectionTitle({ title }: { title: string }) {
-  return (
-    <div className="mb-2 flex items-center gap-2 border-l-2 border-cyan-400 pl-2 text-sm font-semibold text-white">
-      {title}
-    </div>
-  );
-}
-
-function MetricCard({
+function Metric({
   label,
   value,
   sub,
   icon,
   tone = "cyan",
-  compact = false,
 }: {
   label: string;
   value: string | number;
   sub?: string;
-  icon?: ReactNode;
-  tone?: "cyan" | "green" | "purple" | "red" | "orange";
-  compact?: boolean;
+  icon: ReactNode;
+  tone?: "cyan" | "red" | "amber" | "green" | "violet";
 }) {
   const tones = {
-    cyan: {
-      border: "border-cyan-400/25",
-      icon: "text-cyan-300",
-      bg: "bg-[#071a2a]",
-      glow: "shadow-[inset_0_0_20px_rgba(34,211,238,0.025)]",
-    },
-    green: {
-      border: "border-emerald-400/25",
-      icon: "text-emerald-300",
-      bg: "bg-[#071b18]",
-      glow: "shadow-[inset_0_0_20px_rgba(52,211,153,0.025)]",
-    },
-    purple: {
-      border: "border-violet-400/25",
-      icon: "text-violet-300",
-      bg: "bg-[#0e0c20]",
-      glow: "shadow-[inset_0_0_20px_rgba(139,92,246,0.025)]",
-    },
-    red: {
-      border: "border-red-500/45",
-      icon: "text-red-400",
-      bg: "bg-[#190b15]",
-      glow: "shadow-[inset_0_0_22px_rgba(239,68,68,0.04)]",
-    },
-    orange: {
-      border: "border-amber-400/30",
-      icon: "text-amber-300",
-      bg: "bg-[#1a1308]",
-      glow: "shadow-[inset_0_0_20px_rgba(245,158,11,0.025)]",
-    },
-  } as const;
-
-  const t = tones[tone];
+    cyan: "border-slate-200 bg-white text-slate-600",
+    red: "border-slate-200 bg-white text-rose-500",
+    amber: "border-slate-200 bg-white text-amber-500",
+    green: "border-slate-200 bg-white text-emerald-600",
+    violet: "border-slate-200 bg-white text-slate-600",
+  };
 
   return (
     <div
-      className={`rounded-lg border ${t.border} ${t.bg} ${t.glow} ${
-        compact ? "p-3" : "p-3"
-      }`}
+      className={`rounded-xl border p-4 shadow-sm ${tones[tone]}`}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 truncate text-[10px] font-medium text-slate-300">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-slate-500">
           {label}
-        </div>
+        </span>
 
-        {icon && (
-          <div
-            className={`shrink-0 ${t.icon} [&>svg]:h-5 [&>svg]:w-5`}
-          >
-            {icon}
-          </div>
-        )}
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
+          {icon}
+        </span>
       </div>
 
-      <div className="mt-1 text-2xl font-bold leading-none tracking-tight text-white">
+      <div className="mt-4 text-2xl font-semibold tracking-tight text-slate-900">
         {value}
       </div>
 
       {sub && (
-        <div className="mt-2 min-h-[24px] text-[9px] leading-3 text-slate-500">
+        <div className="mt-1 truncate text-xs text-slate-500">
           {sub}
         </div>
       )}
@@ -760,188 +362,1021 @@ function MetricCard({
   );
 }
 
-function RiskBadge({
-  level,
-}: {
-  level?: string | null;
-}) {
-  const value = String(level || "—").toUpperCase();
-
-  const cls =
-    value === "CRITICAL"
-      ? "border-rose-500/60 bg-rose-500/10 text-rose-300"
-      : value === "HIGH"
-        ? "border-red-500/55 bg-red-500/10 text-red-300"
-        : value === "MEDIUM"
-          ? "border-amber-500/55 bg-amber-500/10 text-amber-300"
-          : value === "LOW"
-            ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-300"
-            : "border-slate-600 bg-slate-800/50 text-slate-300";
-
-  return (
-    <span
-      className={`inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold tracking-wide ${cls}`}
-    >
-      {value}
-    </span>
-  );
-}
-
-function StatusBadge({
+function StatusPill({
   status,
 }: {
-  status?: string | null;
+  status: EngineStatus;
 }) {
-  const value = String(status || "OPEN").toUpperCase();
-
-  const cls =
-    value === "OPEN"
-      ? "border-emerald-500/45 bg-emerald-500/10 text-emerald-300"
-      : value === "CLOSED"
-        ? "border-slate-500/50 bg-slate-500/10 text-slate-300"
-        : "border-amber-500/45 bg-amber-500/10 text-amber-300";
+  const config = {
+    checking: {
+      label: "CHECKING",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+      dot: "bg-amber-500",
+    },
+    active: {
+      label: "INTELLIGENCE ACTIVE",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      dot: "bg-emerald-500",
+    },
+    offline: {
+      label: "ENGINE OFFLINE",
+      className: "border-rose-200 bg-rose-50 text-rose-700",
+      dot: "bg-rose-500",
+    },
+  }[status];
 
   return (
     <span
-      className={`inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold tracking-wide ${cls}`}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[10px] font-semibold tracking-[0.08em] ${config.className}`}
     >
-      {value}
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${config.dot}`}
+        aria-hidden="true"
+      />
+      {config.label}
     </span>
   );
 }
 
-function ProbabilityBadge({
+function Progress({
   value,
+  label,
 }: {
-  value?: number | null;
+  value: number;
+  label?: string;
 }) {
-  const pct = Math.round((Number(value) || 0) * 100);
-
-  const cls =
-    pct >= 70
-      ? "border-red-500/50 bg-red-500/10 text-red-300"
-      : pct >= 40
-        ? "border-amber-500/45 bg-amber-500/10 text-amber-300"
-        : "border-cyan-500/35 bg-cyan-500/10 text-cyan-300";
+  const pct = Math.max(0, Math.min(100, value * 100));
 
   return (
-    <span
-      className={`inline-flex rounded-md border px-2 py-1 text-[10px] font-semibold ${cls}`}
-    >
-      {pct}%
-    </span>
-  );
-}
+    <div>
+      <div className="mb-1.5 flex items-center justify-between text-xs">
+        <span className="text-slate-500">
+          {label}
+        </span>
 
-function DataTable({
-  children,
-}: {
-  children: ReactNode;
-}) {
-  return (
-    <div className="overflow-x-auto rounded-md border border-[#173047] bg-[#071523]">
-      <table className="w-full min-w-[900px] text-xs">
-        {children}
-      </table>
+        <span className="font-semibold text-slate-700">
+          {pct.toFixed(0)}%
+        </span>
+      </div>
+
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-emerald-600 transition-all"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
 }
 
-function TableHead({
-  columns,
-}: {
-  columns: string[];
-}) {
+function EmptyState({ message }: { message: string }) {
   return (
-    <thead>
-      <tr className="bg-[#0a1b2b] text-left text-[10px] font-semibold text-slate-400">
-        {columns.map((c) => (
-          <th
-            key={c}
-            className="whitespace-nowrap px-3 py-2"
-          >
-            {c}
-          </th>
-        ))}
-      </tr>
-    </thead>
+    <div className="flex min-h-[180px] items-center justify-center px-6 text-center text-xs text-slate-500">
+      {message}
+    </div>
   );
 }
 
-function EmptyRow({
-  colSpan,
-}: {
-  colSpan: number;
-}) {
-  return (
-    <tr>
-      <td
-        colSpan={colSpan}
-        className="px-4 py-10 text-center text-slate-500"
-      >
-        No intelligence data available.
-      </td>
-    </tr>
-  );
-}
+export default function IntelligencePage() {
+  const [overview, setOverview] = useState<Overview | null>(null);
+  const [escalation, setEscalation] = useState<
+    Array<{ probability_bucket: string; risk_count: number }>
+  >([]);
+  const [exposure, setExposure] = useState<
+    Array<{
+      risk_bucket: string;
+      coverage_bucket: string;
+      risk_count: number;
+    }>
+  >([]);
 
-function ExposureMatrix({
-  data,
-}: {
-  data: any[];
-}) {
-  if (!data?.length) {
+  const [controlHealth, setControlHealth] = useState<ControlHealth | null>(
+    null,
+  );
+  const [selectedControl, setSelectedControl] = useState<number | null>(null);
+
+  const [engineStatus, setEngineStatus] =
+    useState<EngineStatus>("checking");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadData = useCallback(async (initial = false) => {
+    try {
+      setError("");
+
+      if (initial) setLoading(true);
+      else setRefreshing(true);
+
+      const [overviewRes, escalationRes, exposureRes] =
+        await Promise.all([
+          apiFetch("/company/intelligence/overview"),
+          apiFetch("/company/intelligence/escalation-distribution"),
+          apiFetch("/company/intelligence/exposure-coverage"),
+        ]);
+
+      const [overviewData, escalationData, exposureData] =
+        await Promise.all([
+          overviewRes.json(),
+          escalationRes.json(),
+          exposureRes.json(),
+        ]);
+
+      setOverview(overviewData);
+      setEscalation(
+        Array.isArray(escalationData) ? escalationData : [],
+      );
+      setExposure(Array.isArray(exposureData) ? exposureData : []);
+    } catch (err) {
+      console.error("Intelligence dashboard load error:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to load intelligence data.",
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  const checkEngine = useCallback(async () => {
+    try {
+      const res = await apiFetch("/health/intelligence");
+      const data = await res.json();
+      setEngineStatus(data?.status === "active" ? "active" : "offline");
+    } catch {
+      setEngineStatus("offline");
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadData(true);
+    void checkEngine();
+
+    const interval = window.setInterval(() => {
+      void checkEngine();
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [loadData, checkEngine]);
+
+  const openControl = async (controlId: number) => {
+    setSelectedControl(controlId);
+    setControlHealth(null);
+
+    try {
+      const res = await apiFetch(
+        `/company/intelligence/control-health/${controlId}`,
+      );
+      setControlHealth(await res.json());
+    } catch (err) {
+      console.error("Control health load error:", err);
+    }
+  };
+
+  const summary = overview?.summary;
+
+  const forecastCoverage = summary?.forecast_coverage_percent ?? 0;
+  const evidenceCoverage = summary?.coverage_percent ?? 0;
+
+  const modelMix = useMemo(
+    () => [
+      {
+        name: "ML",
+        value: summary?.ml_forecast_risks ?? 0,
+      },
+      {
+        name: "Baseline",
+        value: summary?.baseline_forecast_risks ?? 0,
+      },
+    ],
+    [summary],
+  );
+
+  if (loading) {
     return (
-      <div className="py-10 text-center text-sm text-slate-500">
-        No exposure / coverage data available.
+      <div className="min-h-screen bg-slate-50 p-6 text-slate-900">
+        <div className="mx-auto max-w-[1600px] animate-pulse">
+          <div className="h-20 rounded-xl border border-slate-200 bg-white shadow-sm" />
+          <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="h-28 rounded-xl border border-slate-200 bg-white shadow-sm" />
+            ))}
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="h-96 rounded-xl border border-slate-200 bg-white shadow-sm" />
+            <div className="h-96 rounded-xl border border-slate-200 bg-white shadow-sm" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!overview || !summary) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-6 text-slate-900">
+        <div className="mx-auto max-w-[900px] rounded-2xl border border-rose-400/20 bg-rose-400/[0.04] p-6">
+          <div className="flex items-center gap-3 text-rose-300">
+            <AlertTriangle size={20} />
+            <span className="font-semibold">
+              Intelligence data unavailable
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-slate-500">
+            {error || "The intelligence overview could not be loaded."}
+          </p>
+          <button
+            onClick={() => void loadData(true)}
+            className="mt-5 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white/5 px-4 py-2 text-xs font-semibold text-slate-900 hover:bg-white/10"
+          >
+            <RefreshCw size={14} />
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      {data.slice(0, 12).map((item, index) => (
-        <div
-          key={item.id ?? index}
-          className="rounded-md border border-[#173047] bg-[#071523] p-3"
-        >
-          <div className="flex items-center justify-between text-xs text-slate-300">
-            <span>
-              {item.control_code ||
-                item.control ||
-                `Item ${index + 1}`}
-            </span>
+    <div className="min-h-screen bg-slate-50 px-3 py-4 text-slate-900 sm:px-5 lg:px-7">
+      <div className="mx-auto max-w-[1600px]">
+        <header className="mb-4 rounded-2xl border border-slate-200 bg-white/95 px-5 py-4 shadow-[0_14px_50px_rgba(0,0,0,0.22)]">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-200/20 bg-emerald-600/[0.06]">
+                <BrainCircuit className="text-emerald-600" size={23} />
+              </div>
 
-            <CircleDot className="h-3.5 w-3.5 text-cyan-300" />
-          </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-semibold tracking-tight">
+                    Matrix Intelligence
+                  </h1>
+                  <StatusPill status={engineStatus} />
+                </div>
 
-          <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-            <div className="rounded border border-[#173047] bg-[#0a1b2b] p-2">
-              <span className="text-slate-500">
-                Exposure
-              </span>
-
-              <div className="mt-1 text-white">
-                {item.exposure ??
-                  item.risk_exposure ??
-                  "—"}
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Predictive risk intelligence · tenant-wide governance
+                  posture
+                </p>
               </div>
             </div>
 
-            <div className="rounded border border-[#173047] bg-[#0a1b2b] p-2">
-              <span className="text-slate-500">
-                Coverage
-              </span>
-
-              <div className="mt-1 text-white">
-                {item.coverage ??
-                  item.coverage_score ??
-                  "—"}
+            <div className="flex items-center gap-2">
+              <div className="hidden text-right sm:block">
+                <div className="text-[9px] uppercase tracking-[0.16em] text-slate-500">
+                  Latest forecast
+                </div>
+                <div className="mt-1 text-[11px] text-slate-500">
+                  {fmtDateTime(summary.latest_forecast_at)}
+                </div>
               </div>
+
+              <button
+                onClick={() => void loadData(false)}
+                disabled={refreshing}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white/[0.035] px-3 py-2 text-[10px] font-semibold text-slate-500 transition hover:border-emerald-200/20 hover:text-slate-900 disabled:opacity-50"
+              >
+                <RefreshCw
+                  size={13}
+                  className={refreshing ? "animate-spin" : ""}
+                />
+                Refresh
+              </button>
             </div>
           </div>
+        </header>
+
+        {error && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-amber-400/20 bg-amber-400/[0.04] px-4 py-3 text-xs text-amber-300">
+            <span>{error}</span>
+            <button
+              onClick={() => setError("")}
+              className="text-amber-500 hover:text-amber-300"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+          <Metric
+            label="Risk Universe"
+            value={fmtNumber(summary.total_risks)}
+            sub={`${fmtNumber(summary.open_risks)} currently open`}
+            icon={<Database size={17} />}
+          />
+
+          <Metric
+            label="Forecast Coverage"
+            value={`${fmtNumber(forecastCoverage)}%`}
+            sub={`${fmtNumber(summary.forecast_coverage)} forecasted`}
+            icon={<Gauge size={17} />}
+            tone="violet"
+          />
+
+          <Metric
+            label="High Probability"
+            value={fmtNumber(summary.high_probability_risks)}
+            sub="30-day escalation watch"
+            icon={<ShieldAlert size={17} />}
+            tone="red"
+          />
+
+          <Metric
+            label="Executive Alerts"
+            value={fmtNumber(summary.executive_alerts)}
+            sub="requires attention"
+            icon={<AlertTriangle size={17} />}
+            tone="amber"
+          />
+
+          <Metric
+            label="Unified Exposure"
+            value={fmtNumber(summary.total_unified_exposure, 1)}
+            sub={`Δ ${fmtNumber(summary.exposure_delta, 1)}`}
+            icon={<Layers3 size={17} />}
+            tone="violet"
+          />
+
+          <Metric
+            label="Evidence Coverage"
+            value={`${fmtNumber(evidenceCoverage)}%`}
+            sub={`${fmtNumber(summary.uncovered_risks)} uncovered risks`}
+            icon={<ShieldCheck size={17} />}
+            tone="green"
+          />
+
+          <Metric
+            label="Avg Escalation"
+            value={fmtPercent(summary.avg_escalation_probability)}
+            sub={`Δ score ${fmtNumber(summary.avg_expected_score_delta, 2)}`}
+            icon={<Target size={17} />}
+            tone="cyan"
+          />
+        </section>
+
+        <section className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+          <Card>
+            <CardHeader
+              eyebrow="EXECUTIVE SIGNAL"
+              title="Executive Escalation Alerts"
+              description="Highest-priority predictive signals across the tenant risk universe."
+              action={
+                <span className="rounded-full border border-rose-400/15 bg-rose-400/[0.05] px-2.5 py-1 text-[9px] font-semibold text-rose-300">
+                  {summary.executive_alerts} alerts
+                </span>
+              }
+            />
+
+            {overview.executive_alerts.length === 0 ? (
+              <EmptyState message="No executive escalation alerts detected." />
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {overview.executive_alerts.slice(0, 6).map((alert) => (
+                  <div
+                    key={alert.risk_id}
+                    className="group flex flex-col gap-3 px-5 py-4 transition hover:bg-slate-50 sm:flex-row sm:items-center"
+                  >
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
+                      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-rose-400/15 bg-rose-400/[0.05]">
+                        <AlertTriangle size={15} className="text-rose-300" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-semibold text-slate-900">
+                          {alert.title || `Risk #${alert.risk_id}`}
+                        </div>
+
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[9px] text-slate-500">
+                          <span>R-{alert.risk_id}</span>
+                          {alert.control_code && (
+                            <>
+                              <span>·</span>
+                              <span>{alert.control_code}</span>
+                            </>
+                          )}
+                          <span>·</span>
+                          <span>
+                            {alert.is_covered ? "Evidence covered" : "Uncovered"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-5 sm:min-w-[320px]">
+                      <SignalValue
+                        label="Probability"
+                        value={fmtPercent(alert.escalation_probability_30d)}
+                        className={probabilityTone(
+                          alert.escalation_probability_30d,
+                        )}
+                      />
+                      <SignalValue
+                        label="Unified"
+                        value={fmtNumber(alert.unified_score, 1)}
+                      />
+                      <SignalValue
+                        label="Δ Score"
+                        value={fmtNumber(alert.expected_score_delta, 2)}
+                        className={
+                          alert.expected_score_delta > 0
+                            ? "text-rose-300"
+                            : "text-emerald-300"
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card>
+  <CardHeader
+    eyebrow="MODEL POSTURE"
+    title="Forecast Composition"
+    description="Distribution of forecasted risks by prediction method."
+  />
+
+  <div className="p-5">
+    <div className="grid grid-cols-3 gap-3">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">
+          Forecasted
         </div>
-      ))}
+        <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+          {fmtNumber(summary?.forecast_coverage)}
+        </div>
+        <div className="mt-1 text-[10px] text-slate-500">
+          risks with forecast
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-3">
+        <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">
+          ML
+        </div>
+        <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+          {fmtNumber(summary?.ml_forecast_risks)}
+        </div>
+        <div className="mt-1 text-[10px] text-slate-500">
+          machine learning
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-3">
+        <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">
+          Baseline
+        </div>
+        <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+          {fmtNumber(summary?.baseline_forecast_risks)}
+        </div>
+        <div className="mt-1 text-[10px] text-slate-500">
+          baseline forecast
+        </div>
+      </div>
+    </div>
+
+    <div className="mt-5">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium text-slate-600">
+          Forecast coverage
+        </span>
+        <span className="text-xs font-semibold text-slate-900">
+          {fmtNumber(forecastCoverage)}%
+        </span>
+      </div>
+
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-emerald-600 transition-all"
+          style={{
+            width: `${Math.max(
+              0,
+              Math.min(100, Number(forecastCoverage)),
+            )}%`,
+          }}
+        />
+      </div>
+    </div>
+
+    <div className="mt-4">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-xs font-medium text-slate-600">
+          Evidence coverage
+        </span>
+        <span className="text-xs font-semibold text-slate-900">
+          {fmtNumber(evidenceCoverage)}%
+        </span>
+      </div>
+
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-slate-500 transition-all"
+          style={{
+            width: `${Math.max(
+              0,
+              Math.min(100, Number(evidenceCoverage)),
+            )}%`,
+          }}
+        />
+      </div>
+    </div>
+
+    <div className="mt-5 border-t border-slate-200 pt-4">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-slate-500">
+          Predictive posture
+        </span>
+        <span className="font-semibold text-slate-700">
+          {summary?.ml_forecast_risks
+            ? "ML-assisted"
+            : summary?.baseline_forecast_risks
+              ? "Baseline"
+              : "No forecast"}
+        </span>
+      </div>
+    </div>
+  </div>
+</Card>
+        </section>
+
+        <section className="mt-4">
+          <Card>
+            <CardHeader
+              eyebrow="PREDICTIVE RISK"
+              title="Escalation Watchlist"
+              description="Risks ranked by forward-looking escalation probability and expected score movement."
+            />
+
+            {overview.top_risks.length === 0 ? (
+              <EmptyState message="No forecasted risks are available." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1050px]">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-[9px] uppercase tracking-[0.12em] text-slate-500">
+                      <th className="px-5 py-3 font-medium">Risk</th>
+                      <th className="px-3 py-3 font-medium">Level</th>
+                      <th className="px-3 py-3 font-medium">Current</th>
+                      <th className="px-3 py-3 font-medium">30d Probability</th>
+                      <th className="px-3 py-3 font-medium">Unified</th>
+                      <th className="px-3 py-3 font-medium">Evidence</th>
+                      <th className="px-3 py-3 font-medium">Forecast</th>
+                      <th className="px-5 py-3 font-medium">Control</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-200">
+                    {overview.top_risks.slice(0, 12).map((risk) => (
+                      <tr
+                        key={risk.risk_id}
+                        className="transition hover:bg-slate-50"
+                      >
+                        <td className="max-w-[280px] px-5 py-3.5">
+                          <div className="truncate text-xs font-semibold text-slate-700">
+                            {risk.title || `Risk #${risk.risk_id}`}
+                          </div>
+                          <div className="mt-1 text-[9px] text-slate-500">
+                            R-{risk.risk_id}
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-3.5">
+                          <span
+                            className={`rounded-md border px-2 py-1 text-[9px] font-semibold uppercase ${riskTone(
+                              risk.risk_level,
+                            )}`}
+                          >
+                            {risk.risk_level || "—"}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3.5 text-xs text-slate-500">
+                          {fmtNumber(risk.current_score)}
+                        </td>
+
+                        <td className="px-3 py-3.5">
+                          <div
+                            className={`text-xs font-semibold ${probabilityTone(
+                              risk.escalation_probability_30d,
+                            )}`}
+                          >
+                            {fmtPercent(risk.escalation_probability_30d)}
+                          </div>
+                          <div className="mt-1 text-[9px] text-slate-500">
+                            Δ {fmtNumber(risk.expected_score_delta, 2)}
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-3.5 text-xs font-semibold text-slate-700">
+                          {fmtNumber(risk.unified_score, 1)}
+                        </td>
+
+                        <td className="px-3 py-3.5">
+                          <div className="text-xs text-slate-500">
+                            {fmtPercent(risk.evidence_quality)}
+                          </div>
+                          <div className="mt-1 text-[9px] text-slate-500">
+                            {risk.approved_evidence_count}/
+                            {risk.linked_evidence_count} approved
+                          </div>
+                        </td>
+
+                        <td className="px-3 py-3.5">
+                          <div className="text-[10px] text-slate-500">
+                            {titleCase(risk.forecast_mode)}
+                          </div>
+                          <div className="mt-1 text-[9px] text-slate-500">
+                            {titleCase(risk.forecast_status)}
+                          </div>
+                        </td>
+
+                        <td className="px-5 py-3.5">
+                          {risk.control_id ? (
+                            <button
+                              onClick={() => void openControl(risk.control_id!)}
+                              className="group inline-flex max-w-[190px] items-center gap-1.5 text-left text-[10px] text-emerald-600 hover:text-emerald-700"
+                            >
+                              <span className="truncate">
+                                {risk.control_code ||
+                                  risk.control_title ||
+                                  `Control #${risk.control_id}`}
+                              </span>
+                              <ChevronRight
+                                size={12}
+                                className="shrink-0 transition group-hover:translate-x-0.5"
+                              />
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-500">
+                              Unlinked
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </section>
+
+        <section className="mt-4 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <Card>
+            <CardHeader
+              eyebrow="CONTROL POSTURE"
+              title="AI Priority Controls"
+              description="Controls carrying the highest predictive risk pressure."
+            />
+
+            {overview.top_controls.length === 0 ? (
+              <EmptyState message="No control intelligence is available." />
+            ) : (
+              <div className="divide-y divide-slate-200">
+                {overview.top_controls.slice(0, 8).map((control, index) => (
+                  <button
+                    key={control.control_id}
+                    onClick={() => void openControl(control.control_id)}
+                    className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-white/[0.02]"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white/[0.025] text-[10px] font-semibold text-slate-500">
+                      {String(index + 1).padStart(2, "0")}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-semibold text-slate-700">
+                        {control.control_code ||
+                          control.control_title ||
+                          `Control #${control.control_id}`}
+                      </div>
+
+                      <div className="mt-1 text-[9px] text-slate-500">
+                        {control.risk_count} linked risks ·{" "}
+                        {control.uncovered_risk_count} uncovered
+                      </div>
+                    </div>
+
+                    <div className="hidden text-right sm:block">
+                      <div className="text-[9px] uppercase tracking-wider text-slate-500">
+                        Priority
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900">
+                        {fmtNumber(control.ai_priority_score, 1)}
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="text-[9px] uppercase tracking-wider text-slate-500">
+                        Escalation
+                      </div>
+                      <div
+                        className={`mt-1 text-xs font-semibold ${probabilityTone(
+                          control.avg_escalation_probability,
+                        )}`}
+                      >
+                        {fmtPercent(control.avg_escalation_probability)}
+                      </div>
+                    </div>
+
+                    <ChevronRight
+                      size={15}
+                      className="shrink-0 text-slate-700"
+                    />
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              eyebrow="RISK VELOCITY"
+              title="Escalation Probability Distribution"
+              description="Distribution of forecasted 30-day escalation probability."
+            />
+
+            <div className="h-[330px] p-4">
+              {escalation.length === 0 ? (
+                <EmptyState message="No escalation distribution data." />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={escalation}>
+                    <CartesianGrid
+                      vertical={false}
+                      stroke="rgba(148,163,184,0.07)"
+                    />
+                    <XAxis
+                      dataKey="probability_bucket"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#64748b", fontSize: 9 }}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#64748b", fontSize: 9 }}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: "#07111d",
+                        border: "1px solid rgba(148,163,184,.12)",
+                        borderRadius: 8,
+                        fontSize: 10,
+                      }}
+                    />
+                    <Bar
+                      dataKey="risk_count"
+                      fill="#22d3ee"
+                      radius={[5, 5, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </Card>
+        </section>
+
+        <section className="mt-4">
+          <Card>
+            <CardHeader
+              eyebrow="EXPOSURE INTELLIGENCE"
+              title="Exposure × Coverage Matrix"
+              description="Risk exposure posture against evidence/control coverage."
+            />
+
+            {exposure.length === 0 ? (
+              <EmptyState message="No exposure coverage data is available." />
+            ) : (
+              <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {exposure.map((cell, index) => (
+                  <div
+                    key={`${cell.risk_bucket}-${cell.coverage_bucket}-${index}`}
+                    className="rounded-xl border border-slate-200 bg-white/[0.018] p-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[9px] uppercase tracking-[0.14em] text-slate-500">
+                        Risk bucket
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-500">
+                        {cell.risk_bucket}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <span className="text-[9px] uppercase tracking-[0.14em] text-slate-500">
+                        Coverage
+                      </span>
+                      <span className="text-[10px] font-semibold text-emerald-600">
+                        {cell.coverage_bucket}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 text-2xl font-semibold text-slate-900">
+                      {fmtNumber(cell.risk_count)}
+                    </div>
+
+                    <div className="mt-1 text-[9px] text-slate-500">
+                      risks in segment
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </section>
+
+        {selectedControl && (
+          <div className="fixed inset-0 z-50">
+            <button
+              aria-label="Close control health"
+              className="absolute inset-0 bg-black/60 backdrop-blur-[2px]"
+              onClick={() => {
+                setSelectedControl(null);
+                setControlHealth(null);
+              }}
+            />
+
+            <aside className="absolute right-0 top-0 h-full w-full max-w-[620px] overflow-y-auto border-l border-slate-200 bg-white shadow-2xl">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+                <div>
+                  <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-emerald-600/70">
+                    CONTROL INTELLIGENCE
+                  </div>
+                  <h2 className="mt-1 text-lg font-semibold text-slate-900">
+                    {controlHealth?.control.control_code ||
+                      controlHealth?.control.control_title ||
+                      `Control #${selectedControl}`}
+                  </h2>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setSelectedControl(null);
+                    setControlHealth(null);
+                  }}
+                  className="rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+
+              {!controlHealth ? (
+                <div className="flex min-h-[400px] items-center justify-center text-xs text-slate-500">
+                  Loading control intelligence…
+                </div>
+              ) : (
+                <div className="space-y-4 p-5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Metric
+                      label="Linked Risks"
+                      value={fmtNumber(
+                        controlHealth.metrics.risk_count,
+                      )}
+                      icon={<Layers3 size={15} />}
+                    />
+                    <Metric
+                      label="Critical"
+                      value={fmtNumber(
+                        controlHealth.risks.filter(
+                          (risk) => risk.risk_level === "CRITICAL",
+                        ).length,
+                      )}
+                      icon={<ShieldAlert size={15} />}
+                      tone="red"
+                    />
+                    <Metric
+                      label="High"
+                      value={fmtNumber(
+                        controlHealth.risks.filter(
+                          (risk) => risk.risk_level === "HIGH",
+                        ).length,
+                      )}
+                      icon={<AlertTriangle size={15} />}
+                      tone="amber"
+                    />
+                    <Metric
+                      label="Avg Escalation"
+                      value={fmtPercent(
+                        controlHealth.risks.length
+                          ? controlHealth.risks.reduce(
+                              (sum, risk) =>
+                                sum +
+                                Number(
+                                  risk.escalation_probability_30d || 0,
+                                ),
+                              0,
+                            ) / controlHealth.risks.length
+                          : 0,
+                      )}
+                      icon={<Target size={15} />}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <Metric
+                      label="Health Index"
+                      value={fmtNumber(
+                        controlHealth.health.health_index,
+                        2,
+                      )}
+                      icon={<Activity size={15} />}
+                    />
+                    <Metric
+                      label="Evidence"
+                      value={fmtNumber(
+                        controlHealth.metrics.evidence_count,
+                      )}
+                      icon={<FileCheck2 size={15} />}
+                    />
+                    <Metric
+                      label="Approved Evidence"
+                      value={fmtNumber(
+                        controlHealth.metrics.approved_evidence_count,
+                      )}
+                      icon={<BadgeCheck size={15} />}
+                    />
+                    <Metric
+                      label="Open Tasks"
+                      value={fmtNumber(
+                        controlHealth.metrics.open_task_count,
+                      )}
+                      icon={<ClipboardCheck size={15} />}
+                    />
+                  </div>
+
+
+
+                  <Card>
+                    <CardHeader
+                      eyebrow="PRIORITY RISKS"
+                      title="Top Risks"
+                    />
+
+                    <div className="divide-y divide-slate-200">
+                      {controlHealth.risks.length === 0 ? (
+                        <EmptyState message="No linked forecast risks." />
+                      ) : (
+                        controlHealth.risks.slice(0, 8).map((risk) => (
+                          <div
+                            key={risk.id}
+                            className="flex items-center gap-3 px-5 py-3"
+                          >
+                            <CircleDot
+                              size={13}
+                              className="shrink-0 text-emerald-600"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-[11px] font-semibold text-slate-700">
+                                {risk.title || `Risk #${risk.id}`}
+                              </div>
+                              <div className="mt-1 text-[9px] text-slate-500">
+                                Score {fmtNumber(risk.score)} ·{" "}
+                                {titleCase(risk.risk_level)}
+                              </div>
+                            </div>
+                            <div
+                              className={`text-xs font-semibold ${probabilityTone(
+                                Number(risk.escalation_probability_30d || 0),
+                              )}`}
+                            >
+                              {fmtPercent(risk.escalation_probability_30d)}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </Card>
+
+                </div>
+              )}
+            </aside>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SignalValue({
+  label,
+  value,
+  className = "text-slate-700",
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className="text-right">
+      <div className="text-[8px] uppercase tracking-[0.14em] text-slate-500">
+        {label}
+      </div>
+      <div className={`mt-1 text-xs font-semibold ${className}`}>{value}</div>
     </div>
   );
 }

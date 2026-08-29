@@ -18,6 +18,32 @@ from app.models.user import User
 SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_THIS_SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+# -------------------------------------------------------------------
+# IDENTITY / NOTIFICATION CONFIG
+# -------------------------------------------------------------------
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "resend")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+EMAIL_FROM_NAME = os.getenv(
+    "EMAIL_FROM_NAME",
+    "Compliance Intelligence OS",
+)
+
+SMS_PROVIDER = os.getenv("SMS_PROVIDER", "twilio")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER", "")
+
+MFA_ISSUER = os.getenv(
+    "MFA_ISSUER",
+    "Compliance Intelligence OS",
+)
+
+VERIFICATION_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv(
+        "VERIFICATION_TOKEN_EXPIRE_MINUTES",
+        "30",
+    )
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -113,3 +139,12 @@ def require_roles(*allowed_roles: str):
         return user
 
     return _checker
+
+
+# -------------------------------------------------------------------
+# IDENTITY VERIFICATION
+# -------------------------------------------------------------------
+FRONTEND_BASE_URL = os.getenv(
+    "FRONTEND_BASE_URL",
+    "http://localhost:3000",
+).rstrip("/")

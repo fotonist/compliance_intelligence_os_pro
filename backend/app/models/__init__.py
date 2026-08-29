@@ -80,6 +80,9 @@ from app.models.governance_document_history import GovernanceDocumentHistory
 
 
 
+# --- Benchmarking ---
+from app.models.benchmark_snapshot import BenchmarkSnapshot
+
 # --- Decision Register ---
 from app.models.decision_register import DecisionRegister
 from app.models.decision_register_history import DecisionRegisterHistory

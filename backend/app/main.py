@@ -1,4 +1,4 @@
-﻿import os
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -70,6 +70,11 @@ from app.routes.department import router as department_router
 from app.routes.governance import router as governance_router
 from app.routes.decision_register import router as decision_register_router
 from app.routes.admin_tenants import router as admin_tenants_router
+from app.routes.admin_users import router as admin_users_router
+from app.routes.identity_verification import router as identity_verification_router
+from app.routes.governance_meeting import router as governance_meeting_router
+from app.routes.benchmarking import router as benchmarking_router
+
 
 # ==============================
 # MODELS (metadata load safety)
@@ -110,7 +115,7 @@ from app.seed.iso15504_2006 import seed_iso15504_2006
 # ==============================
 
 application = FastAPI()
-# app = application
+app = application
 
 # ==============================
 # CORS
@@ -193,6 +198,8 @@ application.include_router(department_router)
 application.include_router(governance_router)
 application.include_router(decision_register_router)
 application.include_router(admin_tenants_router)
+application.include_router(admin_users_router)
+application.include_router(identity_verification_router)
 application.include_router(process_risk_router)
 application.include_router(coverage_router)
 application.include_router(readiness.router)
@@ -220,6 +227,9 @@ application.include_router(audit_finding_workflow_router)
 application.include_router(audit_findings_router)
 application.include_router(audit_router)
 application.include_router(actions_router)
+application.include_router(governance_meeting_router)
+application.include_router(benchmarking_router)
+
 
 @application.get("/")
 def health():
@@ -240,3 +250,14 @@ def intelligence_health():
 
 import app.models.governance_procedure
 
+
+
+
+
+
+import app.models.governance_meeting
+import app.models.governance_meeting_participant
+import app.models.governance_meeting_agenda_item
+import app.models.governance_meeting_decision
+import app.models.governance_meeting_action
+import app.models.governance_meeting_history

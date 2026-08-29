@@ -29,6 +29,11 @@ def login_for_access_token(
             detail="Incorrect email or password",
         )
 
+    if user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email address must be verified before signing in.",
+        )
     access_token = create_access_token(
         user=user,
         expires_delta=timedelta(

@@ -87,6 +87,16 @@ class User(Base):
 
     phone = Column(String(50))
 
+
+    email_verified_at = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    phone_verified_at = Column(
+        DateTime,
+        nullable=True,
+    )
     language = Column(
         String(20),
         default="en",

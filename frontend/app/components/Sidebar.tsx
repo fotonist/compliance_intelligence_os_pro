@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import {
+import { BrainCircuit,
   Activity,
   AlertTriangle,
   BarChart3,
@@ -205,7 +205,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex min-h-screen shrink-0 flex-col border-r border-slate-200 bg-white px-2 py-4 text-slate-700 transition-[width] duration-200 ${
+      className={`flex h-screen shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white px-2 py-4 text-slate-700 transition-[width] duration-200 ${
         collapsed ? "w-16" : "w-64"
       }`}
     >
@@ -289,7 +289,7 @@ export default function Sidebar() {
           {!collapsed && "Company Home"}
         </Link>
 
-        <nav className="space-y-1">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           <Section
             title="FOUNDATION"
             subtitle="Company Foundation"
@@ -493,12 +493,30 @@ export default function Sidebar() {
               className={itemClass("/intelligence")}
             >
               <BarChart3 size={14} />
-              Compliance Analytics
+              Matrix Intelligence
             </Link>
 
-            <PremiumMenuItem label="Trend Analysis" />
-            <PremiumMenuItem label="Predictive Insights" />
-            <PremiumMenuItem label="Benchmarking" />
+            <Link
+  href="/trends"
+  className={itemClass("/trends")}
+>
+  <TrendingUp size={14} />
+  Trend Analysis
+</Link>
+            <Link
+              href="/intelligence/predictive"
+              className={itemClass("/intelligence/predictive")}
+            >
+              <BrainCircuit size={14} />
+              Predictive Insights
+            </Link>
+            <Link
+  href="/intelligence/benchmarking"
+  className={itemClass("/intelligence/benchmarking")}
+>
+  <BarChart3 size={14} />
+  Benchmarking
+</Link>
 
             <Link
               href="/dashboard"

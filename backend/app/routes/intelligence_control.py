@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.dependencies.permission_checker import require_permission
+from app.dependencies.scope_checker import require_tenant_scope
 from app.db.session import get_db
 from app.models.user import User
 
@@ -40,13 +41,22 @@ def _risk_level_rank(level: str | None) -> int:
 def get_control_health(
     control_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_permission("risk.intelligence.view")),
+    scope=Depends(require_tenant_scope()),
 ):
     tenant_id = user.tenant_id
+    control = db.execute(
+        select(Control).where(
+            Control.id == control_id,
+            Control.tenant_id == tenant_id,
+        )
+    ).scalar_one_or_none()
 
-    control = db.get(Control, control_id)
     if not control:
-        raise HTTPException(status_code=404, detail="Control not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Control not found",
+        )
 
     # -----------------------------
     # Risks linked to this control

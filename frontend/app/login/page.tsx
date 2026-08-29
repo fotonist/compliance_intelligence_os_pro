@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Image from "next/image";
 import { useState } from "react";
@@ -33,7 +33,26 @@ export default function LoginPage() {
         body,
       });
 
-      if (!res.ok) throw new Error("Login failed");
+      if (!res.ok) {
+        let detail = "Authentication failed. Please check your credentials.";
+
+        try {
+          const errorBody = await res.json();
+
+          if (
+            typeof errorBody === "object" &&
+            errorBody !== null &&
+            "detail" in errorBody &&
+            typeof errorBody.detail === "string"
+          ) {
+            detail = errorBody.detail;
+          }
+        } catch {
+          // Keep the generic authentication message.
+        }
+
+        throw new Error(detail);
+      }
 
       const data = await res.json();
 
@@ -44,7 +63,11 @@ export default function LoginPage() {
       router.replace("/dashboard");
     } catch (err) {
       console.error(err);
-      setError("Authentication failed. Please check your credentials.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Authentication failed. Please check your credentials."
+      );
     } finally {
       setLoading(false);
     }

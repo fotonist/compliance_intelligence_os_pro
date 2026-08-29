@@ -10,6 +10,7 @@ from pydantic import (
 )
 
 from app.schemas.role import Role as RoleRead
+from app.core.validation import validate_password_strength
 
 
 # ==========================================================
@@ -95,6 +96,11 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_strength(value)
+
     phone: Optional[str] = None
 
     language: Optional[str] = "en"
@@ -147,9 +153,19 @@ class PasswordChangeRequest(BaseModel):
 
     new_password: str
 
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_strength(value)
+
 
 class PasswordResetRequest(BaseModel):
     new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_strength(value)
 
     must_change_password: bool = True
 

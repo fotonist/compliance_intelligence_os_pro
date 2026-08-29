@@ -38,3 +38,9 @@ httpx==0.27.2
 # --- Optional (logging & prod safety) ---
 loguru==0.7.2
 
+
+# Identity Verification & MFA
+PyOTP==2.10.0
+qrcode==8.2
+resend==2.42.0
+twilio==9.11.0

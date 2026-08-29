@@ -35,3 +35,48 @@ test_*.txt
 sidebar_full.txt
 process_detail_github.tsx
 processes_github.py
+
+# Environment / secrets
+.env
+*.env
+backend/.env
+frontend/.env
+frontend/.env.local
+
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local backups / temporary copies
+*.bak
+*.bak2
+*.backup
+*Kopya*
+*backup*
+*pre_enterprise*
+*enterprise-backup*
+*enterprise-base*
+
+# Local frontend backups
+frontend_backup_*/
+
+# Build artifacts
+.next/
+out/
+dist/
+
+# Environment / secrets
+.env
+*.env
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# Local backup / temporary files
+*.bak
+*.bak_*
+*.backup
+*backup*
+*Kopya*

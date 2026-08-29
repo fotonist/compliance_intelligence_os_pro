@@ -39,6 +39,7 @@ from app.schemas.user import (
 )
 
 from app.schemas.role import Role as RoleRead
+from app.core.security import get_password_hash, verify_password
 
 from app.dependencies.permission_checker import require_permission
 from app.dependencies.scope_checker import require_tenant_scope
@@ -184,11 +185,9 @@ def create_user(
             status_code=409,
             detail="Email already exists",
         )
-
-    # TODO
-    # bcrypt.hashpw(...)
-    hashed_password = payload.password
-
+    hashed_password = get_password_hash(
+        payload.password
+    )
     user = User(
         tenant_id=current_user.tenant_id,
 
@@ -450,7 +449,7 @@ def reset_password(
     # TODO
     # user.hashed_password = hash_password(payload.new_password)
 
-    user.hashed_password = payload.new_password
+    user.hashed_password = get_password_hash(payload.new_password)
 
     user.must_change_password = (
         payload.must_change_password
@@ -486,13 +485,22 @@ def change_password(
     scope=Depends(require_tenant_scope()),
 ):
 
-    # TODO
-    # verify_password()
+    if not verify_password(
+        payload.current_password,
+        current_user.hashed_password,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
 
-    current_user.hashed_password = payload.new_password
+    current_user.hashed_password = get_password_hash(
+        payload.new_password
+    )
     current_user.must_change_password = False
     current_user.password_last_changed = func.now()
     current_user.updated_by = current_user.id
+
 
     db.commit()
 
@@ -553,14 +561,14 @@ def update_user_roles(
     print("========== DEBUG ==========")
     print("payload.role_ids =", payload.role_ids)
 
-    # Kullanıcı kontrolü
+    # KullanÄ±cÄ± kontrolÃ¼
     user = get_user_or_404(
         db=db,
         tenant_id=current_user.tenant_id,
         user_id=user_id,
     )
 
-    # İstenen rolleri getir
+    # Ä°stenen rolleri getir
     roles = (
         db.query(Role)
         .filter(Role.id.in_(payload.role_ids))
@@ -570,7 +578,7 @@ def update_user_roles(
     print("roles found =", [(r.id, r.name) for r in roles])
     print("===========================")
 
-    # Geçersiz role id var mı?
+    # GeÃ§ersiz role id var mÄ±?
     if len(roles) != len(payload.role_ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -595,7 +603,7 @@ def update_user_roles(
 
     db.commit()
 
-    # Güncel rol listesini döndür
+    # GÃ¼ncel rol listesini dÃ¶ndÃ¼r
     updated_roles = (
         db.query(Role)
         .join(UserRole, UserRole.role_id == Role.id)
