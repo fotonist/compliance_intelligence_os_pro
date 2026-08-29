@@ -205,7 +205,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`flex h-screen shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white px-2 py-4 text-slate-700 transition-[width] duration-200 ${
+      className={`flex h-screen min-h-0 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white px-2 py-4 text-slate-700 transition-[width] duration-200 ${
         collapsed ? "w-16" : "w-64"
       }`}
     >
@@ -289,7 +289,7 @@ export default function Sidebar() {
           {!collapsed && "Company Home"}
         </Link>
 
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           <Section
             title="FOUNDATION"
             subtitle="Company Foundation"
