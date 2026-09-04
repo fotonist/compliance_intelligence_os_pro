@@ -19,7 +19,7 @@ from app.models.clause_weight_override import ClauseWeightOverride
 from .audit_scope_entities import AuditScopeEntity
 from .audit_evidence_snapshots import AuditEvidenceSnapshot
 from .audit_risk_snapshots import AuditRiskSnapshot
-from .audit_findings import AuditFinding
+from app.models.audit_findings import AuditFinding
 
 # --- Tenants ---
 from .tenants import Tenant
@@ -78,13 +78,9 @@ from app.models.governance_procedure import GovernanceProcedure
 from app.models.governance_procedure_document import GovernanceProcedureDocument
 from app.models.governance_document_history import GovernanceDocumentHistory
 
-
-
-
-
-
 # --- Benchmarking ---
 from app.models.benchmark_snapshot import BenchmarkSnapshot
+from app.models.peer_population import PeerPopulation
 
 # --- Decision Register ---
 from app.models.decision_register import DecisionRegister
