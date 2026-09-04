@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -24,22 +24,17 @@ type Snapshot = {
   snapshot_at: string;
   period_start: string | null;
   period_end: string | null;
-
   uee_score: number;
   compliance_health_index: number;
-
   risk_index: number;
   coverage_index: number;
   maturity_index: number;
   evidence_index: number;
   task_pressure_index: number;
-
   risk_count: number;
   control_count: number;
   evidence_count: number;
-
   data_quality_score: number | null;
-
   source: string;
   engine_version: string | null;
 };
@@ -63,6 +58,29 @@ type Summary = {
   historical_snapshot_count: number;
   peer_benchmark_available: boolean;
   peer_benchmark_reason: string | null;
+};
+
+type PeerMetric = {
+  metric: string;
+  company_value: number;
+  benchmark_value: number;
+  percentile: number;
+  gap: number;
+  population_size: number;
+  scope: string;
+  period: string;
+  calculated_at: string;
+  source: string;
+};
+
+type PeerBenchmark = {
+  available: boolean;
+  reason: string | null;
+  population_key: string | null;
+  peer_count: number;
+  snapshot_count: number;
+  current_snapshot_at: string | null;
+  metrics: PeerMetric[];
 };
 
 const componentMeta = [
@@ -98,16 +116,26 @@ const componentMeta = [
   },
 ] as const;
 
+const peerMetricMeta: Record<string, string> = {
+  uee_score: "UEE Score",
+  compliance_health_index: "Compliance Health",
+  risk_index: "Risk Exposure",
+  coverage_index: "Control Coverage",
+  maturity_index: "Maturity Exposure",
+  evidence_index: "Evidence Exposure",
+  task_pressure_index: "Task Pressure",
+};
+
 function formatNumber(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
+    return "-";
   }
 
   return value.toFixed(digits);
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
+  if (!value) return "-";
 
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
@@ -141,30 +169,17 @@ function directionLabel(direction: Comparison["direction"]) {
   }
 }
 
-function DirectionIcon({
-  direction,
-}: {
-  direction: Comparison["direction"];
-}) {
-  if (direction === "improved") {
-    return <TrendingDown size={15} />;
-  }
-
-  if (direction === "deteriorated") {
-    return <TrendingUp size={15} />;
-  }
-
-  if (direction === "unchanged") {
-    return <Activity size={15} />;
-  }
-
+function DirectionIcon({ direction }: { direction: Comparison["direction"] }) {
+  if (direction === "improved") return <TrendingDown size={15} />;
+  if (direction === "deteriorated") return <TrendingUp size={15} />;
+  if (direction === "unchanged") return <Activity size={15} />;
   return <Info size={15} />;
 }
 
 export default function BenchmarkingPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [history, setHistory] = useState<Snapshot[]>([]);
-
+  const [peer, setPeer] = useState<PeerBenchmark | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [capturing, setCapturing] = useState(false);
@@ -174,35 +189,35 @@ export default function BenchmarkingPage() {
     try {
       setError(null);
 
-      const [summaryRes, historyRes] = await Promise.all([
+      const [summaryRes, historyRes, peerRes] = await Promise.all([
         apiFetch("/benchmarking/summary"),
         apiFetch("/benchmarking/history?limit=30"),
+        apiFetch("/benchmarking/peer"),
       ]);
 
       if (!summaryRes.ok) {
-        throw new Error(
-          `Benchmark summary failed (${summaryRes.status})`
-        );
+        throw new Error(`Benchmark summary failed (${summaryRes.status})`);
       }
 
       if (!historyRes.ok) {
-        throw new Error(
-          `Benchmark history failed (${historyRes.status})`
-        );
+        throw new Error(`Benchmark history failed (${historyRes.status})`);
+      }
+
+      if (!peerRes.ok) {
+        throw new Error(`Peer benchmark failed (${peerRes.status})`);
       }
 
       const summaryJson = await summaryRes.json();
       const historyJson = await historyRes.json();
+      const peerJson = await peerRes.json();
 
       setSummary(summaryJson);
       setHistory(Array.isArray(historyJson) ? historyJson : []);
+      setPeer(peerJson);
     } catch (err) {
       console.error(err);
-
       setError(
-        err instanceof Error
-          ? err.message
-          : "Benchmarking could not be loaded."
+        err instanceof Error ? err.message : "Benchmarking could not be loaded."
       );
     } finally {
       setLoading(false);
@@ -230,16 +245,12 @@ export default function BenchmarkingPage() {
 
       if (!response.ok) {
         const text = await response.text();
-
-        throw new Error(
-          text || `Snapshot capture failed (${response.status})`
-        );
+        throw new Error(text || `Snapshot capture failed (${response.status})`);
       }
 
       await loadData();
     } catch (err) {
       console.error(err);
-
       setError(
         err instanceof Error
           ? err.message
@@ -262,6 +273,8 @@ export default function BenchmarkingPage() {
     }));
   }, [latest]);
 
+  const peerMetrics = peer?.metrics ?? [];
+
   if (loading) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center">
@@ -281,14 +294,11 @@ export default function BenchmarkingPage() {
             <BarChart3 size={15} />
             Intelligence / Benchmarking
           </div>
-
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
             Enterprise Benchmarking
           </h1>
-
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-            Historical performance benchmarking based on persisted,
-            tenant-scoped UEE observations.
+            Historical and peer benchmarking based on persisted, tenant-scoped UEE observations.
           </p>
         </div>
 
@@ -299,13 +309,9 @@ export default function BenchmarkingPage() {
             disabled={refreshing}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
           >
-            <RefreshCw
-              size={15}
-              className={refreshing ? "animate-spin" : ""}
-            />
+            <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
             Refresh
           </button>
-
           <button
             type="button"
             onClick={captureSnapshot}
@@ -330,20 +336,13 @@ export default function BenchmarkingPage() {
 
       {!latest ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-          <History
-            size={30}
-            className="mx-auto text-slate-400"
-          />
-
+          <History size={30} className="mx-auto text-slate-400" />
           <h2 className="mt-4 text-lg font-semibold text-slate-900">
             No benchmark snapshot available
           </h2>
-
           <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-slate-500">
-            Capture the first UEE snapshot to establish the tenant's
-            benchmark baseline.
+            Capture the first UEE snapshot to establish the tenant benchmark baseline.
           </p>
-
           <button
             type="button"
             onClick={captureSnapshot}
@@ -362,19 +361,17 @@ export default function BenchmarkingPage() {
               subtitle={exposureLabel(latest.uee_score)}
               icon={<ShieldAlert size={18} />}
             />
-
             <MetricCard
               title="Compliance Health"
               value={`${formatNumber(latest.compliance_health_index)}/100`}
               subtitle={healthLabel(latest.compliance_health_index)}
               icon={<ShieldCheck size={18} />}
             />
-
             <MetricCard
               title="Data Quality"
               value={
                 latest.data_quality_score === null
-                  ? "—"
+                  ? "-"
                   : formatNumber(latest.data_quality_score)
               }
               subtitle={
@@ -384,12 +381,9 @@ export default function BenchmarkingPage() {
               }
               icon={<Database size={18} />}
             />
-
             <MetricCard
               title="Historical Snapshots"
-              value={String(
-                summary?.historical_snapshot_count ?? 0
-              )}
+              value={String(summary?.historical_snapshot_count ?? 0)}
               subtitle={
                 summary?.historical_snapshot_count === 1
                   ? "Baseline established"
@@ -404,22 +398,14 @@ export default function BenchmarkingPage() {
               <div className="border-b border-slate-100 px-5 py-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <h2 className="font-semibold text-slate-900">
-                      UEE Component Benchmark
-                    </h2>
+                    <h2 className="font-semibold text-slate-900">UEE Component Benchmark</h2>
                     <p className="mt-1 text-xs text-slate-500">
-                      All component values use the UEE exposure convention:
-                      0 = best, 100 = worst.
+                      All component values use the UEE exposure convention: 0 = best, 100 = worst.
                     </p>
                   </div>
-
                   <div className="rounded-lg bg-slate-50 px-3 py-2 text-right">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      Engine
-                    </div>
-                    <div className="mt-0.5 text-xs font-semibold text-slate-700">
-                      {latest.engine_version ?? "—"}
-                    </div>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Engine</div>
+                    <div className="mt-0.5 text-xs font-semibold text-slate-700">{latest.engine_version ?? "-"}</div>
                   </div>
                 </div>
               </div>
@@ -427,51 +413,29 @@ export default function BenchmarkingPage() {
               <div className="divide-y divide-slate-100">
                 {componentRows.map((row) => {
                   const Icon = row.icon;
-
                   return (
-                    <div
-                      key={row.key}
-                      className="px-5 py-4"
-                    >
+                    <div key={row.key} className="px-5 py-4">
                       <div className="flex items-start gap-4">
-                        <div className="mt-0.5 rounded-lg bg-slate-100 p-2 text-slate-600">
-                          <Icon size={16} />
-                        </div>
-
+                        <div className="mt-0.5 rounded-lg bg-slate-100 p-2 text-slate-600"><Icon size={16} /></div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-4">
                             <div>
-                              <div className="text-sm font-semibold text-slate-800">
-                                {row.label}
-                              </div>
-                              <div className="mt-0.5 text-xs text-slate-500">
-                                {row.description}
-                              </div>
+                              <div className="text-sm font-semibold text-slate-800">{row.label}</div>
+                              <div className="mt-0.5 text-xs text-slate-500">{row.description}</div>
                             </div>
-
                             <div className="text-right">
-                              <div className="text-lg font-semibold text-slate-900">
-                                {formatNumber(row.value)}
-                              </div>
+                              <div className="text-lg font-semibold text-slate-900">{formatNumber(row.value)}</div>
                               <div className="text-[11px] font-medium text-slate-500">
-                                {row.key === "maturity_index" &&
-                                row.value === 0 &&
-                                history.length > 0
+                                {row.key === "maturity_index" && row.value === 0 && history.length > 0
                                   ? "Not assessed / no exposure"
                                   : exposureLabel(row.value)}
                               </div>
                             </div>
                           </div>
-
                           <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
                             <div
                               className="h-full rounded-full bg-slate-700 transition-all"
-                              style={{
-                                width: `${Math.max(
-                                  0,
-                                  Math.min(100, row.value)
-                                )}%`,
-                              }}
+                              style={{ width: `${Math.max(0, Math.min(100, row.value))}%` }}
                             />
                           </div>
                         </div>
@@ -484,69 +448,32 @@ export default function BenchmarkingPage() {
 
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
-                <h2 className="font-semibold text-slate-900">
-                  Current vs Previous
-                </h2>
-                <p className="mt-1 text-xs text-slate-500">
-                  Comparison is calculated only from persisted snapshots.
-                </p>
+                <h2 className="font-semibold text-slate-900">Current vs Previous</h2>
+                <p className="mt-1 text-xs text-slate-500">Comparison is calculated only from persisted snapshots.</p>
               </div>
-
               <div className="p-5">
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    UEE Score
-                  </div>
-
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">UEE Score</div>
                   <div className="mt-2 flex items-end justify-between gap-4">
-                    <div className="text-3xl font-semibold text-slate-900">
-                      {formatNumber(comparison?.current)}
-                    </div>
-
+                    <div className="text-3xl font-semibold text-slate-900">{formatNumber(comparison?.current)}</div>
                     {comparison && (
-                      <div
-                        className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${
-                          comparison.direction === "improved"
-                            ? "bg-emerald-50 text-emerald-700"
-                            : comparison.direction === "deteriorated"
-                              ? "bg-red-50 text-red-700"
-                              : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        <DirectionIcon
-                          direction={comparison.direction}
-                        />
+                      <div className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${comparison.direction === "improved" ? "bg-emerald-50 text-emerald-700" : comparison.direction === "deteriorated" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>
+                        <DirectionIcon direction={comparison.direction} />
                         {directionLabel(comparison.direction)}
                       </div>
                     )}
                   </div>
-
                   <div className="mt-4 grid grid-cols-2 gap-3">
-                    <SmallStat
-                      label="Previous"
-                      value={formatNumber(
-                        comparison?.previous
-                      )}
-                    />
-
-                    <SmallStat
-                      label="Delta"
-                      value={formatNumber(comparison?.delta)}
-                    />
+                    <SmallStat label="Previous" value={formatNumber(comparison?.previous)} />
+                    <SmallStat label="Delta" value={formatNumber(comparison?.delta)} />
                   </div>
                 </div>
-
                 {!comparison?.sufficient_data && (
                   <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-800">
                     <Info size={16} className="mt-0.5 shrink-0" />
                     <div>
-                      <div className="font-semibold">
-                        Historical comparison unavailable
-                      </div>
-                      <div className="mt-1">
-                        At least two persisted benchmark snapshots are
-                        required before a delta can be calculated.
-                      </div>
+                      <div className="font-semibold">Historical comparison unavailable</div>
+                      <div className="mt-1">At least two persisted benchmark snapshots are required before a delta can be calculated.</div>
                     </div>
                   </div>
                 )}
@@ -554,34 +481,77 @@ export default function BenchmarkingPage() {
             </div>
           </section>
 
-          <section className="grid gap-6 xl:grid-cols-[0.7fr_1.3fr]">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <h2 className="font-semibold text-slate-900">
-                  Peer Benchmark
-                </h2>
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="font-semibold text-slate-900">Peer Benchmark</h2>
+                  <p className="mt-1 text-xs text-slate-500">Peer values are derived from real persisted UEE snapshots in the same peer population.</p>
+                </div>
+                {peer?.available && (
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{peer.peer_count} peers</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{peer.population_key ?? "-"}</span>
+                  </div>
+                )}
               </div>
+            </div>
 
-              <div className="p-5">
+            <div className="p-5">
+              {!peer?.available ? (
                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5">
                   <div className="flex items-start gap-3">
-                    <BarChart3
-                      size={18}
-                      className="mt-0.5 text-slate-500"
-                    />
-
+                    <BarChart3 size={18} className="mt-0.5 text-slate-500" />
                     <div>
-                      <div className="text-sm font-semibold text-slate-800">
-                        Peer comparison unavailable
-                      </div>
-
-                      <p className="mt-1 text-xs leading-5 text-slate-500">
-                        {summary?.peer_benchmark_reason ??
-                          "No peer benchmark population is configured."}
-                      </p>
+                      <div className="text-sm font-semibold text-slate-800">Peer comparison unavailable</div>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">{peer?.reason ?? summary?.peer_benchmark_reason ?? "No peer benchmark data is available."}</p>
                     </div>
                   </div>
                 </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Metric</th>
+                        <th className="px-4 py-3 font-semibold text-right">Company</th>
+                        <th className="px-4 py-3 font-semibold text-right">Peer Median</th>
+                        <th className="px-4 py-3 font-semibold text-right">Gap</th>
+                        <th className="px-4 py-3 font-semibold text-right">Percentile</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {peerMetrics.map((metric) => (
+                        <tr key={metric.metric} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-slate-800">{peerMetricMeta[metric.metric] ?? metric.metric}</div>
+                            <div className="mt-0.5 text-[11px] text-slate-400">n={metric.population_size} | {metric.scope}</div>
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-800">{formatNumber(metric.company_value)}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{formatNumber(metric.benchmark_value)}</td>
+                          <td className="px-4 py-3 text-right text-slate-700">{formatNumber(metric.gap)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{formatNumber(metric.percentile)}%</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="grid gap-6 xl:grid-cols-[0.7fr_1.3fr]">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <h2 className="font-semibold text-slate-900">Peer Benchmark Traceability</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-px bg-slate-100">
+                <TraceItem label="Population" value={peer?.population_key ?? "-"} />
+                <TraceItem label="Peers" value={String(peer?.peer_count ?? 0)} />
+                <TraceItem label="Snapshots" value={String(peer?.snapshot_count ?? 0)} />
+                <TraceItem label="Current Snapshot" value={formatDate(peer?.current_snapshot_at)} />
               </div>
             </div>
 
@@ -589,95 +559,39 @@ export default function BenchmarkingPage() {
               <div className="border-b border-slate-100 px-5 py-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="font-semibold text-slate-900">
-                      Historical Observations
-                    </h2>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Latest persisted benchmark snapshots.
-                    </p>
+                    <h2 className="font-semibold text-slate-900">Historical Observations</h2>
+                    <p className="mt-1 text-xs text-slate-500">Latest persisted benchmark snapshots.</p>
                   </div>
-
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                    {history.length} loaded
-                  </span>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{history.length} loaded</span>
                 </div>
               </div>
-
               {history.length === 0 ? (
-                <div className="p-8 text-center text-sm text-slate-500">
-                  No historical observations available.
-                </div>
+                <div className="p-8 text-center text-sm text-slate-500">No historical observations available.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-400">
                       <tr>
-                        <th className="px-5 py-3 font-semibold">
-                          Snapshot
-                        </th>
-                        <th className="px-5 py-3 font-semibold">
-                          UEE
-                        </th>
-                        <th className="px-5 py-3 font-semibold">
-                          Health
-                        </th>
-                        <th className="px-5 py-3 font-semibold">
-                          Risk
-                        </th>
-                        <th className="px-5 py-3 font-semibold">
-                          Coverage
-                        </th>
-                        <th className="px-5 py-3 font-semibold">
-                          Quality
-                        </th>
+                        <th className="px-5 py-3 font-semibold">Snapshot</th>
+                        <th className="px-5 py-3 font-semibold">UEE</th>
+                        <th className="px-5 py-3 font-semibold">Health</th>
+                        <th className="px-5 py-3 font-semibold">Risk</th>
+                        <th className="px-5 py-3 font-semibold">Coverage</th>
+                        <th className="px-5 py-3 font-semibold">Quality</th>
                       </tr>
                     </thead>
-
                     <tbody className="divide-y divide-slate-100">
                       {history.map((snapshot) => (
-                        <tr
-                          key={snapshot.id}
-                          className="hover:bg-slate-50"
-                        >
+                        <tr key={snapshot.id} className="hover:bg-slate-50">
                           <td className="px-5 py-3">
-                            <div className="font-medium text-slate-800">
-                              #{snapshot.id}
-                            </div>
-                            <div className="mt-0.5 text-xs text-slate-400">
-                              {formatDate(
-                                snapshot.snapshot_at
-                              )}
-                            </div>
+                            <div className="font-medium text-slate-800">#{snapshot.id}</div>
+                            <div className="mt-0.5 text-xs text-slate-400">{formatDate(snapshot.snapshot_at)}</div>
                           </td>
-
-                          <td className="px-5 py-3 font-semibold text-slate-800">
-                            {formatNumber(snapshot.uee_score)}
-                          </td>
-
-                          <td className="px-5 py-3 text-slate-700">
-                            {formatNumber(
-                              snapshot.compliance_health_index
-                            )}
-                          </td>
-
-                          <td className="px-5 py-3 text-slate-700">
-                            {formatNumber(snapshot.risk_index)}
-                          </td>
-
-                          <td className="px-5 py-3 text-slate-700">
-                            {formatNumber(
-                              snapshot.coverage_index
-                            )}
-                          </td>
-
-                          <td className="px-5 py-3 text-slate-700">
-                            {snapshot.data_quality_score ===
-                            null
-                              ? "—"
-                              : formatNumber(
-                                  snapshot.data_quality_score
-                                )}
-                          </td>
+                          <td className="px-5 py-3 font-semibold text-slate-800">{formatNumber(snapshot.uee_score)}</td>
+                          <td className="px-5 py-3 text-slate-700">{formatNumber(snapshot.compliance_health_index)}</td>
+                          <td className="px-5 py-3 text-slate-700">{formatNumber(snapshot.risk_index)}</td>
+                          <td className="px-5 py-3 text-slate-700">{formatNumber(snapshot.coverage_index)}</td>
+                          <td className="px-5 py-3 text-slate-700">{snapshot.data_quality_score === null ? "-" : formatNumber(snapshot.data_quality_score)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -689,45 +603,16 @@ export default function BenchmarkingPage() {
 
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
-              <h2 className="font-semibold text-slate-900">
-                Benchmark Traceability
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Provenance and source-population information for the
-                current observation.
-              </p>
+              <h2 className="font-semibold text-slate-900">Benchmark Traceability</h2>
+              <p className="mt-1 text-xs text-slate-500">Provenance and source-population information for the current observation.</p>
             </div>
-
             <div className="grid gap-px bg-slate-100 md:grid-cols-3 lg:grid-cols-6">
-              <TraceItem
-                label="Snapshot"
-                value={formatDate(latest.snapshot_at)}
-              />
-
-              <TraceItem
-                label="Source"
-                value={latest.source}
-              />
-
-              <TraceItem
-                label="Engine"
-                value={latest.engine_version ?? "—"}
-              />
-
-              <TraceItem
-                label="Risks"
-                value={String(latest.risk_count)}
-              />
-
-              <TraceItem
-                label="Controls"
-                value={String(latest.control_count)}
-              />
-
-              <TraceItem
-                label="Evidence Files"
-                value={String(latest.evidence_count)}
-              />
+              <TraceItem label="Snapshot" value={formatDate(latest.snapshot_at)} />
+              <TraceItem label="Source" value={latest.source} />
+              <TraceItem label="Engine" value={latest.engine_version ?? "-"} />
+              <TraceItem label="Risks" value={String(latest.risk_count)} />
+              <TraceItem label="Controls" value={String(latest.control_count)} />
+              <TraceItem label="Evidence Files" value={String(latest.evidence_count)} />
             </div>
           </section>
         </>
@@ -736,79 +621,34 @@ export default function BenchmarkingPage() {
   );
 }
 
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  icon,
-}: {
-  title: string;
-  value: string;
-  subtitle: string;
-  icon: React.ReactNode;
-}) {
+function MetricCard({ title, value, subtitle, icon }: { title: string; value: string; subtitle: string; icon: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        <div className="rounded-lg bg-slate-100 p-2 text-slate-600">
-          {icon}
-        </div>
-
+        <div className="rounded-lg bg-slate-100 p-2 text-slate-600">{icon}</div>
         <CheckCircle2 size={15} className="text-slate-300" />
       </div>
-
-      <div className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">
-        {title}
-      </div>
-
-      <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
-        {value}
-      </div>
-
-      <div className="mt-1 text-xs font-medium text-slate-500">
-        {subtitle}
-      </div>
+      <div className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</div>
+      <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+      <div className="mt-1 text-xs font-medium text-slate-500">{subtitle}</div>
     </div>
   );
 }
 
-function SmallStat({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function SmallStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-        {label}
-      </div>
-
-      <div className="mt-1 text-sm font-semibold text-slate-800">
-        {value}
-      </div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-800">{value}</div>
     </div>
   );
 }
 
-function TraceItem({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function TraceItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-white px-5 py-4">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-        {label}
-      </div>
-
-      <div className="mt-1 truncate text-xs font-semibold text-slate-700">
-        {value}
-      </div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</div>
+      <div className="mt-1 truncate text-xs font-semibold text-slate-700">{value}</div>
     </div>
   );
 }
-
