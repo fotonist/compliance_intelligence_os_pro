@@ -1,14 +1,16 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
+from statistics import median
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.models.benchmark_snapshot import BenchmarkSnapshot
-from app.services.uee_engine import UEEEngine
+from app.models.peer_population import PeerPopulation
 from app.services.uee_config_provider import get_active_uee_weights
+from app.services.uee_engine import UEEEngine
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,31 @@ class BenchmarkComparison:
     delta: float | None
     direction: str
     sufficient_data: bool
+
+
+@dataclass(frozen=True)
+class PeerMetricBenchmark:
+    metric: str
+    company_value: float
+    benchmark_value: float
+    percentile: float
+    gap: float
+    population_size: int
+    scope: str
+    period: datetime
+    calculated_at: datetime
+    source: str
+
+
+@dataclass(frozen=True)
+class PeerBenchmark:
+    available: bool
+    reason: str | None
+    population_key: str | None
+    peer_count: int
+    snapshot_count: int
+    current_snapshot_at: datetime | None
+    metrics: tuple[PeerMetricBenchmark, ...]
 
 
 class BenchmarkingService:
@@ -31,8 +58,23 @@ class BenchmarkingService:
       1. captures a real UEE state,
       2. persists it as a benchmark snapshot,
       3. reads historical snapshots,
-      4. calculates comparisons from persisted observations.
+      4. calculates comparisons from persisted observations,
+      5. aggregates peer observations from explicit peer population membership.
     """
+
+    MIN_PEER_COUNT = 3
+
+    _PEER_METRICS = (
+        "uee_score",
+        "compliance_health_index",
+        "risk_index",
+        "coverage_index",
+        "maturity_index",
+        "evidence_index",
+        "task_pressure_index",
+    )
+
+    _HIGHER_IS_BETTER = {"compliance_health_index"}
 
     def __init__(self) -> None:
         self._uee_engine = UEEEngine(
@@ -196,24 +238,178 @@ class BenchmarkingService:
             sufficient_data=True,
         )
 
+    def get_peer_benchmark(
+        self,
+        *,
+        db: Session,
+        tenant_id: int,
+    ) -> PeerBenchmark:
+        if tenant_id <= 0:
+            raise ValueError("Invalid tenant_id")
+
+        current = self.get_latest(db=db, tenant_id=tenant_id)
+        if current is None:
+            return PeerBenchmark(
+                available=False,
+                reason="no_current_snapshot",
+                population_key=None,
+                peer_count=0,
+                snapshot_count=0,
+                current_snapshot_at=None,
+                metrics=(),
+            )
+
+        membership = (
+            db.query(PeerPopulation)
+            .filter(
+                PeerPopulation.tenant_id == tenant_id,
+                PeerPopulation.is_active.is_(True),
+            )
+            .first()
+        )
+
+        if membership is None:
+            return PeerBenchmark(
+                available=False,
+                reason="no_active_peer_population",
+                population_key=None,
+                peer_count=0,
+                snapshot_count=0,
+                current_snapshot_at=current.snapshot_at,
+                metrics=(),
+            )
+
+        population_members = (
+            db.query(PeerPopulation.tenant_id)
+            .filter(
+                PeerPopulation.population_key == membership.population_key,
+                PeerPopulation.is_active.is_(True),
+            )
+            .all()
+        )
+
+        peer_tenant_ids = {
+            int(row[0])
+            for row in population_members
+            if int(row[0]) != tenant_id
+        }
+
+        if not peer_tenant_ids:
+            return PeerBenchmark(
+                available=False,
+                reason="insufficient_peer_population",
+                population_key=membership.population_key,
+                peer_count=0,
+                snapshot_count=0,
+                current_snapshot_at=current.snapshot_at,
+                metrics=(),
+            )
+
+        peer_snapshots = (
+            db.query(BenchmarkSnapshot)
+            .filter(
+                BenchmarkSnapshot.tenant_id.in_(peer_tenant_ids),
+                BenchmarkSnapshot.snapshot_at <= current.snapshot_at,
+            )
+            .order_by(
+                BenchmarkSnapshot.tenant_id.asc(),
+                BenchmarkSnapshot.snapshot_at.desc(),
+                BenchmarkSnapshot.id.desc(),
+            )
+            .all()
+        )
+
+        latest_by_tenant: dict[int, BenchmarkSnapshot] = {}
+        for snapshot in peer_snapshots:
+            peer_id = int(snapshot.tenant_id)
+            if peer_id not in latest_by_tenant:
+                latest_by_tenant[peer_id] = snapshot
+
+        peer_count = len(latest_by_tenant)
+
+        if peer_count < self.MIN_PEER_COUNT:
+            return PeerBenchmark(
+                available=False,
+                reason="insufficient_peer_snapshots",
+                population_key=membership.population_key,
+                peer_count=peer_count,
+                snapshot_count=len(peer_snapshots),
+                current_snapshot_at=current.snapshot_at,
+                metrics=(),
+            )
+
+        calculated_at = current.snapshot_at
+        metrics: list[PeerMetricBenchmark] = []
+
+        for metric in self._PEER_METRICS:
+            company_value = float(getattr(current, metric))
+            peer_values = [
+                float(getattr(snapshot, metric))
+                for snapshot in latest_by_tenant.values()
+            ]
+            benchmark_value = float(median(peer_values))
+            percentile = self._percentile(
+                company_value,
+                peer_values,
+                higher_is_better=metric in self._HIGHER_IS_BETTER,
+            )
+
+            metrics.append(
+                PeerMetricBenchmark(
+                    metric=metric,
+                    company_value=company_value,
+                    benchmark_value=benchmark_value,
+                    percentile=percentile,
+                    gap=company_value - benchmark_value,
+                    population_size=peer_count,
+                    scope=membership.population_key,
+                    period=current.snapshot_at,
+                    calculated_at=calculated_at,
+                    source="UEE_PEER",
+                )
+            )
+
+        return PeerBenchmark(
+            available=True,
+            reason=None,
+            population_key=membership.population_key,
+            peer_count=peer_count,
+            snapshot_count=len(peer_snapshots),
+            current_snapshot_at=current.snapshot_at,
+            metrics=tuple(metrics),
+        )
+
+    @staticmethod
+    def _percentile(
+        company_value: float,
+        peer_values: list[float],
+        *,
+        higher_is_better: bool,
+    ) -> float:
+        if not peer_values:
+            return 0.0
+
+        if higher_is_better:
+            count = sum(
+                value >= company_value
+                for value in peer_values
+            )
+        else:
+            count = sum(
+                value <= company_value
+                for value in peer_values
+            )
+
+        return round(
+            (float(count) / float(len(peer_values))) * 100.0,
+            2,
+        )
+
     @staticmethod
     def _calculate_data_quality(
         source_stats: dict[str, Any],
         warnings: tuple[str, ...],
     ) -> float:
-        """
-        Conservative data-quality indicator.
-
-        This is not a compliance score and does not alter UEE.
-        It communicates whether the benchmark observation had sufficient
-        underlying source data.
-
-        100 = no source warnings
-        80  = one source warning
-        60  = two source warnings
-        ...
-        """
-
         warning_count = len(warnings)
 
         if warning_count <= 0:
