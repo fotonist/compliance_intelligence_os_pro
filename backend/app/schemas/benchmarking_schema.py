@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Literal
@@ -50,6 +50,29 @@ class BenchmarkComparisonResponse(BaseModel):
     ]
 
     sufficient_data: bool
+
+
+class PeerMetricBenchmarkResponse(BaseModel):
+    metric: str
+    company_value: float
+    benchmark_value: float
+    percentile: float
+    gap: float
+    population_size: int = Field(ge=0)
+    scope: str
+    period: datetime
+    calculated_at: datetime
+    source: str
+
+
+class PeerBenchmarkResponse(BaseModel):
+    available: bool
+    reason: str | None = None
+    population_key: str | None = None
+    peer_count: int = Field(ge=0)
+    snapshot_count: int = Field(ge=0)
+    current_snapshot_at: datetime | None = None
+    metrics: list[PeerMetricBenchmarkResponse] = Field(default_factory=list)
 
 
 class BenchmarkSummaryResponse(BaseModel):
