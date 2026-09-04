@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Sequence
 
 import resend
 from twilio.rest import Client
+from app.core.config import settings
 
 
 class NotificationConfigurationError(RuntimeError):
@@ -43,12 +43,9 @@ class NotificationService:
 
     @staticmethod
     def send_email(message: EmailMessage) -> str:
-        api_key = os.getenv("RESEND_API_KEY", "").strip()
-        sender = os.getenv("EMAIL_FROM", "").strip()
-        sender_name = os.getenv(
-            "EMAIL_FROM_NAME",
-            "Compliance Intelligence OS",
-        ).strip()
+        api_key = (settings.RESEND_API_KEY or "").strip()
+        sender = (settings.EMAIL_FROM or "").strip()
+        sender_name = (settings.EMAIL_FROM_NAME or "").strip()
 
         if not api_key:
             raise NotificationConfigurationError(
@@ -96,20 +93,9 @@ class NotificationService:
 
     @staticmethod
     def send_sms(message: SMSMessage) -> str:
-        account_sid = os.getenv(
-            "TWILIO_ACCOUNT_SID",
-            "",
-        ).strip()
-
-        auth_token = os.getenv(
-            "TWILIO_AUTH_TOKEN",
-            "",
-        ).strip()
-
-        from_number = os.getenv(
-            "TWILIO_FROM_NUMBER",
-            "",
-        ).strip()
+        account_sid = (settings.TWILIO_ACCOUNT_SID or "").strip()
+        auth_token = (settings.TWILIO_AUTH_TOKEN or "").strip()
+        from_number = (settings.TWILIO_FROM_NUMBER or "").strip()
 
         if not account_sid or not auth_token:
             raise NotificationConfigurationError(

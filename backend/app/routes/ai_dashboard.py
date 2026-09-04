@@ -10,11 +10,23 @@ class DashboardInsightRequest(BaseModel):
     period_days: int
     kpis: Dict[str, Any]
 
+class DashboardInsightUsage(BaseModel):
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
 class DashboardInsightResponse(BaseModel):
-    summary: str
+    summary: List[str]
     root_causes: List[str]
     warnings: List[str]
     actions: List[str]
+
+    provider: str = "platform"
+    model: str | None = None
+    status: str = "ok"
+    usage: DashboardInsightUsage | None = None
+    error: str | None = None
 
 @router.post("/insights", response_model=DashboardInsightResponse)
 async def dashboard_insights(

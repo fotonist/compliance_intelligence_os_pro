@@ -1,4 +1,5 @@
 ﻿from datetime import datetime
+
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Boolean
 from sqlalchemy.orm import relationship
 
@@ -12,17 +13,40 @@ class TaskChecklistItem(Base):
 
     task_id = Column(
         Integer,
-        ForeignKey("compliance_tasks.id", ondelete="CASCADE"),
+        ForeignKey(
+            "compliance_tasks.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     label = Column(String, nullable=False)
-    required = Column(Boolean, nullable=False, default=True)
 
-    completed = Column(Boolean, nullable=False, default=False)
+    required = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
 
-    task = relationship("ComplianceTask", backref="checklist_items")
+    created_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    task = relationship(
+        "ComplianceTask",
+        back_populates="checklist_items",
+    )

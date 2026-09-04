@@ -24,6 +24,9 @@ from .audit_findings import AuditFinding
 # --- Tenants ---
 from .tenants import Tenant
 from .compliance_tasks import ComplianceTask
+from .task_evidence_link import TaskEvidenceLink
+from .task_checklist_item import TaskChecklistItem
+from .task_evidence_requirement import TaskEvidenceRequirement
 
 # --- Process ---
 from app.models.process import Process
@@ -90,3 +93,6 @@ from app.models.decision_register_risk import DecisionRegisterRisk
 from app.models.decision_register_control import DecisionRegisterControl
 from app.models.decision_register_process import DecisionRegisterProcess
 from app.models.decision_register_task import DecisionRegisterTask
+
+# --- Framework Adoption ---
+from app.models.framework_adoption import FrameworkAdoption, FrameworkAdoptionScope

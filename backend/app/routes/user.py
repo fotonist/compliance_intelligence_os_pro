@@ -578,7 +578,7 @@ def update_user_roles(
     print("roles found =", [(r.id, r.name) for r in roles])
     print("===========================")
 
-    # GeÃ§ersiz role id var mÄ±?
+    # Geçersiz role id var mı?
     if len(roles) != len(payload.role_ids):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -41,7 +41,154 @@ interface Props {
   onView?: (row: MatrixRow) => void;
 }
 
-export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
+function CapabilityBadge({
+  level,
+  muted = false,
+}: {
+  level?: number;
+  muted?: boolean;
+}) {
+  const value = level ?? 0;
+
+  return (
+    <span
+      className={[
+        "inline-flex min-w-[46px] items-center justify-center",
+        "border px-2 py-1 text-[11px] font-semibold",
+        "tracking-wide",
+        muted
+          ? "border-slate-200 bg-slate-50 text-slate-500"
+          : value > 0
+            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+            : "border-slate-200 bg-slate-50 text-slate-600",
+      ].join(" ")}
+    >
+      CL{value}
+    </span>
+  );
+}
+
+function EvidenceBadge({ count }: { count?: number }) {
+  const value = count ?? 0;
+
+  return (
+    <span
+      className={[
+        "inline-flex min-w-[32px] items-center justify-center",
+        "border px-2 py-1 text-[11px] font-semibold",
+        value > 0
+          ? "border-blue-200 bg-blue-50 text-blue-700"
+          : "border-slate-200 bg-slate-50 text-slate-500",
+      ].join(" ")}
+    >
+      {value}
+    </span>
+  );
+}
+
+function CoverageBadge({ status }: { status?: string }) {
+  const normalized = String(status ?? "").toUpperCase();
+
+  const config =
+    normalized === "ACHIEVED"
+      ? {
+          label: "Achieved",
+          className:
+            "border-emerald-200 bg-emerald-50 text-emerald-700",
+        }
+      : normalized === "PARTIAL"
+        ? {
+            label: "Partial",
+            className:
+              "border-amber-200 bg-amber-50 text-amber-700",
+          }
+        : normalized === "NOT_COVERED"
+          ? {
+              label: "Not Covered",
+              className:
+                "border-red-200 bg-red-50 text-red-700",
+            }
+          : {
+              label: status || "Unknown",
+              className:
+                "border-slate-200 bg-slate-50 text-slate-500",
+            };
+
+  return (
+    <span
+      className={`inline-flex items-center border px-2.5 py-1 text-[11px] font-semibold ${config.className}`}
+    >
+      <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current opacity-70" />
+      {config.label}
+    </span>
+  );
+}
+
+function PaginationFooter({
+  page,
+  totalPages,
+  startRow,
+  endRow,
+  totalRows,
+  setPage,
+}: {
+  page: number;
+  totalPages: number;
+  startRow: number;
+  endRow: number;
+  totalRows: number;
+  setPage: React.Dispatch<React.SetStateAction<number>>;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-xs text-slate-500">
+        Showing{" "}
+        <span className="font-medium text-slate-700">
+          {totalRows === 0 ? 0 : startRow}
+        </span>
+        {"–"}
+        <span className="font-medium text-slate-700">
+          {endRow}
+        </span>{" "}
+        of{" "}
+        <span className="font-medium text-slate-700">
+          {totalRows}
+        </span>{" "}
+        practices
+      </div>
+
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          disabled={page === 1}
+          onClick={() => setPage((p) => p - 1)}
+          className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Previous
+        </button>
+
+        <span className="min-w-[72px] px-3 py-1.5 text-center text-xs font-medium text-slate-600">
+          Page {page} / {totalPages}
+        </span>
+
+        <button
+          type="button"
+          disabled={page === totalPages}
+          onClick={() => setPage((p) => p + 1)}
+          className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function ComplianceMatrixTable({
+  rows,
+  mode,
+  onView,
+}: Props) {
   const pageSize = 20;
   const [page, setPage] = useState(1);
 
@@ -50,9 +197,16 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
   }, [rows, mode]);
 
   const totalRows = rows?.length || 0;
-  const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
-  const startRow = (page - 1) * pageSize + 1;
-  const endRow = Math.min(page * pageSize, totalRows);
+  const totalPages = Math.max(
+    1,
+    Math.ceil(totalRows / pageSize)
+  );
+
+  const startRow =
+    totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
+
+  const endRow =
+    Math.min(page * pageSize, totalRows);
 
   const pagedRows = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -61,286 +215,306 @@ export default function ComplianceMatrixTable({ rows, mode, onView }: Props) {
 
   if (!rows || rows.length === 0) {
     return (
-      <div className="py-8 text-center text-slate-400">
-        Matrix kaydÄ± bulunamadÄ±.
+      <div className="px-6 py-12 text-center">
+        <div className="text-sm font-medium text-slate-700">
+          No matrix rows available
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          Generate the matrix structure before assessment.
+        </div>
       </div>
     );
   }
 
-  const badge =
-    "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold";
-
-  const coverageColor = (status?: string) => {
-    switch (status) {
-      case "ACHIEVED":
-        return "bg-green-700/30 text-green-300";
-      case "PARTIAL":
-        return "bg-amber-700/30 text-amber-300";
-      case "NOT_COVERED":
-        return "bg-red-700/20 text-red-300";
-      default:
-        return "bg-slate-700/40 text-slate-300";
-    }
-  };
-
-  const riskColor = (level?: string | null) => {
-    switch (level) {
-      case "CRITICAL":
-        return "bg-red-800/40 text-red-300";
-      case "HIGH":
-        return "bg-orange-700/40 text-orange-300";
-      case "MEDIUM":
-        return "bg-yellow-700/40 text-yellow-300";
-      case "LOW":
-        return "bg-green-700/40 text-green-300";
-      default:
-        return "bg-slate-700/40 text-slate-300";
-    }
-  };
-
-  const riskTooltip = (level?: string | null) => {
-    if (!level) return "No risk linked";
-    return `Max risk severity: ${level}`;
-  };
-
-  const hierarchyCell = (
-    code?: string,
-    title?: string | null,
-    description?: string | null,
-    codeClassName = "font-medium"
-  ) => (
-    <div className="min-w-[180px] max-w-[320px]">
-      <div className="flex items-center gap-2">
-        <span className={codeClassName}>{code || "â€”"}</span>
-        {description && (
-          <span
-            title={description}
-            aria-label="View description"
-            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-600 text-[10px] font-semibold text-slate-400 cursor-help"
-          >
-            i
-          </span>
-        )}
-      </div>
-      {title && (
-        <div className="mt-0.5 text-xs text-slate-300 leading-5">
-          {title}
-        </div>
-      )}
-    </div>
-  );
-
-  const PaginationFooter = () => (
-    <div className="flex items-center justify-between mt-3 text-sm text-slate-400">
-      <span>
-        Page <b>{page}</b> / {totalPages}{" "}
-        <span className="text-slate-500">
-          (Rows {startRow}â€“{endRow} of {totalRows})
-        </span>
-      </span>
-      <div className="flex gap-2">
-        <button
-          disabled={page === 1}
-          onClick={() => setPage((p) => p - 1)}
-          className="px-3 py-1 rounded bg-slate-800 disabled:opacity-40"
-        >
-          Prev
-        </button>
-        <button
-          disabled={page === totalPages}
-          onClick={() => setPage((p) => p + 1)}
-          className="px-3 py-1 rounded bg-slate-800 disabled:opacity-40"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  );
-
   if (mode === "maturity") {
     return (
-      <div className="mt-6">
-        <div className="overflow-x-auto rounded-xl bg-slate-900/70 p-4">
-          <table className="min-w-full text-sm text-slate-200">
-            <thead className="bg-slate-800/70 text-xs uppercase text-slate-300">
-              <tr>
-                <th className="p-3 text-left">Process Area</th>
-                <th className="p-3 text-left">Practice</th>
-                <th className="p-3 text-left">Description</th>
-                <th className="p-3 text-center">Target</th>
-                <th className="p-3 text-center">Achieved</th>
-                <th className="p-3 text-center">Evidence</th>
+      <div className="overflow-hidden">
+        <div className="flex flex-col gap-1 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              Maturity Assessment
+            </div>
+            <h2 className="mt-1 text-sm font-semibold text-slate-900">
+              Process Capability Matrix
+            </h2>
+          </div>
+
+          <div className="text-xs text-slate-500">
+            {totalRows} practices in assessment scope
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="w-[190px] px-5 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Process Area
+                </th>
+
+                <th className="w-[260px] px-5 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Practice
+                </th>
+
+                <th className="px-5 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Description
+                </th>
+
+                <th className="w-[120px] px-5 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Target
+                </th>
+
+                <th className="w-[150px] px-5 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Achieved
+                </th>
+
+                <th className="w-[110px] px-5 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Evidence
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700/40">
-              {pagedRows.map((row, i) => (
-                <tr
-                  key={row.id ?? `${row.practice_id ?? "practice"}-${i}`}
-                  onClick={() => onView?.(row)}
-                  className="hover:bg-slate-800/40 cursor-pointer"
-                >
-                  <td className="p-3 font-medium">
-                    {row.process_area_code}
-                    {row.process_area_title && (
-                      <span className="text-slate-400 ml-1">
-                        â€“ {row.process_area_title}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3 font-medium">
-                    {row.practice_code}
-                    {row.practice_title && (
-                      <div className="text-slate-400 text-xs">
-                        {row.practice_title}
+
+            <tbody className="divide-y divide-slate-100">
+              {pagedRows.map((row, i) => {
+                const target = row.target_level ?? 0;
+                const achieved = row.achieved_level ?? 0;
+
+                const progress =
+                  target > 0
+                    ? Math.min(
+                        100,
+                        Math.round(
+                          (achieved / target) * 100
+                        )
+                      )
+                    : 0;
+
+                return (
+                  <tr
+                    key={
+                      row.id ??
+                      `${row.practice_id ?? "practice"}-${i}`
+                    }
+                    onClick={() => onView?.(row)}
+                    className="group cursor-pointer bg-white transition-colors hover:bg-slate-50"
+                  >
+                    <td className="px-5 py-4 align-top">
+                      <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center border border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-600">
+                          {row.process_area_code
+                            ?.slice(0, 3)
+                            .toUpperCase() || "—"}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-800">
+                            {row.process_area_code || "—"}
+                          </div>
+
+                          <div className="mt-0.5 truncate text-xs text-slate-500">
+                            {row.process_area_title || "Process Area"}
+                          </div>
+                        </div>
                       </div>
-                    )}
-                  </td>
-                  <td className="p-3 text-slate-300 line-clamp-2">
-                    {row.practice_description ?? "-"}
-                  </td>
-                  <td className="p-3 text-center font-semibold">
-                    CL{row.target_level ?? 0}
-                  </td>
-                  <td className="p-3 text-center font-semibold">
-                    CL{row.achieved_level ?? 0}
-                  </td>
-                  <td className="p-3 text-center">
-                    <span className={`${badge} bg-slate-700/40`}>
-                      {row.evidence_count ?? 0}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+
+                    <td className="px-5 py-4 align-top">
+                      <div className="font-semibold text-slate-800">
+                        {row.practice_code || "—"}
+                      </div>
+
+                      <div className="mt-1 text-xs leading-5 text-slate-500">
+                        {row.practice_title || "Practice"}
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4 align-top">
+                      <div
+                        className="max-w-[420px] truncate text-xs leading-5 text-slate-500"
+                        title={
+                          row.practice_description || undefined
+                        }
+                      >
+                        {row.practice_description || "No description available"}
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4 text-center align-top">
+                      <CapabilityBadge
+                        level={target}
+                        muted
+                      />
+                    </td>
+
+                    <td className="px-5 py-4 align-top">
+                      <div className="flex flex-col items-center gap-2">
+                        <CapabilityBadge level={achieved} />
+
+                        <div className="h-1 w-20 overflow-hidden bg-slate-100">
+                          <div
+                            className="h-full bg-slate-500 transition-all"
+                            style={{
+                              width: `${progress}%`,
+                            }}
+                          />
+                        </div>
+
+                        <span className="text-[10px] text-slate-400">
+                          {progress}% of target
+                        </span>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4 text-center align-top">
+                      <EvidenceBadge
+                        count={row.evidence_count}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-        <PaginationFooter />
+
+        <PaginationFooter
+          page={page}
+          totalPages={totalPages}
+          startRow={startRow}
+          endRow={endRow}
+          totalRows={totalRows}
+          setPage={setPage}
+        />
       </div>
     );
   }
 
   return (
-    <div className="mt-6 space-y-4">
-
-      {pagedRows.map((row, i) => (
-
-        <div
-          key={
-            row.id ??
-            `matrix-card-${row.matrix_instance_id ?? "instance"}-${row.control_id ?? "control"}-${i}`
-          }
-          onClick={() => onView?.(row)}
-          className="
-            rounded-2xl
-            border
-            border-slate-200
-            bg-white
-            p-6
-            shadow-sm
-            hover:shadow-md
-            transition
-            cursor-pointer
-          "
-        >
-
-          <div className="flex items-start justify-between gap-4">
-
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-400">
-                {row.standard_code ?? "STANDARD"}
-              </div>
-
-              <div className="mt-1 text-lg font-semibold text-slate-900">
-                {row.control_code ?? "-"}
-              </div>
-
-              <div className="mt-1 text-sm text-slate-600">
-                {row.control_title ?? "-"}
-              </div>
-            </div>
-
-
-            <span
-              className="
-                rounded-full
-                border
-                px-3
-                py-1
-                text-xs
-                font-semibold
-              "
-            >
-              {row.coverage_status ?? "UNKNOWN"}
-            </span>
-
+    <div className="overflow-hidden">
+      <div className="flex items-end justify-between border-b border-slate-200 px-5 py-4">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            Control Assessment
           </div>
-
-
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-5">
-
-            <div>
-              <div className="text-xs uppercase text-slate-400">
-                Clause
-              </div>
-
-              <div className="mt-1 font-medium text-slate-800">
-                {row.clause_code ?? "-"}
-              </div>
-
-              <div className="text-sm text-slate-500">
-                {row.clause_title ?? "-"}
-              </div>
-            </div>
-
-
-            <div>
-              <div className="text-xs uppercase text-slate-400">
-                Evidence Assurance
-              </div>
-
-              <div className="mt-1 text-lg font-semibold text-slate-900">
-                {row.approved_evidence_count ?? 0}
-              </div>
-
-              <div className="text-xs text-slate-500">
-                approved evidence
-              </div>
-            </div>
-
-
-            <div>
-              <div className="text-xs uppercase text-slate-400">
-                Risk Exposure
-              </div>
-
-              <div className="mt-1 text-lg font-semibold text-slate-900">
-                {row.risk_level ?? "No Risk"}
-              </div>
-            </div>
-
-          </div>
-
-
-          <div className="mt-6 flex justify-between items-center">
-
-            <div className="text-xs text-slate-400">
-              Requirement: {row.requirement_title ?? "-"}
-            </div>
-
-            <div className="text-xs font-medium text-blue-600">
-              Open Control Intelligence →
-            </div>
-
-          </div>
-
+          <h2 className="mt-1 text-sm font-semibold text-slate-900">
+            Compliance Control Matrix
+          </h2>
         </div>
 
-      ))}
+        <div className="text-xs text-slate-500">
+          {totalRows} controls in assessment scope
+        </div>
+      </div>
 
-      <PaginationFooter />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1050px] text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50">
+              <th className="px-5 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Standard
+              </th>
 
+              <th className="px-5 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Control
+              </th>
+
+              <th className="px-5 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Requirement
+              </th>
+
+              <th className="px-5 py-3 text-left text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Clause
+              </th>
+
+              <th className="px-5 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Coverage
+              </th>
+
+              <th className="px-5 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Evidence
+              </th>
+
+              <th className="px-5 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                Risk
+              </th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-slate-100">
+            {pagedRows.map((row, i) => (
+              <tr
+                key={
+                  row.id ??
+                  `control-${row.control_id ?? "control"}-${i}`
+                }
+                onClick={() => onView?.(row)}
+                className="cursor-pointer bg-white transition-colors hover:bg-slate-50"
+              >
+                <td className="px-5 py-4 align-top">
+                  <div className="font-semibold text-slate-800">
+                    {row.standard_code || "—"}
+                  </div>
+                </td>
+
+                <td className="px-5 py-4 align-top">
+                  <div className="font-semibold text-slate-800">
+                    {row.control_code || "—"}
+                  </div>
+
+                  <div className="mt-1 max-w-[260px] truncate text-xs text-slate-500">
+                    {row.control_description || row.control_title || "Control"}
+                  </div>
+                </td>
+
+                <td className="px-5 py-4 align-top">
+                  <div className="max-w-[250px] truncate text-xs font-medium text-slate-700">
+                    {row.requirement_code || "—"}
+                  </div>
+
+                  <div className="mt-1 max-w-[250px] truncate text-xs text-slate-500">
+                    {row.requirement_description || row.requirement_title || "Requirement"}
+                  </div>
+                </td>
+
+                <td className="px-5 py-4 align-top">
+                  <div className="text-xs font-medium text-slate-700">
+                    {row.clause_code || "—"}
+                  </div>
+
+                  <div className="mt-1 max-w-[180px] truncate text-xs text-slate-500">
+                    {row.clause_description || row.clause_title || "Clause"}
+                  </div>
+                </td>
+
+                <td className="px-5 py-4 text-center align-top">
+                  <CoverageBadge status={row.coverage_status} />
+                </td>
+
+                <td className="px-5 py-4 text-center align-top">
+                  <EvidenceBadge
+                    count={row.approved_evidence_count}
+                  />
+                </td>
+
+                <td className="px-5 py-4 text-center align-top">
+                  <span className="text-xs font-medium text-slate-500">
+                    {row.risk_level || "None"}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <PaginationFooter
+        page={page}
+        totalPages={totalPages}
+        startRow={startRow}
+        endRow={endRow}
+        totalRows={totalRows}
+        setPage={setPage}
+      />
     </div>
   );
 }
-
-

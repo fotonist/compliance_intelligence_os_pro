@@ -78,9 +78,9 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function formatDate(value?: string | null) {
-  if (!value) return "â€”";
+  if (!value) return "—";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "â€”";
+  if (Number.isNaN(d.getTime())) return "—";
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
@@ -91,9 +91,9 @@ function formatDate(value?: string | null) {
 }
 
 function formatShortDate(value?: string | null) {
-  if (!value) return "â€”";
+  if (!value) return "—";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "â€”";
+  if (Number.isNaN(d.getTime())) return "—";
   return new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
@@ -419,7 +419,7 @@ export default function RiskDetailPage() {
         ? "The current score is above the defined risk appetite."
         : "No current appetite breach is identified from the available risk data.";
 
-    return `Risk #${risk.id} is currently assessed as ${level} with a score of ${risk.score ?? "â€”"}. ${trend} ${appetite}`;
+    return `Risk #${risk.id} is currently assessed as ${level} with a score of ${risk.score ?? "\u2014"}. ${trend} ${appetite}`;
   }, [risk, velocity, appetiteExceeded]);
 
   const nextAction = useMemo(() => {
@@ -690,7 +690,7 @@ export default function RiskDetailPage() {
           <div className="p-5">
             <div className="text-[11px] uppercase tracking-wider text-slate-500">Risk Score</div>
             <div className="mt-1 flex items-end gap-2">
-              <span className="text-3xl font-semibold text-slate-900">{risk.score ?? "â€”"}</span>
+              <span className="text-3xl font-semibold text-slate-900">{risk.score ?? "\u2014"}</span>
               <span className="pb-1 text-xs text-slate-500">/ 25</span>
             </div>
             <div className="mt-1 text-xs text-slate-500">{riskBand(risk.score)}</div>
@@ -794,13 +794,13 @@ export default function RiskDetailPage() {
                         <div>
                           <div className="text-xs text-slate-500">Previous score</div>
                           <div className="mt-1 text-lg font-semibold text-slate-700">
-                            {risk.previous_score ?? prev?.score ?? "â€”"}
+                            {risk.previous_score ?? prev?.score ?? "\u2014"}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-slate-500">Current score</div>
                           <div className="mt-1 text-lg font-semibold text-slate-900">
-                            {risk.score ?? "â€”"}
+                            {risk.score ?? "\u2014"}
                           </div>
                         </div>
                       </div>
@@ -833,7 +833,7 @@ export default function RiskDetailPage() {
                         label="Deviation"
                         value={
                           appetiteDeviation === null
-                            ? "â€”"
+                            ? "—"
                             : appetiteDeviation > 0
                             ? `+${appetiteDeviation}`
                             : appetiteDeviation
@@ -861,14 +861,14 @@ export default function RiskDetailPage() {
                         ) : null}
                       </div>
                       <div className="mt-1 text-xl font-semibold text-slate-900">
-                        {velocity === null ? "â€”" : velocity > 0 ? `+${velocity}` : velocity}
+                        {velocity === null ? "—" : velocity > 0 ? `+${velocity}` : velocity}
                       </div>
                     </div>
 
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <div className="text-xs text-slate-500">Volatility</div>
                       <div className="mt-1 text-xl font-semibold text-slate-900">
-                        {volatility === null ? "â€”" : volatility.toFixed(1)}
+                        {volatility === null ? "—" : volatility.toFixed(1)}
                       </div>
                       <div className="mt-1 text-xs text-slate-600">Average absolute score delta</div>
                     </div>
@@ -887,7 +887,7 @@ export default function RiskDetailPage() {
               <div className="grid gap-5 xl:grid-cols-[1.4fr_0.6fr]">
                 <Section
                   title="Risk Trend"
-                  subtitle="Recorded risk score movement â€” no synthetic history is generated"
+                  subtitle="Recorded risk score movement — no synthetic history is generated"
                   icon={<TrendingUp size={17} />}
                 >
                   {historyChartRows.length ? (
@@ -909,7 +909,7 @@ export default function RiskDetailPage() {
 
                 <Section
                   title="Risk Position"
-                  subtitle="Likelihood Ã— impact"
+                  subtitle="Likelihood × impact"
                   icon={<Target size={17} />}
                 >
                   <div className="flex justify-center">
@@ -966,7 +966,7 @@ export default function RiskDetailPage() {
                   icon={<CheckCircle2 size={17} />}
                 >
                   <InfoRow label="Strategy" value={risk.treatment || "Not defined"} />
-                  <InfoRow label="Status" value={risk.status || "â€”"} />
+                  <InfoRow label="Status" value={risk.status || "—"} />
                   <InfoRow label="Action" value={risk.action || "Not defined"} />
                 </Section>
               </div>
@@ -1010,10 +1010,10 @@ export default function RiskDetailPage() {
               >
                 <div className="grid gap-3 md:grid-cols-4">
                   {[
-                    ["Standard", risk.standard_id ? `#${risk.standard_id}` : "â€”"],
-                    ["Requirement", risk.requirement_id ? `#${risk.requirement_id}` : "â€”"],
+                    ["Standard", risk.standard_id ? `#${risk.standard_id}` : "—"],
+                    ["Requirement", risk.requirement_id ? `#${risk.requirement_id}` : "—"],
                     ["Control", risk.control_id ? `#${risk.control_id}` : "Unlinked"],
-                    ["Process", risk.process_id ? `#${risk.process_id}` : "â€”"],
+                    ["Process", risk.process_id ? `#${risk.process_id}` : "—"],
                   ].map(([label, value]) => (
                     <div
                       key={label}
@@ -1085,7 +1085,7 @@ export default function RiskDetailPage() {
                               {item.title || `Risk #${item.id}`}
                             </div>
                             <div className="mt-1 text-xs text-slate-500">
-                              {item.relation_type || "Related"} Â· {item.relation_reason || "Relationship"}
+                              {item.relation_type || "Related"} · {item.relation_reason || "Relationship"}
                             </div>
                           </div>
                           <ChevronRight size={15} className="shrink-0 text-slate-600" />

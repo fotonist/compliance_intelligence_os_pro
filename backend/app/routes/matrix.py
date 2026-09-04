@@ -1,4 +1,4 @@
-﻿from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List
 
 from fastapi import APIRouter, Depends, Query, Body, HTTPException
 from sqlalchemy.orm import Session
@@ -27,13 +27,14 @@ from app.models.requirements import Requirement
 from app.models.controls import Control
 from app.models.risks import Risk
 from app.models.evidences import Evidence
+from app.services.framework.framework_adoption_service import FrameworkAdoptionService
 
 # Intelligence-aware models
 from app.models.gap_items import GapItem
 from app.models.compliance_tasks import ComplianceTask
 
 # -------------------------------------------------
-# MATURITY â€“ TABLE BASED (MODEL IMPORT YOK)
+# MATURITY Ã¢â‚¬â€œ TABLE BASED (MODEL IMPORT YOK)
 # -------------------------------------------------
 standard_practices = Base.metadata.tables["standard_practices"]
 standard_process_areas = Base.metadata.tables["standard_process_areas"]
@@ -51,7 +52,7 @@ router = APIRouter(prefix="/matrix", tags=["Matrix"])
 
 
 # =================================================
-# C1 â€“ RESOLVE ACTIVE DRAFT VERSION (WRITE GUARD)
+# C1 Ã¢â‚¬â€œ RESOLVE ACTIVE DRAFT VERSION (WRITE GUARD)
 # =================================================
 def resolve_draft_version(db: Session, standard_id: int) -> StandardVersion:
     standard = db.query(Standard).filter(Standard.id == standard_id).first()
@@ -77,7 +78,7 @@ def resolve_draft_version(db: Session, standard_id: int) -> StandardVersion:
 
 
 # =================================================
-# LAZY INIT â€“ TABLE ENSURE (ALEMBIC YOK)
+# LAZY INIT Ã¢â‚¬â€œ TABLE ENSURE (ALEMBIC YOK)
 # =================================================
 DDL_MATRIX_COLUMNS = """
 CREATE TABLE IF NOT EXISTS matrix_column_configs (
@@ -238,8 +239,63 @@ def get_matrix(
 ):
     tenant_id = getattr(user, "tenant_id", None)
 
+    # Resolve version only for CONTROL_BASED matrices.
+    # MATURITY_BASED matrices (e.g. ISO15504) are
+    # version-independent and use process areas/practices.
+    if standard_version_id is None and standard_id is not None:
+        standard = (
+            db.query(Standard)
+            .filter(Standard.id == standard_id)
+            .first()
+        )
+
+        if not standard:
+            raise HTTPException(
+                status_code=404,
+                detail="Standard not found",
+            )
+
+        if _normalize(standard.type) != "MATURITY_BASED":
+            try:
+                standard_version_id = FrameworkAdoptionService(
+                    db
+                ).resolve_active_version(
+                    tenant_id=tenant_id,
+                    standard_id=standard_id,
+                ).id
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=str(exc),
+                )
+
     if not tenant_id:
         raise HTTPException(status_code=400, detail="tenant_id missing")
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id missing")
+
+    # -------------------------------------------------
+    # RESOLVE CURRENT MATRIX INSTANCE
+    # -------------------------------------------------
+    # The matrix landing page must be anchored to a real
+    # tenant-owned MatrixInstance when no standard filter
+    # was explicitly supplied.
+    if standard_id is None:
+        latest_instance = (
+            db.query(MatrixInstance)
+            .filter(
+                MatrixInstance.tenant_id == tenant_id,
+            )
+            .order_by(
+                MatrixInstance.id.desc()
+            )
+            .first()
+        )
+
+        if latest_instance:
+            standard_id = latest_instance.standard_id
+            if standard_version_id is None:
+                standard_version_id = latest_instance.standard_version_id
 
     if standard_id is None:
 
@@ -390,10 +446,13 @@ def get_matrix(
                 Standard.code.label("standard_code"),
                 Clause.id.label("clause_id"),
                 Clause.code.label("clause_code"),
+                Clause.description.label("clause_description"),
                 Requirement.id.label("requirement_id"),
                 Requirement.code.label("requirement_code"),
+                Requirement.description.label("requirement_description"),
                 Control.id.label("control_id"),
                 Control.code.label("control_code"),
+                Control.description.label("control_description"),
                 evidence_count_col,
                 approved_count_col,
                 open_gap_count_col,
@@ -433,7 +492,8 @@ def get_matrix(
                 task_agg.c.control_id == Control.id,
             )
             .filter(
-                Standard.type == "CONTROL_BASED"
+                Standard.type == "CONTROL_BASED",
+                Control.standard_version_id == standard_version_id,
             )
             .order_by(
                 Standard.code,
@@ -675,10 +735,13 @@ def get_matrix(
             Standard.code.label("standard_code"),
             Clause.id.label("clause_id"),
             Clause.code.label("clause_code"),
+            Clause.description.label("clause_description"),
             Requirement.id.label("requirement_id"),
             Requirement.code.label("requirement_code"),
+            Requirement.description.label("requirement_description"),
             Control.id.label("control_id"),
             Control.code.label("control_code"),
+            Control.description.label("control_description"),
             evidence_count_col_one,
             approved_count_col_one,
             open_gap_count_col_one,
@@ -718,6 +781,7 @@ def get_matrix(
         .filter(
             Standard.id == standard.id,
             Standard.type == "CONTROL_BASED",
+            Control.standard_version_id == standard_version_id,
         )
         .order_by(
             Clause.code,
@@ -759,33 +823,51 @@ def get_matrix_columns(
         return [
             {
                 "key": "clause_code",
-                "label": "Clause",
+                "label": "Clause Code",
                 "visible": True,
                 "position": 1,
             },
             {
-                "key": "requirement_code",
-                "label": "Requirement",
+                "key": "clause_description",
+                "label": "Clause Definition",
                 "visible": True,
                 "position": 2,
             },
             {
-                "key": "control_code",
-                "label": "Control",
+                "key": "requirement_code",
+                "label": "Requirement Code",
                 "visible": True,
                 "position": 3,
+            },
+            {
+                "key": "requirement_description",
+                "label": "Requirement Definition",
+                "visible": True,
+                "position": 4,
+            },
+            {
+                "key": "control_code",
+                "label": "Control Code",
+                "visible": True,
+                "position": 5,
+            },
+            {
+                "key": "control_description",
+                "label": "Control Definition",
+                "visible": True,
+                "position": 6,
             },
             {
                 "key": "risk_level",
                 "label": "Risk Level",
                 "visible": True,
-                "position": 4,
+                "position": 7,
             },
             {
                 "key": "coverage_status",
-                "label": "Coverage",
+                "label": "Coverage Status",
                 "visible": True,
-                "position": 5,
+                "position": 8,
             },
         ]
 
@@ -865,19 +947,117 @@ def generate_matrix_rows(
 ):
     ensure_matrix_column_configs_table(db)
 
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     standard_id: int = body["standard_id"]
 
-    published_version = resolve_published_version(
-        db,
-        standard_id,
+    standard = (
+        db.query(Standard)
+        .filter(Standard.id == standard_id)
+        .first()
     )
 
+    if not standard:
+        raise HTTPException(
+            status_code=404,
+            detail="Standard not found",
+        )
+
+    if _normalize(standard.type) == "MATURITY_BASED":
+        published_version = (
+            db.query(StandardVersion)
+            .filter(
+                StandardVersion.standard_id == standard_id,
+                StandardVersion.status == "draft",
+            )
+            .order_by(StandardVersion.id.desc())
+            .first()
+        )
+
+        if not published_version:
+            raise HTTPException(
+                status_code=409,
+                detail="No active draft standard version available.",
+            )
+    else:
+        standard = (
+        db.query(Standard)
+        .filter(Standard.id == standard_id)
+        .first()
+    )
+
+    if not standard:
+        raise HTTPException(
+            status_code=404,
+            detail="Standard not found",
+        )
+
+    # MATURITY_BASED standards such as ISO15504 do not
+    # require a published control version for generation.
+    # Their matrix is built from process areas/practices.
+    if _normalize(standard.type) == "MATURITY_BASED":
+        published_version = (
+            db.query(StandardVersion)
+            .filter(
+                StandardVersion.standard_id == standard_id,
+                StandardVersion.status == "draft",
+            )
+            .order_by(StandardVersion.id.desc())
+            .first()
+        )
+
+        if not published_version:
+            raise HTTPException(
+                status_code=409,
+                detail="No active draft standard version available.",
+            )
+    else:
+        published_version = resolve_published_version(
+            db,
+            standard_id,
+        )
+
     mode: str = body["mode"]
+
+    # Snapshot the exact column mapping selected in Matrix Builder.
+    # Each generated instance keeps its own historical column configuration.
+    columns = body.get("columns") or []
+
+    column_snapshot = []
+    if isinstance(columns, list):
+        for index, column in enumerate(columns, start=1):
+            if not isinstance(column, dict):
+                continue
+
+            key = column.get("key")
+            if not key:
+                continue
+
+            column_snapshot.append(
+                {
+                    "key": key,
+                    "label": column.get("label") or key,
+                    "visible": bool(column.get("visible", True)),
+                    "sourceType": column.get("sourceType", "entity_field"),
+                    "entity": column.get("entity") or "",
+                    "field": column.get("field") or key,
+                    "fixedValue": column.get("fixedValue"),
+                    "position": column.get("position", index),
+                }
+            )
+
     rows = body.get("rows")
 
     if rows is None:
         source = get_matrix(
             standard_id=standard_id,
+            standard_version_id=published_version.id,
             db=db,
             user=user,
         )
@@ -888,15 +1068,11 @@ def generate_matrix_rows(
         )
 
     inst = MatrixInstance(
-        tenant_id=getattr(
-            user,
-            "tenant_id",
-            None,
-        )
-        or 1,
+        tenant_id=tenant_id,
         standard_id=standard_id,
         standard_version_id=published_version.id,
         status="generated",
+        column_snapshot=column_snapshot,
         created_by=getattr(
             user,
             "id",
@@ -936,12 +1112,7 @@ def generate_matrix_rows(
 
         db.execute(
             insert(MatrixRow).values(
-                tenant_id=getattr(
-                    user,
-                    "tenant_id",
-                    None,
-                )
-                or 1,
+                tenant_id=tenant_id,
                 instance_id=inst.id,
                 standard_id=standard_id,
                 mode=mode,
@@ -983,12 +1154,21 @@ def list_matrix_instances(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     q = (
         db.query(
             MatrixInstance.id,
             MatrixInstance.standard_id,
             Standard.code.label("standard_code"),
             MatrixInstance.standard_version_id,
+            MatrixInstance.column_snapshot,
             StandardVersion.status.label(
                 "standard_version_status"
             ),
@@ -1004,6 +1184,9 @@ def list_matrix_instances(
             StandardVersion,
             StandardVersion.id
             == MatrixInstance.standard_version_id,
+        )
+        .filter(
+            MatrixInstance.tenant_id == tenant_id,
         )
     )
 
@@ -1050,6 +1233,14 @@ def get_matrix_instance_detail(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     inst = (
         db.query(
             MatrixInstance.id,
@@ -1057,6 +1248,7 @@ def get_matrix_instance_detail(
             MatrixInstance.standard_id,
             Standard.code.label("standard_code"),
             MatrixInstance.standard_version_id,
+            MatrixInstance.column_snapshot,
             StandardVersion.status.label(
                 "standard_version_status"
             ),
@@ -1073,7 +1265,8 @@ def get_matrix_instance_detail(
             == MatrixInstance.standard_version_id,
         )
         .filter(
-            MatrixInstance.id == id
+            MatrixInstance.id == id,
+            MatrixInstance.tenant_id == tenant_id,
         )
         .first()
     )
@@ -1087,7 +1280,8 @@ def get_matrix_instance_detail(
     row_count = (
         db.query(func.count(MatrixRow.id))
         .filter(
-            MatrixRow.instance_id == id
+            MatrixRow.instance_id == id,
+            MatrixRow.tenant_id == tenant_id,
         )
         .scalar()
     ) or 0
@@ -1101,14 +1295,87 @@ def get_matrix_instance_detail(
         "standard_version_status": inst.standard_version_status,
         "mode": None,
         "row_count": row_count,
+        "column_snapshot": inst.column_snapshot,
         "created_by": inst.created_by,
         "created_at": inst.created_at,
     }
 
 
 # =================================================
-# GET /matrix/instances/{id}/rows
+# DELETE /matrix/instances/{id}
 # =================================================
+@router.delete("/instances/{id}", status_code=204)
+def delete_matrix_instance(
+    id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
+    instance = (
+        db.query(MatrixInstance)
+        .filter(
+            MatrixInstance.id == id,
+            MatrixInstance.tenant_id == tenant_id,
+        )
+        .first()
+    )
+
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail="Matrix instance not found",
+        )
+
+    status = (instance.status or "").upper()
+
+    if status in {
+        "SUBMITTED",
+        "APPROVED",
+        "COMPLETED",
+        "CLOSED",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Matrix instance cannot be deleted "
+                f"because its lifecycle status is '{instance.status}'."
+            ),
+        )
+
+    # Matrix rows are instance-owned generated data.
+    # They are removed by the FK ON DELETE CASCADE.
+    #
+    # IMPORTANT:
+    # Canonical controls, requirements, practices, process areas,
+    # evidence, risks, tasks, and gaps must never be deleted merely
+    # because a matrix instance references their canonical IDs.
+
+    try:
+        db.delete(instance)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+        logger.exception(
+            "Failed to delete matrix instance id=%s tenant_id=%s",
+            id,
+            tenant_id,
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete matrix instance",
+        )
+
+    return None
+
 @router.get("/instances/{id}/rows")
 def get_matrix_instance_rows(
     id: int,
@@ -1117,10 +1384,19 @@ def get_matrix_instance_rows(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     q = (
         db.query(MatrixRow)
         .filter(
-            MatrixRow.instance_id == id
+            MatrixRow.instance_id == id,
+            MatrixRow.tenant_id == tenant_id,
         )
         .order_by(MatrixRow.id)
     )
@@ -1133,14 +1409,50 @@ def get_matrix_instance_rows(
         .all()
     )
 
-    return {
-        "items": [
+    items = []
+
+    for r in rows:
+        payload = dict(r.payload or {})
+
+        # Resolve canonical framework definitions from MatrixRow FK references.
+        # Definitions remain canonical data and are not persisted into payload.
+        if r.clause_id is not None:
+            clause = (
+                db.query(Clause)
+                .filter(Clause.id == r.clause_id)
+                .first()
+            )
+            if clause is not None:
+                payload["clause_description"] = clause.description
+
+        if r.requirement_id is not None:
+            requirement = (
+                db.query(Requirement)
+                .filter(Requirement.id == r.requirement_id)
+                .first()
+            )
+            if requirement is not None:
+                payload["requirement_description"] = requirement.description
+
+        if r.control_id is not None:
+            control = (
+                db.query(Control)
+                .filter(Control.id == r.control_id)
+                .first()
+            )
+            if control is not None:
+                payload["control_description"] = control.description
+
+        items.append(
             {
                 "id": r.id,
                 "row_key": r.row_key,
-                "payload": r.payload,
+                "payload": payload,
             }
-        ],
+        )
+
+    return {
+        "items": items,
         "columns": [],
         "total": total,
     }
@@ -1155,11 +1467,20 @@ def preview_matrix(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     rows = (
         db.query(MatrixRow)
         .filter(
             MatrixRow.instance_id
-            == instance_id
+            == instance_id,
+            MatrixRow.tenant_id == tenant_id,
         )
         .order_by(MatrixRow.id)
         .all()
@@ -1169,6 +1490,7 @@ def preview_matrix(
         "instance_id": instance_id,
         "rows": [
             r.payload
+            for r in rows
         ],
     }
 
@@ -1186,11 +1508,20 @@ def update_matrix_row_assessment(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     inst = (
         db.query(MatrixInstance)
         .filter(
             MatrixInstance.id
-            == instance_id
+            == instance_id,
+            MatrixInstance.tenant_id == tenant_id,
         )
         .first()
     )
@@ -1217,6 +1548,7 @@ def update_matrix_row_assessment(
             MatrixRow.id == row_id,
             MatrixRow.instance_id
             == instance_id,
+            MatrixRow.tenant_id == tenant_id,
         )
         .first()
     )
@@ -1268,10 +1600,19 @@ def submit_instance(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     inst = (
         db.query(MatrixInstance)
         .filter(
-            MatrixInstance.id == id
+            MatrixInstance.id == id,
+            MatrixInstance.tenant_id == tenant_id,
         )
         .first()
     )
@@ -1312,10 +1653,19 @@ def approve_instance(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
     inst = (
         db.query(MatrixInstance)
         .filter(
-            MatrixInstance.id == id
+            MatrixInstance.id == id,
+            MatrixInstance.tenant_id == tenant_id,
         )
         .first()
     )
@@ -1355,95 +1705,148 @@ def approve_instance(
 #
 # SINGLE CANONICAL INSTANCE SUMMARY
 # =================================================
-@router.get(
-    "/instances/{instance_id}/summary"
-)
+# =================================================
+# GET /matrix/instances/{instance_id}/summary
+#
+# CANONICAL INSTANCE SUMMARY
+# Tenant scoped + instance scoped
+# =================================================
+@router.get("/instances/{instance_id}/summary")
 def get_matrix_instance_summary(
     instance_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Tenant context is required",
+        )
+
+    instance_exists = (
+        db.query(MatrixInstance.id)
+        .filter(
+            MatrixInstance.id == instance_id,
+            MatrixInstance.tenant_id == tenant_id,
+        )
+        .first()
+    )
+
+    if not instance_exists:
+        raise HTTPException(
+            status_code=404,
+            detail="Matrix instance not found",
+        )
+
     summary = db.execute(
         text(
             """
             SELECT
-
                 COUNT(*) AS total_controls,
 
                 COUNT(*) FILTER (
-                    WHERE payload->>'coverage_status'
+                    WHERE UPPER(COALESCE(payload->>'coverage_status', ''))
                     = 'COVERED'
                 ) AS covered_controls,
 
                 COUNT(*) FILTER (
+                    WHERE UPPER(COALESCE(payload->>'coverage_status', ''))
+                    = 'PARTIAL'
+                ) AS partial_controls,
+
+                COUNT(*) FILTER (
                     WHERE COALESCE(
-                        (payload->>'approved_evidence_count')::int,
+                        NULLIF(payload->>'approved_evidence_count', '')::int,
                         0
                     ) > 0
                 ) AS controls_with_evidence,
 
                 COUNT(*) FILTER (
                     WHERE COALESCE(
-                        (payload->>'open_gap_count')::int,
+                        NULLIF(payload->>'open_gap_count', '')::int,
                         0
                     ) > 0
                 ) AS open_gaps,
 
                 COUNT(*) FILTER (
-                    WHERE payload->>'risk_level'
+                    WHERE UPPER(COALESCE(payload->>'risk_level', ''))
                     IN ('HIGH', 'CRITICAL')
-                ) AS high_risks
+                ) AS high_risks,
+
+                COUNT(*) FILTER (
+                    WHERE UPPER(COALESCE(payload->>'status', ''))
+                    IN ('COMPLIANT', 'COVERED')
+                ) AS compliant,
+
+                COUNT(*) FILTER (
+                    WHERE UPPER(COALESCE(payload->>'status', ''))
+                    IN ('NON_COMPLIANT', 'NON-COMPLIANT')
+                ) AS non_compliant,
+
+                COUNT(*) FILTER (
+                    WHERE UPPER(COALESCE(payload->>'status', ''))
+                    IN ('NOT_STARTED', 'NOT-STARTED')
+                ) AS not_started,
+
+                COALESCE(
+                    SUM(
+                        COALESCE(
+                            NULLIF(payload->>'open_task_count', '')::int,
+                            0
+                        )
+                    ),
+                    0
+                ) AS open_tasks
 
             FROM matrix_rows
 
             WHERE instance_id = :instance_id
+              AND tenant_id = :tenant_id
             """
         ),
         {
-            "instance_id": instance_id
+            "instance_id": instance_id,
+            "tenant_id": tenant_id,
         },
     ).fetchone()
 
-    if not summary:
-        raise HTTPException(
-            status_code=404,
-            detail="Matrix instance summary not found",
-        )
+    total = int(summary.total_controls or 0)
+    covered = int(summary.covered_controls or 0)
+    partial = int(summary.partial_controls or 0)
+    evidenced = int(summary.controls_with_evidence or 0)
 
-    total = summary.total_controls or 0
-    covered = summary.covered_controls or 0
-    evidenced = summary.controls_with_approved_evidence or 0
-
-    coverage_percentage = (
-        round(
-            ((covered + (partial_controls * 0.5)) / total) * 100,
-            1,
-        )
+    weighted_coverage = (
+        ((covered + (partial * 0.5)) / total) * 100
         if total
         else 0
     )
-
-    compliance = coverage_percentage
 
     evidence_coverage = (
-        round(
-            (evidenced / total) * 100,
-            1,
-        )
+        (evidenced / total) * 100
         if total
         else 0
     )
 
+    compliance_score = round(weighted_coverage, 1)
+
     return {
-        "compliance_score": compliance,
-        "control_coverage": compliance,
-        "evidence_coverage": evidence_coverage,
-        "open_gaps": summary.open_gaps or 0,
-        "high_risks": summary.high_risks or 0,
         "total_controls": total,
+        "compliance_score": compliance_score,
+        "control_coverage": compliance_score,
+        "evidence_coverage": round(evidence_coverage, 1),
+        "open_gaps": int(summary.open_gaps or 0),
+        "high_risks": int(summary.high_risks or 0),
+        "open_tasks": int(summary.open_tasks or 0),
+        "compliant": int(summary.compliant or 0),
+        "non_compliant": int(summary.non_compliant or 0),
+        "not_started": int(summary.not_started or 0),
     }
 
-
+# =================================================
+# GET /matrix/kpi
+# =================================================
 # =================================================
 # GET /matrix/kpi
 # =================================================
@@ -1454,43 +1857,237 @@ def get_matrix_kpi(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    tenant_id = user.tenant_id
+    tenant_id = getattr(user, "tenant_id", None)
 
-    matrix_query = (
-        db.query(MatrixRow)
-        .join(
-            MatrixInstance,
-            MatrixRow.instance_id == MatrixInstance.id
+    if not tenant_id:
+        raise HTTPException(
+            status_code=400,
+            detail="tenant_id missing",
         )
+
+    # -------------------------------------------------
+    # Resolve the same matrix instance context used by
+    # the matrix landing page.
+    # -------------------------------------------------
+    instance_query = (
+        db.query(MatrixInstance)
         .filter(
-            MatrixRow.tenant_id == tenant_id,
             MatrixInstance.tenant_id == tenant_id,
         )
     )
 
-    if standard_version_id:
-
-        matrix_query = matrix_query.filter(
-            MatrixInstance.standard_version_id == standard_version_id
+    if standard_version_id is not None:
+        instance_query = instance_query.filter(
+            MatrixInstance.standard_version_id
+            == standard_version_id
+        )
+    elif standard_id is not None:
+        instance_query = instance_query.filter(
+            MatrixInstance.standard_id
+            == standard_id
         )
 
-    elif standard_id:
+    instance = (
+        instance_query
+        .order_by(MatrixInstance.id.desc())
+        .first()
+    )
 
-        matrix_query = matrix_query.filter(
-            MatrixInstance.standard_id == standard_id
+    if not instance:
+        return {
+            "mode": "control",
+            "compliance_percentage": 0,
+            "controls": {
+                "total": 0,
+                "covered": 0,
+                "partial": 0,
+                "not_covered": 0,
+            },
+            "maturity": {
+                "total": 0,
+                "achieved": 0,
+                "partial": 0,
+                "not_achieved": 0,
+            },
+            "evidence": {
+                "total": 0,
+                "approved": 0,
+                "pending": 0,
+                "uploaded": 0,
+                "rejected": 0,
+                "draft": 0,
+                "linked": 0,
+            },
+            "risk": {
+                "critical": 0,
+                "high": 0,
+            },
+        }
+
+    # -------------------------------------------------
+    # Matrix rows belonging ONLY to this instance.
+    # -------------------------------------------------
+    rows = (
+        db.query(MatrixRow)
+        .filter(
+            MatrixRow.instance_id == instance.id,
+            MatrixRow.tenant_id == tenant_id,
+        )
+        .all()
+    )
+
+    # -------------------------------------------------
+    # Determine matrix mode from the actual row payload.
+    # -------------------------------------------------
+    maturity_rows = [
+        r for r in rows
+        if isinstance(r.payload, dict)
+        and r.payload.get("practice_id") is not None
+    ]
+
+    control_rows = [
+        r for r in rows
+        if getattr(r, "control_id", None) is not None
+    ]
+
+    is_maturity = bool(maturity_rows) and not control_rows
+
+    # =================================================
+    # MATURITY-BASED MATRIX
+    # =================================================
+    if is_maturity:
+
+        total = len(maturity_rows)
+
+        achieved = 0
+        partial = 0
+        not_achieved = 0
+        evidence_total = 0
+
+        for row in maturity_rows:
+
+            payload = row.payload or {}
+
+            target = payload.get("target_level")
+            achieved_level = payload.get("achieved_level")
+            evidence_count = payload.get(
+                "evidence_count",
+                0,
+            ) or 0
+
+            evidence_total += int(evidence_count)
+
+            if (
+                achieved_level is not None
+                and target is not None
+                and float(achieved_level)
+                >= float(target)
+            ):
+                achieved += 1
+
+            elif (
+                achieved_level is not None
+                and float(achieved_level) > 0
+            ):
+                partial += 1
+
+            else:
+                not_achieved += 1
+
+        maturity_percentage = (
+            round(
+                (achieved / total) * 100,
+                1,
+            )
+            if total
+            else 0
         )
 
-    rows = matrix_query.all()
+        return {
+            "mode": "maturity",
+            "matrix_instance_id": instance.id,
+            "standard_id": instance.standard_id,
+            "standard_version_id": instance.standard_version_id,
 
-    control_ids = [
+            "compliance_percentage": maturity_percentage,
+
+            "controls": {
+                "total": 0,
+                "covered": 0,
+                "partial": 0,
+                "not_covered": 0,
+            },
+
+            "maturity": {
+                "total": total,
+                "achieved": achieved,
+                "partial": partial,
+                "not_achieved": not_achieved,
+            },
+
+            "evidence": {
+                "total": evidence_total,
+                "approved": 0,
+                "pending": 0,
+                "uploaded": 0,
+                "rejected": 0,
+                "draft": 0,
+                "linked": evidence_total,
+            },
+
+            "risk": {
+                "critical": 0,
+                "high": 0,
+            },
+        }
+
+    # =================================================
+    # CONTROL-BASED MATRIX
+    # =================================================
+
+    control_ids = list({
         r.control_id
         for r in rows
-        if r.control_id
-    ]
+        if getattr(r, "control_id", None)
+    })
 
     total = len(control_ids)
 
-    covered = (
+    if not total:
+        return {
+            "mode": "control",
+            "matrix_instance_id": instance.id,
+            "standard_id": instance.standard_id,
+            "standard_version_id": instance.standard_version_id,
+            "compliance_percentage": 0,
+            "controls": {
+                "total": 0,
+                "covered": 0,
+                "partial": 0,
+                "not_covered": 0,
+            },
+            "maturity": {
+                "total": 0,
+                "achieved": 0,
+                "partial": 0,
+                "not_achieved": 0,
+            },
+            "evidence": {
+                "total": 0,
+                "approved": 0,
+                "pending": 0,
+                "uploaded": 0,
+                "rejected": 0,
+                "draft": 0,
+                "linked": 0,
+            },
+            "risk": {
+                "critical": 0,
+                "high": 0,
+            },
+        }
+
+    approved_evidence = (
         db.query(
             func.count(
                 func.distinct(Evidence.control_id)
@@ -1499,126 +2096,12 @@ def get_matrix_kpi(
         .filter(
             Evidence.tenant_id == tenant_id,
             Evidence.is_deleted.is_(False),
+            Evidence.standard_id == instance.standard_id,
             Evidence.control_id.in_(control_ids),
             func.lower(Evidence.status) == "approved",
         )
         .scalar()
     ) or 0
-
-    # -----------------------------
-    # Evidence KPI
-
-    evidence_total = (
-        db.query(
-            func.count(Evidence.id)
-        )
-        .filter(
-            Evidence.tenant_id
-            == tenant_id,
-            Evidence.is_deleted.is_(False),
-        )
-        .scalar()
-    ) or 0
-
-    linked_evidence = (
-        db.query(
-            func.count(Evidence.id)
-        )
-        .filter(
-            Evidence.tenant_id == tenant_id,
-            Evidence.is_deleted.is_(False),
-            Evidence.control_id.in_(control_ids),
-        )
-        .scalar()
-    ) or 0
-
-    approved_evidence = (
-        db.query(
-            func.count(Evidence.id)
-        )
-        .filter(
-            Evidence.tenant_id
-            == tenant_id,
-            Evidence.is_deleted.is_(False),
-            Evidence.control_id.in_(control_ids),
-            func.lower(
-                Evidence.status
-            )
-            == "approved",
-        )
-        .scalar()
-    ) or 0
-
-    pending_evidence = (
-        db.query(
-            func.count(Evidence.id)
-        )
-        .filter(
-            Evidence.tenant_id
-            == tenant_id,
-            Evidence.is_deleted.is_(False),
-            Evidence.control_id.in_(control_ids),
-            func.lower(
-                Evidence.status
-            )
-            == "waiting_approval",
-        )
-        .scalar()
-    ) or 0
-
-    uploaded_evidence = (
-        db.query(
-            func.count(Evidence.id)
-        )
-        .filter(
-            Evidence.tenant_id
-            == tenant_id,
-            Evidence.is_deleted.is_(False),
-            Evidence.control_id.in_(control_ids),
-            func.lower(
-                Evidence.status
-            )
-            == "uploaded",
-        )
-        .scalar()
-    ) or 0
-
-    rejected_evidence = (
-        db.query(
-            func.count(Evidence.id)
-        )
-        .filter(
-            Evidence.tenant_id
-            == tenant_id,
-            Evidence.is_deleted.is_(False),
-            Evidence.control_id.in_(control_ids),
-            func.lower(
-                Evidence.status
-            )
-            == "rejected",
-        )
-        .scalar()
-    ) or 0
-
-    draft_evidence = (
-        db.query(
-            func.count(Evidence.id)
-        )
-        .filter(
-            Evidence.tenant_id
-            == tenant_id,
-            Evidence.is_deleted.is_(False),
-            Evidence.control_id.in_(control_ids),
-            func.lower(
-                Evidence.status
-            )
-            == "draft",
-        )
-        .scalar()
-    ) or 0
-
-    # Evidence Assurance Intelligence
-    # -----------------------------
 
     partial_controls = (
         db.query(
@@ -1629,6 +2112,7 @@ def get_matrix_kpi(
         .filter(
             Evidence.tenant_id == tenant_id,
             Evidence.is_deleted.is_(False),
+            Evidence.standard_id == instance.standard_id,
             Evidence.control_id.in_(control_ids),
             func.lower(Evidence.status).in_(
                 [
@@ -1641,81 +2125,149 @@ def get_matrix_kpi(
         .scalar()
     ) or 0
 
-    # Risk KPI
+    evidence_query = (
+        db.query(func.count(Evidence.id))
+        .filter(
+            Evidence.tenant_id == tenant_id,
+            Evidence.is_deleted.is_(False),
+            Evidence.standard_id == instance.standard_id,
+            Evidence.control_id.in_(control_ids),
+        )
+    )
+
+    evidence_total = evidence_query.scalar() or 0
+
+    approved_count = (
+        evidence_query
+        .filter(
+            func.lower(Evidence.status)
+            == "approved"
+        )
+        .scalar()
+        or 0
+    )
+
+    pending_count = (
+        evidence_query
+        .filter(
+            func.lower(Evidence.status)
+            == "waiting_approval"
+        )
+        .scalar()
+        or 0
+    )
+
+    uploaded_count = (
+        evidence_query
+        .filter(
+            func.lower(Evidence.status)
+            == "uploaded"
+        )
+        .scalar()
+        or 0
+    )
+
+    rejected_count = (
+        evidence_query
+        .filter(
+            func.lower(Evidence.status)
+            == "rejected"
+        )
+        .scalar()
+        or 0
+    )
+
+    draft_count = (
+        evidence_query
+        .filter(
+            func.lower(Evidence.status)
+            == "draft"
+        )
+        .scalar()
+        or 0
+    )
 
     critical_risks = (
-        db.query(
-            func.count(Risk.id)
-        )
+        db.query(func.count(Risk.id))
         .filter(
-            Risk.tenant_id
-            == tenant_id,
+            Risk.tenant_id == tenant_id,
+            Risk.standard_id == instance.standard_id,
             Risk.control_id.in_(control_ids),
-            func.upper(
-                Risk.risk_level
-            )
-            == "CRITICAL",
+            func.upper(Risk.risk_level) == "CRITICAL",
         )
         .scalar()
     ) or 0
 
     high_risks = (
-        db.query(
-            func.count(Risk.id)
-        )
+        db.query(func.count(Risk.id))
         .filter(
-            Risk.tenant_id
-            == tenant_id,
+            Risk.tenant_id == tenant_id,
+            Risk.standard_id == instance.standard_id,
             Risk.control_id.in_(control_ids),
-            func.upper(
-                Risk.risk_level
-            )
-            == "HIGH",
+            func.upper(Risk.risk_level) == "HIGH",
         )
         .scalar()
     ) or 0
 
     coverage_percentage = (
         round(
-            ((covered + (partial_controls * 0.5)) / total) * 100,
+            (
+                (
+                    approved_evidence
+                    + (partial_controls * 0.5)
+                )
+                / total
+            ) * 100,
             1,
         )
         if total
         else 0
     )
 
-    compliance = coverage_percentage
-
     return {
-        "compliance_percentage": compliance,
+        "mode": "control",
+        "matrix_instance_id": instance.id,
+        "standard_id": instance.standard_id,
+        "standard_version_id": instance.standard_version_id,
+
+        "compliance_percentage": coverage_percentage,
 
         "controls": {
             "total": total,
-            "covered": covered,
+            "covered": approved_evidence,
             "partial": partial_controls,
-            "not_covered": total - covered - partial_controls,
+            "not_covered": max(
+                0,
+                total
+                - approved_evidence
+                - partial_controls,
+            ),
+        },
+
+        "maturity": {
+            "total": 0,
+            "achieved": 0,
+            "partial": 0,
+            "not_achieved": 0,
         },
 
         "evidence": {
             "total": evidence_total,
-            "approved": approved_evidence,
-            "pending": pending_evidence,
-            "uploaded": uploaded_evidence,
-            "rejected": rejected_evidence,
-            "draft": draft_evidence,
-            "linked": linked_evidence,
+            "approved": approved_count,
+            "pending": pending_count,
+            "uploaded": uploaded_count,
+            "rejected": rejected_count,
+            "draft": draft_count,
+            "linked": evidence_total,
         },
 
         "risk": {
-            "critical": int(
-                critical_risks
-            ),
-            "high": int(
-                high_risks
-            ),
+            "critical": int(critical_risks),
+            "high": int(high_risks),
         },
     }
-# =================================================
+
+
 # RESOLVE ACTIVE PUBLISHED VERSION (MATRIX READ)
 # =================================================
 def resolve_published_version(
@@ -1737,37 +2289,28 @@ def resolve_published_version(
             detail="Standard not found",
         )
 
-
+    # Prefer published; fall back to active.
+    # Draft versions are never used for matrix reads.
     version = (
         db.query(StandardVersion)
         .filter(
             StandardVersion.standard_id == standard_id,
-            StandardVersion.status == "published",
+            StandardVersion.status.in_(["published", "active"]),
         )
         .order_by(
-            StandardVersion.id.desc()
+            (StandardVersion.status == "published").desc(),
+            StandardVersion.id.desc(),
         )
         .first()
     )
 
-
     if not version:
         raise HTTPException(
             status_code=409,
-            detail="No published standard version available.",
+            detail="No published or active standard version available.",
         )
 
-
     return version
-
-
-
-
-
-
-
-
-
 
 
 

@@ -1,4 +1,4 @@
-﻿
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -234,6 +234,7 @@ export default function ExecutiveIntelligencePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customControlsCount, setCustomControlsCount] = useState(0);
 
   const load = useCallback(async (refresh = false) => {
     try {
@@ -254,6 +255,30 @@ export default function ExecutiveIntelligencePage() {
       }
 
       const uee = (await ueeResponse.json()) as UeeSummary;
+
+      // Custom controls are tenant-defined controls and must remain
+      // separate from the standard/canonical control coverage scope.
+      try {
+        const controlsResponse = await apiFetch("/controls");
+
+        if (controlsResponse.ok) {
+          const controlsPayload = await controlsResponse.json();
+          const controlItems = Array.isArray(controlsPayload)
+            ? controlsPayload
+            : Array.isArray(controlsPayload?.items)
+              ? controlsPayload.items
+              : [];
+
+          setCustomControlsCount(
+            controlItems.filter(
+              (control: any) =>
+                String(control?.origin || "").toLowerCase() === "custom"
+            ).length
+          );
+        }
+      } catch (controlsError) {
+        console.warn("Custom control count unavailable:", controlsError);
+      }
 
       let configuration: IntelligenceConfiguration | null = null;
       let configurationError: string | null = null;
@@ -442,7 +467,7 @@ export default function ExecutiveIntelligencePage() {
         severity: "High",
         title: "Control coverage deficiency",
         description:
-          `${uncoveredControls} of ${totalControls} controls are currently uncovered.`,
+          `${uncoveredControls} of ${totalControls} standard controls are currently uncovered.`,
       });
     }
 
@@ -1383,4 +1408,3 @@ function Skeleton({
     />
   );
 }
-

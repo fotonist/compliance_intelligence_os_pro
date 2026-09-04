@@ -199,7 +199,34 @@ export default function EvidenceDetailPage() {
     });
 
     if (!res.ok) {
-      setError((await res.text()) || `File ${action} failed`);
+      const raw = await res.text();
+
+      let detail = raw;
+
+      try {
+        const parsed = JSON.parse(raw);
+        detail = parsed?.detail || parsed?.message || raw;
+      } catch {
+        // Preserve plain-text API responses.
+      }
+
+      if (
+        res.status === 403 &&
+        detail === "The submitter cannot approve the same evidence file"
+      ) {
+        setError(
+          "Approval restricted: the user who submitted this evidence file cannot approve it. A different authorized reviewer is required to complete the four-eyes approval."
+        );
+      } else if (res.status === 403) {
+        setError(
+          `Action restricted: ${detail || "You are not authorized to perform this action."}`
+        );
+      } else {
+        setError(
+          detail || `Unable to ${action} this evidence file.`
+        );
+      }
+
       return;
     }
 
@@ -349,7 +376,7 @@ if (!ev) return null;
               onClick={() => router.back()}
               className="mb-4 inline-flex items-center text-sm font-medium text-slate-500 transition hover:text-slate-900"
             >
-              ← Evidence Library
+              â† Evidence Library
             </button>
 
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-600">
@@ -377,13 +404,13 @@ if (!ev) return null;
                 {standardLabel}
               </span>
 
-              <span className="text-slate-300">→</span>
+              <span className="text-slate-300">â†’</span>
 
               <span className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
                 {requirementLabel}
               </span>
 
-              <span className="text-slate-300">→</span>
+              <span className="text-slate-300">â†’</span>
 
               <span className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
                 {controlLabel}
@@ -515,7 +542,7 @@ if (!ev) return null;
                   Assessment
                 </div>
                 <div className="mt-1.5 text-sm font-semibold capitalize text-slate-900">
-                  {ev.assessment_type ?? "—"}
+                  {ev.assessment_type ?? "â€”"}
                 </div>
               </div>
 
@@ -625,11 +652,11 @@ if (!ev) return null;
                     </div>
 
                     <div className="text-xs font-semibold text-slate-600">
-                      {r.risk_level ?? "—"}
+                      {r.risk_level ?? "â€”"}
                     </div>
 
                     <div className="text-sm font-semibold text-slate-900">
-                      {r.score ?? "—"}
+                      {r.score ?? "â€”"}
                     </div>
 
                     <div className="text-right">
@@ -906,7 +933,7 @@ if (!ev) return null;
                       {riskLoading ? (
 
                         <div className="py-8 text-center text-sm text-slate-500">
-                          Loading available risks…
+                          Loading available risksâ€¦
                         </div>
 
                       ) : riskError ? (
@@ -949,7 +976,7 @@ if (!ev) return null;
                               </div>
 
                               <div className="mt-1 text-xs text-slate-500">
-                                Score: {r.score ?? "-"} · Level: {r.risk_level ?? "-"}
+                                Score: {r.score ?? "-"} Â· Level: {r.risk_level ?? "-"}
                               </div>
 
                             </div>
@@ -994,7 +1021,7 @@ if (!ev) return null;
                     }
                     className="rounded-xl bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#084ed6] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {linkingRisks ? "Adding…" : "Link Selected Risks"}
+                    {linkingRisks ? "Addingâ€¦" : "Link Selected Risks"}
                   </button>
 
                 </div>

@@ -2,8 +2,7 @@ from datetime import datetime, timezone
 
 from app.schemas.compliance_workspace_schema import (
     AnalyticsDto,
-    AIFindingDto,
-    AIEngineDto,
+    RuleFindingDto,
     ClauseDto,
     ComplianceWorkspaceResponse,
     ControlDto,
@@ -928,112 +927,53 @@ class ComplianceWorkspaceMapper:
             overdue_tasks=tasks.overdue,
         )
 
-    # ============================================================
-    # AI FINDINGS
-    # ============================================================
-
-    @staticmethod
-    def map_ai_findings(control):
-
-        coverage = (
-            ComplianceWorkspaceMapper.map_coverage(
-                control
-            )
-        )
-
-        risks = (
-            ComplianceWorkspaceMapper.map_risk_summary(
-                control
-            )
-        )
-
-        tasks = (
-            ComplianceWorkspaceMapper.map_task_summary(
-                control
-            )
-        )
-
-        findings = []
-
-        if coverage.percentage < 100:
-
-            findings.append(
-                {
-                    "category": "EVIDENCE",
-                    "severity": (
-                        "HIGH"
-                        if coverage.percentage == 0
-                        else "MEDIUM"
-                    ),
-                    "message": (
-                        "Evidence coverage is insufficient."
-                        if coverage.percentage < 50
-                        else "Evidence coverage is partially complete."
-                    ),
-                }
-            )
-
-        if risks.critical > 0:
-
-            findings.append(
-                {
-                    "category": "RISK",
-                    "severity": "CRITICAL",
-                    "message": (
-                        f"{risks.critical} critical risk(s) "
-                        "require immediate attention."
-                    ),
-                }
-            )
-
-        elif risks.high > 0:
-
-            findings.append(
-                {
-                    "category": "RISK",
-                    "severity": "HIGH",
-                    "message": (
-                        f"{risks.high} high risk(s) "
-                        "should be addressed."
-                    ),
-                }
-            )
-
-        if tasks.overdue > 0:
-
-            findings.append(
-                {
-                    "category": "TASK",
-                    "severity": "HIGH",
-                    "message": (
-                        f"{tasks.overdue} overdue task(s) detected."
-                    ),
-                }
-            )
-
-        return findings
-
-    # ============================================================
-    # AI ENGINE
-    # ============================================================
-
-    @staticmethod
-    def map_ai_engine(control):
-
-        return {
-            "status": "ACTIVE",
-            "source": "Compliance Intelligence Engine",
-        }
 
     # ============================================================
     # WORKSPACE
     # ============================================================
 
     @staticmethod
+
+    @staticmethod
+    def map_rule_findings(control):
+
+        coverage = ComplianceWorkspaceMapper.map_coverage(control)
+        risks = ComplianceWorkspaceMapper.map_risk_summary(control)
+        tasks = ComplianceWorkspaceMapper.map_task_summary(control)
+
+        findings = []
+
+        if coverage.percentage < 100:
+            findings.append({
+                "category": "EVIDENCE",
+                "severity": "HIGH" if coverage.percentage == 0 else "MEDIUM",
+                "message": "Evidence coverage is insufficient." if coverage.percentage < 50 else "Evidence coverage is partially complete.",
+            })
+
+        if risks.critical > 0:
+            findings.append({
+                "category": "RISK",
+                "severity": "CRITICAL",
+                "message": f"{risks.critical} critical risk(s) require immediate attention.",
+            })
+        elif risks.high > 0:
+            findings.append({
+                "category": "RISK",
+                "severity": "HIGH",
+                "message": f"{risks.high} high risk(s) should be addressed.",
+            })
+
+        if tasks.overdue > 0:
+            findings.append({
+                "category": "TASK",
+                "severity": "HIGH",
+                "message": f"{tasks.overdue} overdue task(s) detected.",
+            })
+
+        return findings
+
     def map_workspace(
         control,
-        ai_summary=None,
-        ai_executive_summary=None,
     ):
 
         return ComplianceWorkspaceResponse(
@@ -1085,15 +1025,7 @@ class ComplianceWorkspaceMapper:
             timeline=ComplianceWorkspaceMapper.map_timeline(
                 control
             ),
-
-            ai_summary=ai_summary or [],
-            ai_executive_summary=ai_executive_summary,
-
-            ai_findings=ComplianceWorkspaceMapper.map_ai_findings(
+rule_findings=ComplianceWorkspaceMapper.map_rule_findings(
                 control
             ),
-
-            ai_engine=ComplianceWorkspaceMapper.map_ai_engine(
-                control
-            ),
-        )
+)

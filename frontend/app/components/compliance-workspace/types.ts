@@ -213,6 +213,5 @@ export interface ComplianceWorkspace{
 
   timeline:WorkspaceTimeline[];
 
-  ai_summary:string[];
 
 }

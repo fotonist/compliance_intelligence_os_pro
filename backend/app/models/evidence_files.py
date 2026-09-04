@@ -46,8 +46,7 @@ class EvidenceFile(Base, TenantMixin):
 
     submitted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     submitted_at = Column(DateTime, nullable=True)
-
-    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    review_due_at = Column(DateTime, nullable=True)
     approved_at = Column(DateTime, nullable=True)
 
     rejected_by = Column(Integer, ForeignKey("users.id"), nullable=True)

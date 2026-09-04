@@ -56,6 +56,11 @@ export default function LoginPage() {
 
       const data = await res.json();
 
+      console.log("=== LOGIN RESPONSE ===");
+      console.log("data:", data);
+      console.log("access_token:", data?.access_token);
+      console.log("token_type:", data?.token_type);
+
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("token_type", data.token_type ?? "bearer");
       document.cookie = `access_token=${data.access_token}; path=/; SameSite=Lax`;
@@ -118,7 +123,7 @@ export default function LoginPage() {
           </div>
 
           <div className="relative z-10 border-t border-white/40 px-12 py-6 text-xs font-medium text-slate-500 xl:px-16 xl:px-16">
-            ComplianceOS Pro · Secure enterprise access
+            ComplianceOS Pro Â· Secure enterprise access
           </div>
         </aside>
 
@@ -210,7 +215,7 @@ export default function LoginPage() {
             <div className="mt-6 text-center text-[11px] leading-5 text-slate-400">
               Authorized access only. All authentication attempts are logged.
               <br />
-              ISO 27001 · KVKK · GDPR aligned platform
+              ISO 27001 Â· KVKK Â· GDPR aligned platform
             </div>
           </div>
         </main>

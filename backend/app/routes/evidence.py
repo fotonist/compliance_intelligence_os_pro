@@ -1,4 +1,4 @@
-﻿# C:\Projects\compliance_app\backend\app\routes\evidence.py
+# C:\Projects\compliance_app\backend\app\routes\evidence.py
 
 from typing import List
 from datetime import datetime
@@ -16,6 +16,7 @@ from app.core.security import get_current_user
 from app.models.evidences import Evidence
 from app.models.evidence_files import EvidenceFile
 from app.models.evidence_file_history import EvidenceFileHistory
+from app.models.task_evidence_link import TaskEvidenceLink
 from app.models.risk_evidence_link import RiskEvidenceLink
 from app.models.risks import Risk
 from app.models.risk_versions import RiskVersion
@@ -453,6 +454,7 @@ def get_evidence_detail(
             "approval_status": getattr(evidence, "approval_status", None),
             "control_id": evidence.control_id,
             "requirement_id": evidence.requirement_id,
+            "assessment_type": evidence.assessment_type,
             "created_at": getattr(evidence, "created_at", None),
         },
         "risks": [
@@ -831,13 +833,37 @@ def rollback_file(
 def evidences_paged(
     page: int = 1,
     page_size: int = 10,
+    control_id: int | None = None,
+    task_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     offset = (page - 1) * page_size
 
+    base_filter = [
+        Evidence.tenant_id == user.tenant_id,
+        Evidence.is_deleted == False,
+    ]
+
+    if control_id is not None:
+        base_filter.append(
+            Evidence.control_id == control_id
+        )
+
+    if task_id is not None:
+        task_evidence_ids = (
+            db.query(TaskEvidenceLink.evidence_id)
+            .filter(
+                TaskEvidenceLink.task_id == task_id,
+                TaskEvidenceLink.tenant_id == user.tenant_id,
+            )
+        )
+        base_filter.append(
+            Evidence.id.in_(task_evidence_ids)
+        )
     page_ids_sq = (
         db.query(Evidence.id.label("evidence_id"))
+        .filter(*base_filter)
         .order_by(Evidence.id.desc())
         .offset(offset)
         .limit(page_size)
@@ -893,6 +919,27 @@ def evidences_paged(
         .all()
     )
 
+    page_evidence_ids = [r.evidence_id for r in rows]
+
+    task_links_by_evidence: dict[int, list[int]] = {}
+
+    if page_evidence_ids:
+        task_links = (
+            db.query(
+                TaskEvidenceLink.evidence_id,
+                TaskEvidenceLink.task_id,
+            )
+            .filter(
+                TaskEvidenceLink.tenant_id == user.tenant_id,
+                TaskEvidenceLink.evidence_id.in_(page_evidence_ids),
+            )
+            .all()
+        )
+
+        for evidence_id, linked_task_id in task_links:
+            task_links_by_evidence.setdefault(evidence_id, []).append(
+                linked_task_id
+            )
     seen: set[int] = set()
     items = []
 
@@ -921,6 +968,7 @@ def evidences_paged(
                 "status": derived_status,
                 "files_count": r.files_count or 0,
                 "related_risks_count": r.related_risks_count or 0,
+                "task_ids": sorted(set(task_links_by_evidence.get(r.evidence_id, []))),
                 "coverage": coverage,
                 "coverage_status": coverage,
                 "standard": {"code": r.standard_code, "title": r.standard_title},
@@ -929,7 +977,11 @@ def evidences_paged(
             }
         )
 
-    total = db.query(func.count(Evidence.id)).scalar()
+    total = (
+        db.query(func.count(Evidence.id))
+        .filter(*base_filter)
+        .scalar()
+    )
 
     return {
         "items": items,
@@ -1324,10 +1376,3 @@ def get_available_risks(
     )
 
     return risks
-
-
-
-
-
-
-

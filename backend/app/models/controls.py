@@ -17,6 +17,16 @@ class Control(Base):
         index=True,
     )
 
+    # Origin distinguishes system-provided canonical controls from
+    # organization-defined custom controls.
+    origin = Column(
+        String(20),
+        nullable=False,
+        default="canonical",
+        server_default="canonical",
+        index=True,
+    )
+
     # Optional legacy/linkage field. Requirement <-> Control mapping is now
     # represented explicitly by MatrixRow and Row Builder. Annex A controls
     # are therefore allowed to exist without a requirement_id.

@@ -1,5 +1,6 @@
 # C:\Projects\compliance_app\backend\app\models\matrix_instances.py
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.db.base import Base
 
@@ -11,7 +12,7 @@ class MatrixInstance(Base, TenantMixin):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # ✅ MULTI TENANT
+    # âœ… MULTI TENANT
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="RESTRICT"), nullable=False, index=True)
 
     standard_id = Column(
@@ -27,6 +28,10 @@ class MatrixInstance(Base, TenantMixin):
     )
 
     status = Column(String(32), nullable=False, default="generated")
+
+    # Snapshot of the column mapping selected when this matrix instance was generated.
+    # Keeps historical matrix presentation independent from future global mapping changes.
+    column_snapshot = Column(JSONB, nullable=True)
 
     # lifecycle metadata
     started_at = Column(DateTime(timezone=True), nullable=True)

@@ -364,11 +364,11 @@ export default function Sidebar() {
             </Link>
 
             <Link
-              href="/standards"
-              className={itemClass("/standards")}
+              href="/framework-library"
+              className={itemClass("/framework-library")}
             >
               <BookOpen size={14} />
-              Standards
+              Framework Library
             </Link>
 
             <Link
@@ -519,8 +519,8 @@ export default function Sidebar() {
 </Link>
 
             <Link
-              href="/dashboard"
-              className={itemClass("/dashboard")}
+              href="/intelligence/metrics"
+              className={itemClass("/intelligence/metrics")}
             >
               <TrendingUp size={14} />
               KPI & Metrics
@@ -570,13 +570,6 @@ export default function Sidebar() {
               Clause Management
             </Link>
 
-            <Link
-              href="/standards"
-              className={itemClass("/standards")}
-            >
-              <BookOpen size={14} />
-              Standard Management
-            </Link>
 
             <Link
               href="/risks"

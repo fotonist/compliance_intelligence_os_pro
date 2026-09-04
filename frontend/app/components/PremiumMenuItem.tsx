@@ -29,6 +29,7 @@ const PREMIUM_ROUTES: Record<string, string> = {
   "Committees": "/governance/committees",
   "Approvals & Delegations": "/governance/approvals",
   "Document Control": "/governance/documents",
+  "Data Explorer": "/data",
 };
 
 function normalizeRole(role: unknown): string {

@@ -23,7 +23,7 @@ def _get_uee_state(db: Session, tenant_id: int):
 
 
 # =====================================================
-# STRATEGIC KPI Ã¢â‚¬â€œ TENANT SAFE UEE
+# STRATEGIC KPI ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ TENANT SAFE UEE
 # =====================================================
 
 @router.get("/summary")
@@ -121,7 +121,7 @@ def kpi_summary_status(
 
 
 # =====================================================
-# COMPANY HOME TREND Ã¢â‚¬â€œ TENANT SAFE
+# COMPANY HOME TREND ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ TENANT SAFE
 # =====================================================
 
 @router.get("/trends")
@@ -179,113 +179,172 @@ def kpi_trends(
 
 
 # =====================================================
-# OPERATIONAL KPI Ã¢â‚¬â€œ MTTR
+# OPERATIONAL KPI ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ MTTR
 # =====================================================
 
 @router.get("/operations/mttr-trend")
 def mttr_trend(
     range: int = Query(30),
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise ValueError("Authenticated user has no tenant_id")
+
     rows = db.execute(
         text("""
         WITH fr AS (
-          SELECT evidence_id, MIN(rejected_at) AS rejected_at
-          FROM evidence_files
-          WHERE rejected_at IS NOT NULL
-          GROUP BY evidence_id
+          SELECT
+            ef.evidence_id,
+            MIN(ef.rejected_at) AS rejected_at
+          FROM evidence_files ef
+          JOIN evidences e ON e.id = ef.evidence_id
+          WHERE ef.rejected_at IS NOT NULL
+            AND e.tenant_id = :tenant_id
+          GROUP BY ef.evidence_id
         ),
         fa AS (
-          SELECT evidence_id, MIN(approved_at) AS approved_at
-          FROM evidence_files
-          WHERE approved_at IS NOT NULL
-          GROUP BY evidence_id
+          SELECT
+            ef.evidence_id,
+            MIN(ef.approved_at) AS approved_at
+          FROM evidence_files ef
+          JOIN evidences e ON e.id = ef.evidence_id
+          WHERE ef.approved_at IS NOT NULL
+            AND e.tenant_id = :tenant_id
+          GROUP BY ef.evidence_id
         )
-        SELECT DATE(fa.approved_at) AS date,
-               AVG(EXTRACT(EPOCH FROM (fa.approved_at - fr.rejected_at)) / 3600) AS avg_hours
+        SELECT
+          DATE(fa.approved_at) AS date,
+          AVG(
+            EXTRACT(EPOCH FROM (fa.approved_at - fr.rejected_at)) / 3600
+          ) AS avg_hours
         FROM fr
         JOIN fa ON fa.evidence_id = fr.evidence_id
         WHERE fa.approved_at >= NOW() - (:range || ' days')::interval
+          AND fa.approved_at >= fr.rejected_at
         GROUP BY DATE(fa.approved_at)
         ORDER BY DATE(fa.approved_at)
         """),
-        {"range": range},
+        {
+            "tenant_id": tenant_id,
+            "range": range,
+        },
     ).mappings().all()
+
     return rows
 
 
-# =====================================================
-# OPERATIONAL KPI Ã¢â‚¬â€œ MTTR DETAILS
-# =====================================================
-
 @router.get("/operations/mttr-details")
-def mttr_details(db: Session = Depends(get_db)):
+def mttr_details(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise ValueError("Authenticated user has no tenant_id")
+
     rows = db.execute(
         text("""
         WITH fr AS (
-          SELECT evidence_id, MIN(rejected_at) AS rejected_at
-          FROM evidence_files
-          WHERE rejected_at IS NOT NULL
-          GROUP BY evidence_id
+          SELECT
+            ef.evidence_id,
+            MIN(ef.rejected_at) AS rejected_at
+          FROM evidence_files ef
+          JOIN evidences e ON e.id = ef.evidence_id
+          WHERE ef.rejected_at IS NOT NULL
+            AND e.tenant_id = :tenant_id
+          GROUP BY ef.evidence_id
         ),
         fa AS (
-          SELECT evidence_id, MIN(approved_at) AS approved_at
-          FROM evidence_files
-          WHERE approved_at IS NOT NULL
-          GROUP BY evidence_id
+          SELECT
+            ef.evidence_id,
+            MIN(ef.approved_at) AS approved_at
+          FROM evidence_files ef
+          JOIN evidences e ON e.id = ef.evidence_id
+          WHERE ef.approved_at IS NOT NULL
+            AND e.tenant_id = :tenant_id
+          GROUP BY ef.evidence_id
         )
-        SELECT fr.evidence_id,
-               fr.rejected_at,
-               fa.approved_at,
-               EXTRACT(EPOCH FROM (fa.approved_at - fr.rejected_at)) / 3600 AS recovery_hours
+        SELECT
+          fr.evidence_id,
+          fr.rejected_at,
+          fa.approved_at,
+          EXTRACT(
+            EPOCH FROM (fa.approved_at - fr.rejected_at)
+          ) / 3600 AS recovery_hours
         FROM fr
         JOIN fa ON fa.evidence_id = fr.evidence_id
+        WHERE fa.approved_at >= fr.rejected_at
         ORDER BY recovery_hours DESC
-        """)
+        """),
+        {"tenant_id": tenant_id},
     ).mappings().all()
+
     return rows
 
-
-# =====================================================
-# OPERATIONAL KPI Ã¢â‚¬â€œ REJECTED TREND
-# =====================================================
 
 @router.get("/operations/rejected-trend")
 def rejected_trend(
     range: int = Query(30),
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise ValueError("Authenticated user has no tenant_id")
+
     rows = db.execute(
         text("""
-        SELECT DATE(rejected_at) AS date,
-               COUNT(*) AS rejected_count
-        FROM evidence_files
-        WHERE rejected_at >= NOW() - (:range || ' days')::interval
-        GROUP BY DATE(rejected_at)
-        ORDER BY DATE(rejected_at)
+        SELECT
+          DATE(ef.rejected_at) AS date,
+          COUNT(*) AS rejected_count
+        FROM evidence_files ef
+        JOIN evidences e ON e.id = ef.evidence_id
+        WHERE ef.rejected_at IS NOT NULL
+          AND ef.rejected_at >= NOW() - (:range || ' days')::interval
+          AND e.tenant_id = :tenant_id
+        GROUP BY DATE(ef.rejected_at)
+        ORDER BY DATE(ef.rejected_at)
         """),
-        {"range": range},
+        {
+            "tenant_id": tenant_id,
+            "range": range,
+        },
     ).mappings().all()
+
     return rows
 
 
-# =====================================================
-# OPERATIONAL KPI Ã¢â‚¬â€œ PENDING AGING
-# =====================================================
-
 @router.get("/operations/pending-aging")
-def pending_aging(db: Session = Depends(get_db)):
+def pending_aging(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    tenant_id = getattr(user, "tenant_id", None)
+    if not tenant_id:
+        raise ValueError("Authenticated user has no tenant_id")
+
     row = db.execute(
         text("""
         SELECT
-          AVG(DATE_PART('day', NOW() - created_at)) AS avg_days,
-          MAX(DATE_PART('day', NOW() - created_at)) AS oldest_days
-        FROM evidences
-        WHERE status IN ('pending','uploaded','under_review')
-        """)
+          COUNT(*) AS awaiting_review,
+          AVG(
+            EXTRACT(EPOCH FROM (NOW() - ef.submitted_at)) / 86400
+          ) AS avg_days,
+          MAX(
+            EXTRACT(EPOCH FROM (NOW() - ef.submitted_at)) / 86400
+          ) AS oldest_days
+        FROM evidence_files ef
+        WHERE ef.tenant_id = :tenant_id
+          AND ef.status = 'waiting_approval'
+          AND ef.submitted_at IS NOT NULL
+        """),
+        {"tenant_id": tenant_id},
     ).mappings().first()
 
     return {
+        "awaiting_review": int(row["awaiting_review"] or 0),
         "avg_days": float(row["avg_days"] or 0),
-        "oldest_days": int(row["oldest_days"] or 0),
+        "oldest_days": float(row["oldest_days"] or 0),
     }

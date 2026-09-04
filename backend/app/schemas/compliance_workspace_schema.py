@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel, model_validator
@@ -264,7 +264,7 @@ class AnalyticsDto(BaseModel):
 # AI FINDING
 # =====================================================
 
-class AIFindingDto(BaseModel):
+class RuleFindingDto(BaseModel):
 
     category: str
 
@@ -274,15 +274,7 @@ class AIFindingDto(BaseModel):
 
 
 
-# =====================================================
-# AI ENGINE
-# =====================================================
 
-class AIEngineDto(BaseModel):
-
-    status: str
-
-    source: str
 
 
 
@@ -316,14 +308,7 @@ class ComplianceWorkspaceResponse(BaseModel):
 
     timeline: List[TimelineDto]
 
-    ai_summary: List[str]
-    ai_executive_summary: Optional[str] = None
-    ai_findings: List[AIFindingDto] = []
-
-    ai_engine: AIEngineDto = AIEngineDto(
-        status="ACTIVE",
-        source="Compliance Intelligence Engine",
-    )
+    rule_findings: List[RuleFindingDto] = []
 
     class Config:
         from_attributes = True

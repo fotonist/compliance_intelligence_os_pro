@@ -241,6 +241,7 @@ def _control(db: Session, version: StandardVersion, requirement: Requirement, co
             code=code,
             title=title,
             description=f"ISO/IEC 27001:2022 Annex A {annex_code}",
+            origin="canonical",
         )
         db.add(obj)
         db.flush()
@@ -248,6 +249,7 @@ def _control(db: Session, version: StandardVersion, requirement: Requirement, co
         obj.requirement_id = requirement.id
         obj.title = title
         obj.description = f"ISO/IEC 27001:2022 Annex A {annex_code}"
+        obj.origin = "canonical"
     return obj
 
 

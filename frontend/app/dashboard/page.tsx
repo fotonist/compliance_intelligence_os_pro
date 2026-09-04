@@ -130,6 +130,11 @@ type CurrentUser = {
   role?: string | null;
 };
 
+type OrganizationSummary = {
+  id?: number;
+  name?: string | null;
+};
+
 type TrendPoint = {
   date: string;
   risk_exposure_pct?: number;
@@ -268,9 +273,14 @@ export default function DashboardPage() {
   const [evidences, setEvidences] = useState<Evidence[]>([]);
   const [risks, setRisks] = useState<Risk[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [controlsCount, setControlsCount] = useState(0);
+  const [standardControlsCount, setStandardControlsCount] = useState(0);
+  const [customControlsCount, setCustomControlsCount] = useState(0);
+  const [processesCount, setProcessesCount] = useState(0);
+  const [objectivesCount, setObjectivesCount] = useState(0);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [organization, setOrganization] =
+    useState<OrganizationSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -306,8 +316,11 @@ export default function DashboardPage() {
           risksRes,
           controlsRes,
           tasksRes,
+          processesRes,
+          objectivesRes,
           trendRes,
           userRes,
+          organizationRes,
         ] = await Promise.all([
           safeFetch("/matrix/kpi"),
           safeFetch("/company/intelligence/overview"),
@@ -318,8 +331,11 @@ export default function DashboardPage() {
           safeFetch("/risks?page=1&page_size=100&status=all"),
           safeFetch("/controls/?skip=0&limit=1000"),
           safeFetch("/company/tasks/my"),
+          safeFetch("/company/processes"),
+          safeFetch("/company/objectives"),
           safeFetch("/dashboard/trends?days=180"),
           safeFetch("/auth/me"),
+          safeFetch("/organizations"),
         ]);
 
         const [
@@ -332,8 +348,11 @@ export default function DashboardPage() {
           risksData,
           controlsData,
           tasksData,
+          processesData,
+          objectivesData,
           trendData,
           userData,
+          organizationData,
         ] = await Promise.all([
           readJson<UeeSummary>(summaryRes),
           readJson<IntelligenceOverview>(overviewRes),
@@ -344,8 +363,11 @@ export default function DashboardPage() {
           readJson<any>(risksRes),
           readJson<any>(controlsRes),
           readJson<any>(tasksRes),
+          readJson<any>(processesRes),
+          readJson<any>(objectivesRes),
           readJson<any>(trendRes),
           readJson<CurrentUser>(userRes),
+          readJson<OrganizationSummary[]>(organizationRes),
         ]);
 
         if (!mounted) return;
@@ -385,7 +407,8 @@ export default function DashboardPage() {
           : Array.isArray(controlsData?.items)
             ? controlsData.items
             : [];
-        setControlsCount(controlItems.length);
+        setStandardControlsCount(controlItems.filter((control: any) => String(control?.origin || "canonical").toLowerCase() === "canonical").length);
+        setCustomControlsCount(controlItems.filter((control: any) => String(control?.origin || "").toLowerCase() === "custom").length);
 
         const taskItems = Array.isArray(tasksData?.tasks)
           ? tasksData.tasks
@@ -393,6 +416,20 @@ export default function DashboardPage() {
             ? tasksData
             : [];
         setTasks(taskItems);
+
+        const processItems = Array.isArray(processesData)
+          ? processesData
+          : Array.isArray(processesData?.items)
+            ? processesData.items
+            : [];
+        setProcessesCount(processItems.length);
+
+        const objectiveItems = Array.isArray(objectivesData)
+          ? objectivesData
+          : Array.isArray(objectivesData?.items)
+            ? objectivesData.items
+            : [];
+        setObjectivesCount(objectiveItems.length);
 
         if (trendData) {
           const approvals = Array.isArray(trendData.evidence_approvals_daily)
@@ -417,6 +454,9 @@ export default function DashboardPage() {
         }
 
         if (userData) setUser(userData);
+        if (organizationData && Array.isArray(organizationData)) {
+          setOrganization(organizationData[0] ?? null);
+        }
 
         const result = await Promise.all(
           standardItems.map(async (standard: Standard) => {
@@ -583,7 +623,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium">Demo Company A.Ş.</div>
+            <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium">{organization?.name || "Company"}</div>
             <div className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700">
               Reporting Period <span className="ml-2 font-semibold">Aug 2026</span>
             </div>
@@ -593,7 +633,7 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
           <KpiCard
             title="Compliance Health"
             value={`${Math.round(complianceHealth)}%`}
@@ -611,14 +651,21 @@ export default function DashboardPage() {
             tone="bg-blue-50 text-blue-600"
           />
           <KpiCard
-            title="Controls"
-            value={controlsCount}
-            subtitle="Active controls"
+            title="Standard Controls"
+            value={standardControlsCount}
+            subtitle="Canonical standard controls"
             icon={<ClipboardCheck size={20} />}
             href="/controls"
             tone="bg-violet-50 text-violet-600"
           />
           <KpiCard
+            title="Custom Controls"
+            value={customControlsCount}
+            subtitle="Organization-defined controls"
+            icon={<ShieldCheck size={20} />}
+            href="/controls"
+            tone="bg-slate-100 text-slate-600"
+          /><KpiCard
             title="Risks"
             value={openRisks}
             subtitle={<>{totalRisks} total risks {riskStats.critical > 0 && <span className="ml-1 text-red-500">{riskStats.critical} Critical</span>}</>}
@@ -713,7 +760,7 @@ export default function DashboardPage() {
                     <div className="rounded-lg bg-red-50 p-2 text-red-500"><AlertTriangle size={16} /></div>
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold">{item.title || `Risk #${item.risk_id}`}</div>
-                      <div className="text-[11px] text-slate-500">{item.control_code || "Risk Intelligence"} · {item.risk_level || "Risk"}</div>
+                      <div className="text-[11px] text-slate-500">{item.control_code || "Risk Intelligence"} Â· {item.risk_level || "Risk"}</div>
                     </div>
                   </div>
                   <span className="ml-3 shrink-0 rounded-md bg-red-50 px-2 py-1 text-[10px] font-semibold text-red-600">{Math.round(num(item.escalation_probability_30d) * 100)}% probability</span>
@@ -813,11 +860,12 @@ export default function DashboardPage() {
 
           <Section title="Foundation Snapshot" subtitle="Current enterprise structure">
             <div className="grid grid-cols-3 gap-2">
-              <Link href="/processes" className="rounded-lg border border-slate-200 p-3"><Workflow size={16} className="text-emerald-600" /><div className="mt-2 text-[10px] text-slate-500">Processes</div><div className="text-lg font-bold">—</div></Link>
-              <Link href="/objectives" className="rounded-lg border border-slate-200 p-3"><Target size={16} className="text-blue-600" /><div className="mt-2 text-[10px] text-slate-500">Objectives</div><div className="text-lg font-bold">—</div></Link>
+              <Link href="/company/processes" className="rounded-lg border border-slate-200 p-3"><Workflow size={16} className="text-emerald-600" /><div className="mt-2 text-[10px] text-slate-500">Processes</div><div className="text-lg font-bold">{processesCount}</div></Link>
+              <Link href="/company/objectives" className="rounded-lg border border-slate-200 p-3"><Target size={16} className="text-blue-600" /><div className="mt-2 text-[10px] text-slate-500">Objectives</div><div className="text-lg font-bold">{objectivesCount}</div></Link>
               <Link href="/risks" className="rounded-lg border border-slate-200 p-3"><AlertTriangle size={16} className="text-red-500" /><div className="mt-2 text-[10px] text-slate-500">Risks</div><div className="text-lg font-bold">{totalRisks}</div></Link>
               <Link href="/standards" className="rounded-lg border border-slate-200 p-3"><BookOpen size={16} className="text-violet-600" /><div className="mt-2 text-[10px] text-slate-500">Standards</div><div className="text-lg font-bold">{standards.length}</div></Link>
-              <div className="rounded-lg border border-slate-200 p-3"><Users size={16} className="text-cyan-600" /><div className="mt-2 text-[10px] text-slate-500">Controls</div><div className="text-lg font-bold">{controlsCount}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><ClipboardCheck size={16} className="text-violet-600" /><div className="mt-2 text-[10px] text-slate-500">Standard Controls</div><div className="text-lg font-bold">{standardControlsCount}</div></div>
+              <div className="rounded-lg border border-slate-200 p-3"><ShieldCheck size={16} className="text-slate-600" /><div className="mt-2 text-[10px] text-slate-500">Custom Controls</div><div className="text-lg font-bold">{customControlsCount}</div></div>
               <div className="rounded-lg border border-slate-200 p-3"><MapPin size={16} className="text-orange-600" /><div className="mt-2 text-[10px] text-slate-500">Evidence</div><div className="text-lg font-bold">{evidences.length}</div></div>
             </div>
           </Section>
@@ -858,7 +906,7 @@ export default function DashboardPage() {
           </Section>
         </div>
 
-        <footer className="py-5 text-center text-[10px] text-slate-400">© 2026 Compliance OS. All rights reserved.</footer>
+        <footer className="py-5 text-center text-[10px] text-slate-400">Â© 2026 Compliance OS. All rights reserved.</footer>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 ﻿from datetime import datetime
+
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -11,7 +12,6 @@ class ComplianceTask(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Multi-tenant
     tenant_id = Column(
         Integer,
         ForeignKey("tenants.id", ondelete="RESTRICT"),
@@ -33,20 +33,48 @@ class ComplianceTask(Base):
         index=True,
     )
 
-    # Intelligence fields
+    task_type = Column(
+        String,
+        nullable=True,
+        default="COMPLIANCE_ACTION",
+        server_default="COMPLIANCE_ACTION",
+    )
+
+    title = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+
     priority_score = Column(Integer, nullable=False)
 
     owner_role = Column(String, nullable=False)
+
+    assignee_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    created_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     due_date = Column(DateTime(timezone=True), nullable=False)
 
-    status = Column(String, nullable=False, default="open")
+    status = Column(
+        String,
+        nullable=False,
+        default="OPEN",
+        server_default="OPEN",
+    )
 
-    # 🔥 ENTERPRISE SOURCE TRACKING (SAFE)
     source_type = Column(
         String,
         nullable=False,
-        default="manual",          # ORM default
-        server_default="manual",   # DB default
+        default="manual",
+        server_default="manual",
     )
 
     source_id = Column(Integer, nullable=True)
@@ -64,11 +92,37 @@ class ComplianceTask(Base):
         onupdate=func.now(),
     )
 
-    title = Column(String, nullable=True)
-    description = Column(String, nullable=True)
-
     process = relationship("Process")
-    control = relationship("Control", back_populates="tasks")
 
-    evidence_links = relationship("TaskEvidenceLink", back_populates="task", cascade="all, delete-orphan")
+    control = relationship(
+        "Control",
+        back_populates="tasks",
+    )
 
+    assignee = relationship(
+        "User",
+        foreign_keys=[assignee_user_id],
+    )
+
+    created_by = relationship(
+        "User",
+        foreign_keys=[created_by_user_id],
+    )
+
+    evidence_links = relationship(
+        "TaskEvidenceLink",
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )
+
+    evidence_requirements = relationship(
+        "TaskEvidenceRequirement",
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )
+
+    checklist_items = relationship(
+        "TaskChecklistItem",
+        back_populates="task",
+        cascade="all, delete-orphan",
+    )

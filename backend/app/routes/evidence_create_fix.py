@@ -9,6 +9,7 @@ from app.models.evidences import Evidence
 from app.models.controls import Control
 from app.models.standards import Standard
 from app.models.standard_versions import StandardVersion
+from app.models.matrix_instance import MatrixInstance
 
 router = APIRouter(prefix="/evidences", tags=["evidence-create"])
 
@@ -48,19 +49,50 @@ def create_evidence_fixed(
                 detail="control_id is required for control evidence",
             )
 
-        control = db.query(Control).filter(Control.id == int(control_id)).first()
+        control = (
+            db.query(Control)
+            .join(
+                StandardVersion,
+                StandardVersion.id == Control.standard_version_id,
+            )
+            .join(
+                MatrixInstance,
+                MatrixInstance.standard_version_id == StandardVersion.id,
+            )
+            .filter(
+                Control.id == int(control_id),
+                MatrixInstance.tenant_id == tenant_id,
+            )
+            .first()
+        )
+
         if not control:
-            raise HTTPException(status_code=404, detail="Control not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Control not found in current tenant scope",
+            )
 
-        # The control is the authoritative version context.
-        if not standard_version_id:
-            standard_version_id = control.standard_version_id
+        # The selected control is the authoritative version context.
+        # A control evidence record must always use the exact
+        # standard_version_id of its control.
+        control_standard_version_id = control.standard_version_id
 
-        if not standard_version_id:
+        if not control_standard_version_id:
             raise HTTPException(
                 status_code=409,
                 detail="Selected control is not linked to a standard version",
             )
+
+        if (
+            standard_version_id is not None
+            and int(standard_version_id) != int(control_standard_version_id)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="standard_version_id does not match the selected control",
+            )
+
+        standard_version_id = control_standard_version_id
 
         if not requirement_id:
             requirement_id = control.requirement_id

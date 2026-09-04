@@ -10,7 +10,6 @@ from app.dependencies.auth import get_current_user
 from app.models.process import Process
 from app.models.risks import Risk
 from app.models.controls import Control
-from app.models.controls_coverage import ControlsCoverage
 from app.models.compliance_tasks import ComplianceTask
 from app.models.evidences import Evidence
 from app.models.evidence_files import EvidenceFile
@@ -241,28 +240,28 @@ def create_task_from_control(
 # PROCESS READINESS
 # ==========================================================
 #
-# Process ↔ Control relationship:
+# Process â†” Control relationship:
 #
 # processes
-#     ↓
+#     â†“
 # compliance_tasks.process_id
-#     ↓
+#     â†“
 # compliance_tasks.control_id
-#     ↓
+#     â†“
 # controls
 #
-# Process ↔ Risk:
+# Process â†” Risk:
 #
 # processes
-#     ↓
+#     â†“
 # process_risk_links
-#     ↓
+#     â†“
 # risks
 #
 # Standard scope:
 #
 # matrix_rows.standard_id
-#     ↓
+#     â†“
 # matrix_rows.control_id
 #
 # ==========================================================
@@ -337,11 +336,11 @@ def get_process_readiness(
         # Current architecture:
         #
         # Process
-        #    ↓
+        #    â†“
         # compliance_tasks.process_id
-        #    ↓
+        #    â†“
         # compliance_tasks.control_id
-        #    ↓
+        #    â†“
         # Control
         # --------------------------------------------------
 
@@ -509,25 +508,34 @@ def get_process_readiness(
         # COVERAGE
         # --------------------------------------------------
 
-        coverage_rows = (
-            db.query(ControlsCoverage)
-            .filter(
-                ControlsCoverage.control_id.in_(
-                    process_control_ids
-                )
-            )
-            .all()
-        )
+        coverage_rows = db.execute(
+            text(
+                """
+                SELECT
+                    control_id,
+                    coverage_status
+                FROM analytics.v_control_coverage_uee
+                WHERE tenant_id = :tenant_id
+                  AND control_id = ANY(:control_ids)
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "control_ids": list(process_control_ids),
+            },
+        ).mappings().all()
 
         coverage_by_control = {
-            row.control_id: row.coverage_status
+            int(row["control_id"]): str(
+                row["coverage_status"] or ""
+            )
             for row in coverage_rows
         }
 
         coverage_map = {
-            "NOT_ACHIEVED": 0,
-            "PARTIALLY_ACHIEVED": 50,
-            "ACHIEVED": 100,
+            "UNCOVERED": 0,
+            "PARTIALLY_COVERED": 50,
+            "COVERED": 100,
         }
 
         coverage_values = []

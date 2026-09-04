@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/app/lib/api";
@@ -389,7 +389,7 @@ export default function ExecutiveReadinessProcessesPage() {
           <KpiCard
             label="Avg. Coverage"
             value={`${summary.coverage}%`}
-            description="Control coverage"
+            description="Standard control coverage"
             icon="coverage"
           />
 
@@ -434,7 +434,7 @@ export default function ExecutiveReadinessProcessesPage() {
           <PostureCard
             title="Coverage Posture"
             value={`${summary.coverage}%`}
-            subtitle="Average control coverage"
+            subtitle="Average standard control coverage"
             progress={summary.coverage}
             level={
               summary.coverage >= 80
@@ -695,7 +695,7 @@ export default function ExecutiveReadinessProcessesPage() {
                           </div>
 
                           <div className="mt-1 text-xs text-slate-400">
-                            Control coverage
+                            Standard control coverage
                           </div>
                         </td>
 

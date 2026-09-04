@@ -23,10 +23,13 @@ from app.routes.evidence import router as evidence_router
 from app.routes.evidence_create_fix import router as evidence_create_fix_router
 from app.routes.evidence_files import router as evidence_files_router
 from app.routes.standards import router as standards_router
+from app.routes.framework import router as framework_router
 from app.routes.controls import router as controls_router
 from app.routes.risk_assessment import router as risk_assessment_router
 from app.routes.ai import router as ai_router
+from app.routes.ai_dashboard import router as ai_dashboard_router
 from app.routes.kpi import router as kpi_router
+from app.routes.data_explorer import router as data_explorer_router
 from app.routes.maturity import router as maturity_router
 from app.routes.standard_maturity_structure import router as standard_maturity_structure_router
 from app.routes.control_assessments import router as control_assessments_router
@@ -52,7 +55,6 @@ from app.routes.analytics import router as analytics_router
 from app.routes.process_readiness import router as process_readiness_router
 from app.routes.license import router as license_router
 from app.routes.analytics_control import router as analytics_control_router
-from app.routes.company_tasks_evidence import router as company_tasks_evidence_router
 from app.routes.company_tasks import router as company_tasks_router
 from app.routes.intelligence import api_router as intelligence_api_router
 from app.models.maturity_workspace_sessions import MaturityWorkspaceSession
@@ -165,11 +167,11 @@ application.include_router(matrix_router)
 application.include_router(matrix_view_router)
 application.include_router(assessments.router)
 application.include_router(kpi_router)
+application.include_router(data_explorer_router)
 application.include_router(company_home_router)
 application.include_router(control_assessments_router)
 application.include_router(evidence_files_router)
 application.include_router(user_router)
-application.include_router(company_tasks_evidence_router)
 application.include_router(company_tasks_router)
 # Register the version-aware create endpoint before the legacy evidence router.
 # This preserves all existing evidence routes while making POST /evidences and
@@ -181,9 +183,11 @@ application.include_router(evidence_router, prefix="/company")
 application.include_router(risk_create_router)
 application.include_router(risk_router)
 application.include_router(standards_router)
+application.include_router(framework_router)
 application.include_router(standard_structure.router)
 application.include_router(controls_router)
 application.include_router(ai_router)
+application.include_router(ai_dashboard_router)
 application.include_router(risk_assessment_router)
 application.include_router(requirements_router)
 application.include_router(risk_intelligence_router)

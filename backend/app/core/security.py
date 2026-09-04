@@ -1,10 +1,14 @@
-﻿# C:\Projects\compliance_app\backend\app\core\security.py
+# C:\Projects\compliance_app\backend\app\core\security.py
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -88,7 +92,8 @@ def get_current_user(
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
+    except JWTError as exc:
+        print("JWT DECODE ERROR:", type(exc).__name__, str(exc))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",

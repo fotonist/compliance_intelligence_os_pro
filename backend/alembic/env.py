@@ -1,4 +1,4 @@
-﻿from __future__ import with_statement
+from __future__ import with_statement
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -133,3 +133,6 @@ else:
 
 # --- Company Foundation ---
 from app.models.company_objective import CompanyObjective
+
+# --- Framework Adoption ---
+from app.models.framework_adoption import FrameworkAdoption, FrameworkAdoptionScope

@@ -1,6 +1,7 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy import text
+from datetime import datetime, timedelta
 import os
 import shutil
 import uuid
@@ -10,7 +11,11 @@ from app.models.evidence_files import EvidenceFile
 from app.models.evidence_file_history import EvidenceFileHistory
 from app.models.evidences import Evidence
 from app.models.risk_evidence_link import RiskEvidenceLink
+from app.models.compliance_tasks import ComplianceTask
+from app.models.task_evidence_link import TaskEvidenceLink
+from app.models.process import Process
 from app.core.security import get_current_user
+from app.core.config import settings
 
 router = APIRouter(prefix="/evidences", tags=["Evidence Files"])
 
@@ -42,6 +47,136 @@ def _standard_archive_dir(evidence: Evidence) -> str:
 
 def _staging_dir(evidence: Evidence) -> str:
     return os.path.join(STAGING_ROOT, str(evidence.tenant_id), str(evidence.id))
+
+
+@router.get("/review/queue")
+def get_review_queue(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    sla_rows = db.execute(
+        text("""
+            SELECT
+                id,
+                evidence_id,
+                version,
+                status,
+                uploaded_at,
+                approved_at,
+                file_name,
+                file_size,
+                tenant_id,
+                review_due_at,
+                review_status,
+                review_days_remaining,
+                is_overdue
+            FROM analytics.v_evidence_files
+            WHERE tenant_id = :tenant_id
+              AND review_status IN ('PENDING', 'DUE_SOON', 'OVERDUE')
+            ORDER BY
+                CASE review_status
+                    WHEN 'OVERDUE' THEN 1
+                    WHEN 'DUE_SOON' THEN 2
+                    WHEN 'PENDING' THEN 3
+                    ELSE 4
+                END,
+                review_due_at ASC NULLS LAST,
+                id ASC
+        """),
+        {"tenant_id": user.tenant_id},
+    ).fetchall()
+
+    if not sla_rows:
+        return {
+            "total": 0,
+            "items": [],
+        }
+
+    evidence_ids = list({row.evidence_id for row in sla_rows})
+    file_ids = [row.id for row in sla_rows]
+
+    evidence_rows = (
+        db.query(Evidence)
+        .filter(
+            Evidence.id.in_(evidence_ids),
+            Evidence.tenant_id == user.tenant_id,
+        )
+        .all()
+    )
+    evidence_map = {e.id: e for e in evidence_rows}
+
+    file_rows = (
+        db.query(EvidenceFile)
+        .filter(
+            EvidenceFile.id.in_(file_ids),
+            EvidenceFile.tenant_id == user.tenant_id,
+        )
+        .all()
+    )
+    file_map = {f.id: f for f in file_rows}
+
+    task_rows = (
+        db.query(ComplianceTask, Process, TaskEvidenceLink)
+        .outerjoin(
+            TaskEvidenceLink,
+            TaskEvidenceLink.task_id == ComplianceTask.id,
+        )
+        .outerjoin(
+            Process,
+            Process.id == ComplianceTask.process_id,
+        )
+        .filter(
+            TaskEvidenceLink.evidence_id.in_(evidence_ids),
+            ComplianceTask.tenant_id == user.tenant_id,
+        )
+        .all()
+    )
+
+    task_map = {}
+
+    for task, process, link in task_rows:
+        task_map.setdefault(link.evidence_id, []).append(
+            {
+                "task_id": task.id,
+                "task_title": task.title,
+                "task_type": task.task_type,
+                "process_id": process.id if process else None,
+                "process_code": process.code if process else None,
+                "process_name": process.name if process else None,
+            }
+        )
+
+    items = []
+
+    for row in sla_rows:
+        evidence = evidence_map.get(row.evidence_id)
+        file = file_map.get(row.id)
+
+        if evidence is None or file is None:
+            continue
+
+        items.append(
+            {
+                "file_id": row.id,
+                "evidence_id": row.evidence_id,
+                "evidence_title": evidence.title,
+                "file_name": row.file_name,
+                "version": row.version,
+                "submitted_by": file.submitted_by,
+                "submitted_at": file.submitted_at,
+                "status": row.status,
+                "review_due_at": row.review_due_at,
+                "review_status": row.review_status,
+                "review_days_remaining": row.review_days_remaining,
+                "is_overdue": row.is_overdue,
+                "tasks": task_map.get(row.evidence_id, []),
+            }
+        )
+
+    return {
+        "total": len(items),
+        "items": items,
+    }
 
 
 @router.get("/{evidence_id}/files")
@@ -146,9 +281,12 @@ def submit_file(
 
     old_status = f.status
 
+    submitted_at = datetime.utcnow()
+
     f.status = "waiting_approval"
     f.submitted_by = user.id
-    f.submitted_at = datetime.utcnow()
+    f.submitted_at = submitted_at
+    f.review_due_at = submitted_at + timedelta(days=settings.EVIDENCE_REVIEW_SLA_DAYS)
 
     db.add(
         EvidenceFileHistory(
@@ -240,6 +378,12 @@ def reject_file(
         raise HTTPException(status_code=404, detail="File not found")
     if f.status != "waiting_approval":
         raise HTTPException(status_code=409, detail="Only files waiting for approval can be rejected")
+
+    if f.submitted_by and f.submitted_by == user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="The submitter cannot reject the same evidence file",
+        )
 
     old_status = f.status
 

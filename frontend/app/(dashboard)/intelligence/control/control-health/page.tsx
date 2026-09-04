@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -135,6 +135,7 @@ export default function ControlHealthPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("All");
   const [search, setSearch] = useState("");
+  const [customControlsCount, setCustomControlsCount] = useState(0);
 
   const load = useCallback(async (silent = false) => {
     try {
@@ -156,6 +157,31 @@ export default function ControlHealthPage() {
 
       const json: HealthResponse = await res.json();
       setData(json);
+
+      // Control Health metrics are standard/canonical control metrics.
+      // Custom controls are displayed separately and are excluded from
+      // the standard health distribution.
+      try {
+        const controlsResponse = await apiFetch("/controls");
+
+        if (controlsResponse.ok) {
+          const controlsPayload = await controlsResponse.json();
+          const controlItems = Array.isArray(controlsPayload)
+            ? controlsPayload
+            : Array.isArray(controlsPayload?.items)
+              ? controlsPayload.items
+              : [];
+
+          setCustomControlsCount(
+            controlItems.filter(
+              (control: any) =>
+                String(control?.origin || "").toLowerCase() === "custom"
+            ).length
+          );
+        }
+      } catch (controlsError) {
+        console.warn("Custom control count unavailable:", controlsError);
+      }
     } catch (err) {
       console.error("Control Health load error:", err);
       setError(
@@ -306,12 +332,19 @@ export default function ControlHealthPage() {
         </section>
 
         {/* Executive KPI row */}
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <MetricCard
             icon={Target}
-            label="Total Controls"
+            label="Standard Controls"
             value={summary.total_controls}
-            description="Controls in active tenant scope"
+            description="Canonical controls in active tenant scope"
+          />
+
+          <MetricCard
+            icon={ShieldCheck}
+            label="Custom Controls"
+            value={customControlsCount}
+            description="Tenant-defined controls"
           />
 
           <MetricCard
@@ -742,7 +775,7 @@ function LoadingState() {
       <div className="mx-auto max-w-[1600px] space-y-6">
         <div className="h-16 w-96 animate-pulse rounded-xl bg-white" />
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
           {Array.from({ length: 5 }).map((_, index) => (
             <div
               key={index}
@@ -761,9 +794,3 @@ function LoadingState() {
     </div>
   );
 }
-
-
-
-
-
-

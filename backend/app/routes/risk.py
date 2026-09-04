@@ -74,14 +74,33 @@ def assess_risk(
     risk_id: int,
     payload: dict,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
+    tenant_id = current_user.tenant_id
+
+    # -------------------------------------------------
+    # LOAD RISK — TENANT SCOPED
+    # -------------------------------------------------
     risk = db.execute(
-        text("SELECT * FROM risks WHERE id = :id"),
-        {"id": risk_id},
+        text(
+            """
+            SELECT *
+            FROM risks
+            WHERE id = :risk_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {
+            "risk_id": risk_id,
+            "tenant_id": tenant_id,
+        },
     ).fetchone()
 
     if not risk:
-        raise HTTPException(status_code=404, detail="Risk not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Risk not found",
+        )
 
     new_likelihood = payload.get("likelihood")
     new_impact = payload.get("impact")
@@ -93,6 +112,27 @@ def assess_risk(
             detail="likelihood and impact are required",
         )
 
+    try:
+        new_likelihood = int(new_likelihood)
+        new_impact = int(new_impact)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="likelihood and impact must be integers",
+        )
+
+    if not 1 <= new_likelihood <= 5:
+        raise HTTPException(
+            status_code=400,
+            detail="likelihood must be between 1 and 5",
+        )
+
+    if not 1 <= new_impact <= 5:
+        raise HTTPException(
+            status_code=400,
+            detail="impact must be between 1 and 5",
+        )
+
     new_score = new_likelihood * new_impact
 
     if new_score >= 15:
@@ -102,31 +142,47 @@ def assess_risk(
     else:
         new_risk_level = "LOW"
 
-    # ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ HISTORY INSERT (FULL SNAPSHOT)
+    # -------------------------------------------------
+    # HISTORY
+    # -------------------------------------------------
     db.execute(
         text(
             """
             INSERT INTO risk_history (
                 risk_id,
-                likelihood_old, likelihood_new,
-                impact_old, impact_new,
-                score_old, score_new,
-                risk_level_old, risk_level_new,
-                treatment_old, treatment_new,
-                status_old, status_new,
-                action_old, action_new,
+                likelihood_old,
+                likelihood_new,
+                impact_old,
+                impact_new,
+                score_old,
+                score_new,
+                risk_level_old,
+                risk_level_new,
+                treatment_old,
+                treatment_new,
+                status_old,
+                status_new,
+                action_old,
+                action_new,
                 changed_by,
                 changed_at
             )
             VALUES (
                 :risk_id,
-                :likelihood_old, :likelihood_new,
-                :impact_old, :impact_new,
-                :score_old, :score_new,
-                :risk_level_old, :risk_level_new,
-                :treatment_old, :treatment_new,
-                :status_old, :status_new,
-                :action_old, :action_new,
+                :likelihood_old,
+                :likelihood_new,
+                :impact_old,
+                :impact_new,
+                :score_old,
+                :score_new,
+                :risk_level_old,
+                :risk_level_new,
+                :treatment_old,
+                :treatment_new,
+                :status_old,
+                :status_new,
+                :action_old,
+                :action_new,
                 :changed_by,
                 NOW()
             )
@@ -148,9 +204,59 @@ def assess_risk(
             "status_new": getattr(risk, "status", None),
             "action_old": getattr(risk, "action", None),
             "action_new": action,
-            "changed_by": None,
+            "changed_by": getattr(current_user, "id", None),
         },
     )
+
+    # -------------------------------------------------
+    # UPDATE RISK — TENANT SCOPED
+    # -------------------------------------------------
+    result = db.execute(
+        text(
+            """
+            UPDATE risks
+            SET
+                likelihood = :likelihood,
+                impact = :impact,
+                score = :score,
+                risk_level = :risk_level,
+                action = :action,
+                updated_at = NOW()
+            WHERE id = :risk_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {
+            "likelihood": new_likelihood,
+            "impact": new_impact,
+            "score": new_score,
+            "risk_level": new_risk_level,
+            "action": action,
+            "risk_id": risk_id,
+            "tenant_id": tenant_id,
+        },
+    )
+
+    if result.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail="Risk not found",
+        )
+
+    db.commit()
+
+    return {
+        "ok": True,
+        "risk_id": risk_id,
+        "likelihood": new_likelihood,
+        "impact": new_impact,
+        "score": new_score,
+        "risk_level": new_risk_level,
+        "action": action,
+    }
+
+
 # -------------------------------------------------
 # Get Single Risk
 # -------------------------------------------------
@@ -408,49 +514,81 @@ OFFSET :offset
 # -------------------------------------------------
 
 @router.get("/{risk_id}/history")
-def get_risk_history(risk_id: int, db: Session = Depends(get_db)):
+def get_risk_history(
+    risk_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
+    # -------------------------------------------------
+    # VERIFY RISK OWNERSHIP FIRST
+    # -------------------------------------------------
+    risk_exists = db.execute(
+        text(
+            """
+            SELECT id
+            FROM risks
+            WHERE id = :risk_id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {
+            "risk_id": risk_id,
+            "tenant_id": tenant_id,
+        },
+    ).fetchone()
+
+    if not risk_exists:
+        raise HTTPException(
+            status_code=404,
+            detail="Risk not found",
+        )
+
     rows = db.execute(
         text(
             """
             SELECT
-                changed_at,
-                likelihood_old, likelihood_new,
-                impact_old, impact_new,
-                score_old, score_new,
-                treatment_old, treatment_new,
-                status_old, status_new,
-                action_old, action_new,
-                risk_level_old, risk_level_new
-            FROM risk_history
-            WHERE risk_id = :risk_id
-            ORDER BY changed_at
+                rh.changed_at,
+                rh.likelihood_old,
+                rh.likelihood_new,
+                rh.impact_old,
+                rh.impact_new,
+                rh.score_old,
+                rh.score_new,
+                rh.treatment_old,
+                rh.treatment_new,
+                rh.status_old,
+                rh.status_new,
+                rh.action_old,
+                rh.action_new,
+                rh.risk_level_old,
+                rh.risk_level_new
+            FROM risk_history rh
+            WHERE rh.risk_id = :risk_id
+            ORDER BY rh.changed_at
             """
         ),
-        {"risk_id": risk_id},
+        {
+            "risk_id": risk_id,
+        },
     ).fetchall()
 
     rich = [
         {
             "changed_at": r.changed_at,
-
             "likelihood_old": r.likelihood_old,
             "likelihood_new": r.likelihood_new,
-
             "impact_old": r.impact_old,
             "impact_new": r.impact_new,
-
             "score_old": r.score_old,
             "score_new": r.score_new,
-
             "treatment_old": r.treatment_old,
             "treatment_new": r.treatment_new,
-
             "status_old": r.status_old,
             "status_new": r.status_new,
-
             "action_old": r.action_old,
             "action_new": r.action_new,
-
             "risk_level_old": getattr(r, "risk_level_old", None),
             "risk_level_new": getattr(r, "risk_level_new", None),
         }
@@ -460,18 +598,15 @@ def get_risk_history(risk_id: int, db: Session = Depends(get_db)):
     legacy_items = [
         {
             "date": r.changed_at,
-            "score": (r.score_new if r.score_new is not None else r.score_old),
+            "score": (
+                r.score_new
+                if r.score_new is not None
+                else r.score_old
+            ),
         }
         for r in rows
     ]
 
-    # Return both shapes in one response (safe for existing frontend parsing):
-    # - If frontend treats response as Array => it can use rich by switching to res.json() directly
-    # - If it expects {items: []} => legacy continues to work.
-    #
-    # Your current page.tsx does:
-    #   Array.isArray(data) ? data : data.items
-    # So it will pick legacy by default (object), unless you later decide to return only list.
     return {
         "version": "v1",
         "items": legacy_items,
@@ -681,11 +816,23 @@ def get_related_evidences(
 def delete_risk(
     risk_id: int,
     db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
 ):
-    # Risk exists?
+    # Risk exists — tenant scoped
+
     risk_row = db.execute(
-        text("SELECT id FROM risks WHERE id = :id"),
-        {"id": risk_id},
+        text(
+            """
+            SELECT id
+            FROM risks
+            WHERE id = :id
+              AND tenant_id = :tenant_id
+            """
+        ),
+        {
+            "id": risk_id,
+            "tenant_id": current_user.tenant_id,
+        },
     ).fetchone()
 
     if not risk_row:

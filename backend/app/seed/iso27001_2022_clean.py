@@ -258,6 +258,7 @@ def seed_iso27001_2022(db: Session, *, reset_matrix: bool = True) -> Dict[str, i
                     code=control_code,
                     title=title,
                     description=f"ISO/IEC 27001:2022 Annex A {reference_code}",
+                    origin="canonical",
                 )
             )
 
