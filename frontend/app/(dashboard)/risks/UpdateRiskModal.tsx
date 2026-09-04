@@ -111,7 +111,7 @@ export default function UpdateRiskModal({
       aria-modal="true"
       aria-labelledby="risk-update-title"
     >
-      <div className="w-full max-w-xl max-h-[90vh] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex w-full max-w-xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
         <div className="border-b border-slate-200 px-6 py-5">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -141,7 +141,7 @@ export default function UpdateRiskModal({
         </div>
 
         <form onSubmit={handleSubmit}>
-          <div className="max-h-[70vh] overflow-y-auto space-y-6 px-6 py-6">
+          <div className="min-h-0 flex-1 overflow-y-auto space-y-6 px-6 py-6">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Risk

@@ -11,12 +11,10 @@ import { BrainCircuit,
   Building2,
   ClipboardCheck,
   ClipboardList,
-  FileText,
   Gauge,
   HardDrive,
   Layers3,
   LayoutDashboard,
-  ListChecks,
   LogOut,
   MapPin,
   PanelLeftClose,
@@ -545,31 +543,6 @@ export default function Sidebar() {
               <Layers3 size={14} />
               Compliance Matrix
             </Link>
-
-            <Link
-              href="/controls"
-              className={itemClass("/controls")}
-            >
-              <ShieldCheck size={14} />
-              Control Management
-            </Link>
-
-            <Link
-              href="/requirements"
-              className={itemClass("/requirements")}
-            >
-              <ListChecks size={14} />
-              Requirement Management
-            </Link>
-
-            <Link
-              href="/clauses"
-              className={itemClass("/clauses")}
-            >
-              <FileText size={14} />
-              Clause Management
-            </Link>
-
 
             <Link
               href="/risks"
