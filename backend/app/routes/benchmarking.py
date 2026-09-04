@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.db.session import get_db
-from app.services.benchmarking_service import BenchmarkingService
 from app.schemas.benchmarking_schema import (
     BenchmarkComparisonResponse,
     BenchmarkSnapshotResponse,
     BenchmarkSummaryResponse,
+    PeerBenchmarkResponse,
+    PeerMetricBenchmarkResponse,
 )
+from app.services.benchmarking_service import BenchmarkingService
 
 
 router = APIRouter(
@@ -36,6 +38,32 @@ def _tenant_id_from_user(user: Any) -> int:
     return int(tenant_id)
 
 
+def _peer_response(peer) -> PeerBenchmarkResponse:
+    return PeerBenchmarkResponse(
+        available=peer.available,
+        reason=peer.reason,
+        population_key=peer.population_key,
+        peer_count=peer.peer_count,
+        snapshot_count=peer.snapshot_count,
+        current_snapshot_at=peer.current_snapshot_at,
+        metrics=[
+            PeerMetricBenchmarkResponse(
+                metric=metric.metric,
+                company_value=metric.company_value,
+                benchmark_value=metric.benchmark_value,
+                percentile=metric.percentile,
+                gap=metric.gap,
+                population_size=metric.population_size,
+                scope=metric.scope,
+                period=metric.period,
+                calculated_at=metric.calculated_at,
+                source=metric.source,
+            )
+            for metric in peer.metrics
+        ],
+    )
+
+
 @router.get(
     "/summary",
     response_model=BenchmarkSummaryResponse,
@@ -56,14 +84,17 @@ def benchmarking_summary(
         tenant_id=tenant_id,
     )
 
-    snapshot_count = (
-        len(
-            service.get_history(
-                db=db,
-                tenant_id=tenant_id,
-                limit=365,
-            )
+    snapshot_count = len(
+        service.get_history(
+            db=db,
+            tenant_id=tenant_id,
+            limit=365,
         )
+    )
+
+    peer = service.get_peer_benchmark(
+        db=db,
+        tenant_id=tenant_id,
     )
 
     return BenchmarkSummaryResponse(
@@ -77,11 +108,27 @@ def benchmarking_summary(
             sufficient_data=comparison.sufficient_data,
         ),
         historical_snapshot_count=snapshot_count,
-        peer_benchmark_available=False,
-        peer_benchmark_reason=(
-            "No peer benchmark population is configured."
-        ),
+        peer_benchmark_available=peer.available,
+        peer_benchmark_reason=peer.reason,
     )
+
+
+@router.get(
+    "/peer",
+    response_model=PeerBenchmarkResponse,
+)
+def benchmarking_peer(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+) -> PeerBenchmarkResponse:
+    tenant_id = _tenant_id_from_user(user)
+
+    peer = service.get_peer_benchmark(
+        db=db,
+        tenant_id=tenant_id,
+    )
+
+    return _peer_response(peer)
 
 
 @router.get(
