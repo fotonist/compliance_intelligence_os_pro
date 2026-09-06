@@ -516,6 +516,14 @@ export default function Sidebar() {
   Benchmarking
 </Link>
 
+<Link
+  href="/intelligence/benchmarking/populations"
+  className={itemClass("/intelligence/benchmarking/populations")}
+>
+  <BarChart3 size={14} />
+  Peer Populations
+</Link>
+
             <Link
               href="/intelligence/metrics"
               className={itemClass("/intelligence/metrics")}
@@ -542,6 +550,14 @@ export default function Sidebar() {
             >
               <Layers3 size={14} />
               Compliance Matrix
+            </Link>
+
+            <Link
+              href="/controls"
+              className={itemClass("/controls")}
+            >
+              <ShieldCheck size={14} />
+              Control Management
             </Link>
 
             <Link
@@ -592,7 +608,13 @@ export default function Sidebar() {
             toggle={sectionToggle}
             collapsed={collapsed}
           >
-            <PremiumMenuItem label="Audit Dashboard" />
+            <Link
+              href="/audit"
+              className={itemClass("/audit")}
+            >
+              <LayoutDashboard size={14} />
+              Audit Dashboard
+            </Link>
 
             <Link
               href="/audit/planning"
@@ -602,8 +624,20 @@ export default function Sidebar() {
               Audit Planning
             </Link>
 
-            <PremiumMenuItem label="Audit Programs" />
-            <PremiumMenuItem label="Audit Checklists" />
+            <Link
+              href="/audit/programs"
+              className={itemClass("/audit/programs")}
+            >
+              <ClipboardList size={14} />
+              Audit Programs
+            </Link>
+            <Link
+  href="/audit/checklists"
+  className={itemClass("/audit/checklists")}
+>
+  <ClipboardList size={14} />
+  Audit Checklists
+</Link>
             <PremiumMenuItem label="Audit Execution" />
 
             <Link

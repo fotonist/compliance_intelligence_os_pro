@@ -150,13 +150,13 @@ function severityLabel(level?: string | null) {
 function severityClasses(level?: string | null) {
   switch (normalizeSeverity(level)) {
     case "critical":
-      return "border-red-500/25 bg-red-500/10 text-red-300";
+      return "border-red-300 bg-red-500/10 text-red-600";
     case "high":
-      return "border-orange-500/25 bg-orange-500/10 text-orange-300";
+      return "border-orange-500/25 bg-orange-500/10 text-orange-600";
     case "medium":
       return "border-amber-500/25 bg-amber-500/10 text-amber-300";
     case "low":
-      return "border-emerald-500/25 bg-emerald-500/10 text-emerald-300";
+      return "border-emerald-500/25 bg-emerald-500/10 text-emerald-600";
     default:
       return "border-slate-300 bg-slate-200/60 text-slate-500";
   }
@@ -165,11 +165,11 @@ function severityClasses(level?: string | null) {
 function scoreTone(score?: number | null) {
   const value = Number(score ?? 0);
 
-  if (value >= 17) return "text-red-300";
-  if (value >= 10) return "text-orange-300";
+  if (value >= 17) return "text-red-600";
+  if (value >= 10) return "text-orange-600";
   if (value >= 5) return "text-amber-300";
 
-  return "text-emerald-300";
+  return "text-emerald-600";
 }
 
 function formatNumber(value?: number | null, decimals = 2) {
@@ -311,6 +311,20 @@ export default function RiskIntelligencePage() {
     summary.exposure_delta_percent ?? 0,
   );
 
+  const topControlRiskShare = (() => {
+    const totalRisks = Number(summary.total_risks ?? 0);
+    if (!totalRisks || !topControls.length) return 0;
+
+    const highestControlRiskCount = Math.max(
+      ...topControls.map((control) => Number(control.risk_count ?? 0)),
+    );
+
+    return Math.min(
+      100,
+      (highestControlRiskCount / totalRisks) * 100,
+    );
+  })();
+
   if (loading) {
     return (
       <div className="min-h-full bg-[#F6F8FB] text-slate-900">
@@ -343,7 +357,7 @@ export default function RiskIntelligencePage() {
           <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6">
             <div className="flex items-start gap-4">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10">
-                <CircleAlert className="h-5 w-5 text-red-300" />
+                <CircleAlert className="h-5 w-5 text-red-600" />
               </div>
 
               <div className="min-w-0 flex-1">
@@ -384,8 +398,8 @@ export default function RiskIntelligencePage() {
         <header className="mb-7 border-b border-slate-200 pb-6">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10">
-                <BrainCircuit className="h-6 w-6 text-cyan-300" />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-cyan-100 bg-cyan-50">
+                <BrainCircuit className="h-6 w-6 text-cyan-600" />
               </div>
 
               <div>
@@ -394,12 +408,12 @@ export default function RiskIntelligencePage() {
                     Risk Intelligence
                   </h1>
 
-                  <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
+                  <span className="rounded-full border border-cyan-100 bg-cyan-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-cyan-600">
                     Intelligence
                   </span>
 
                   {summary.forecast_coverage_percent !== undefined && (
-                    <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-300">
+                    <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-600">
                       Forecast coverage{" "}
                       {formatNumber(
                         summary.forecast_coverage_percent,
@@ -508,12 +522,12 @@ export default function RiskIntelligencePage() {
         {/* =====================================================
             EXECUTIVE POSTURE
         ====================================================== */}
-        <section className="mt-6 grid gap-6 xl:grid-cols-3">
+        <section className="mt-5 grid gap-5 xl:grid-cols-3">
           <Panel
             title="Executive Risk Posture"
             subtitle="Current exposure, escalation pressure and risk movement"
             icon={
-              <ShieldAlert className="h-5 w-5 text-orange-300" />
+              <ShieldAlert className="h-5 w-5 text-orange-600" />
             }
             className="xl:col-span-2"
           >
@@ -578,7 +592,7 @@ export default function RiskIntelligencePage() {
               />
             </div>
 
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3.5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -593,7 +607,7 @@ export default function RiskIntelligencePage() {
                 </div>
 
                 <div className="shrink-0 text-left lg:text-right">
-                  <div className="text-3xl font-semibold text-cyan-300">
+                  <div className="text-3xl font-semibold text-cyan-600">
                     {highestEscalationRisk
                       ? `${formatPercentage(
                           highestEscalationRisk.escalation_probability_30d,
@@ -616,7 +630,7 @@ export default function RiskIntelligencePage() {
             title="Executive Attention"
             subtitle="Highest current unified risk signal"
             icon={
-              <CircleAlert className="h-5 w-5 text-red-300" />
+              <CircleAlert className="h-5 w-5 text-red-600" />
             }
           >
             {highestRisk ? (
@@ -714,12 +728,12 @@ export default function RiskIntelligencePage() {
         {/* =====================================================
             MODEL + COVERAGE POSTURE
         ====================================================== */}
-        <section className="mt-6 grid gap-6 xl:grid-cols-3">
+        <section className="mt-5 grid gap-5 xl:grid-cols-3">
           <Panel
             title="Forecast Model Posture"
             subtitle="Model coverage and training readiness"
             icon={
-              <BrainCircuit className="h-5 w-5 text-cyan-300" />
+              <BrainCircuit className="h-5 w-5 text-cyan-600" />
             }
           >
             <div className="grid grid-cols-2 gap-3">
@@ -747,7 +761,7 @@ export default function RiskIntelligencePage() {
               />
             </div>
 
-            <div className="mt-4 rounded-xl border border-amber-400/10 bg-amber-400/[0.035] p-4">
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
               <div className="text-xs font-semibold text-amber-200">
                 Model posture
               </div>
@@ -764,7 +778,7 @@ export default function RiskIntelligencePage() {
             title="Exposure Posture"
             subtitle="Inherent, residual and unified exposure"
             icon={
-              <Gauge className="h-5 w-5 text-orange-300" />
+              <Gauge className="h-5 w-5 text-orange-600" />
             }
           >
             <div className="space-y-4">
@@ -813,9 +827,9 @@ export default function RiskIntelligencePage() {
               <span
                 className={`text-sm font-semibold ${
                   exposureDelta > 0
-                    ? "text-orange-300"
+                    ? "text-orange-600"
                     : exposureDelta < 0
-                      ? "text-emerald-300"
+                      ? "text-emerald-600"
                       : "text-slate-500"
                 }`}
               >
@@ -830,7 +844,7 @@ export default function RiskIntelligencePage() {
             title="Evidence & Coverage"
             subtitle="Risk coverage posture derived from evidence intelligence"
             icon={
-              <ShieldCheck className="h-5 w-5 text-emerald-300" />
+              <ShieldCheck className="h-5 w-5 text-emerald-600" />
             }
           >
             <div className="flex items-center justify-between">
@@ -845,13 +859,13 @@ export default function RiskIntelligencePage() {
               </div>
 
               <div className="h-16 w-16 rounded-full border-4 border-slate-200 flex items-center justify-center">
-                <span className="text-xs font-semibold text-cyan-300">
+                <span className="text-xs font-semibold text-cyan-600">
                   {formatNumber(summary.coverage_percent, 0)}%
                 </span>
               </div>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <MiniMetric
                 label="Covered"
                 value={coveredRisks}
@@ -881,12 +895,12 @@ export default function RiskIntelligencePage() {
         {/* =====================================================
             WATCHLIST
         ====================================================== */}
-        <section className="mt-6">
+        <section className="mt-5">
           <Panel
             title="Risk Escalation Watchlist"
             subtitle="Risk signals requiring monitoring based on current intelligence"
             icon={
-              <ShieldAlert className="h-5 w-5 text-orange-300" />
+              <ShieldAlert className="h-5 w-5 text-orange-600" />
             }
           >
             {topRisks.length ? (
@@ -960,7 +974,7 @@ export default function RiskIntelligencePage() {
                           </td>
 
                           <td className="px-3 py-4">
-                            <span className="font-semibold text-cyan-300">
+                            <span className="font-semibold text-cyan-600">
                               {formatNumber(risk.unified_score)}
                             </span>
                           </td>
@@ -979,7 +993,7 @@ export default function RiskIntelligencePage() {
                                 />
                               </div>
 
-                              <span className="font-medium text-cyan-300">
+                              <span className="font-medium text-cyan-600">
                                 {escalationValue}%
                               </span>
                             </div>
@@ -994,8 +1008,8 @@ export default function RiskIntelligencePage() {
                             <div
                               className={`mt-1 text-[10px] ${
                                 risk.is_covered
-                                  ? "text-emerald-300"
-                                  : "text-orange-300"
+                                  ? "text-emerald-600"
+                                  : "text-orange-600"
                               }`}
                             >
                               {risk.is_covered
@@ -1040,24 +1054,31 @@ export default function RiskIntelligencePage() {
         {/* =====================================================
             CONTROL INTELLIGENCE
         ====================================================== */}
-        <section className="mt-6">
+        <section className="mt-5">
           <Panel
             title="Control Intelligence"
             subtitle="Controls receiving the highest aggregated risk and forecast pressure"
             icon={
-              <Workflow className="h-5 w-5 text-cyan-300" />
+              <Workflow className="h-5 w-5 text-cyan-600" />
             }
           >
             {topControls.length ? (
-              <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                {topControls.map((control) => (
+              <div className="grid items-stretch gap-5 xl:grid-cols-2">
+                <div
+                  className={
+                    topControls.length === 1
+                      ? "grid gap-4"
+                      : "grid gap-4 lg:grid-cols-2 xl:grid-cols-3"
+                  }
+                >
+                  {topControls.map((control) => (
                   <div
                     key={control.control_id}
-                    className="rounded-xl border border-slate-200 bg-slate-50 p-4 transition hover:border-cyan-400/20 hover:bg-slate-50"
+                    className="h-full rounded-lg border border-slate-200 bg-slate-50 p-4 transition hover:border-cyan-100 hover:bg-slate-50"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
-                        <div className="text-[10px] font-semibold uppercase tracking-wider text-cyan-300">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-cyan-600">
                           {control.control_code ||
                             `Control #${control.control_id}`}
                         </div>
@@ -1069,7 +1090,7 @@ export default function RiskIntelligencePage() {
                       </div>
 
                       <div className="shrink-0 text-right">
-                        <div className="text-xl font-semibold text-cyan-300">
+                        <div className="text-xl font-semibold text-cyan-600">
                           {formatNumber(
                             control.ai_priority_score,
                           )}
@@ -1081,7 +1102,7 @@ export default function RiskIntelligencePage() {
                       </div>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="mt-4 grid grid-cols-2 gap-3">
                       <SignalValue
                         label="Risks"
                         value={String(control.risk_count)}
@@ -1117,15 +1138,94 @@ export default function RiskIntelligencePage() {
                           Number(
                             control.uncovered_risk_count ?? 0,
                           ) > 0
-                            ? "font-semibold text-orange-300"
-                            : "font-semibold text-emerald-300"
+                            ? "font-semibold text-orange-600"
+                            : "font-semibold text-emerald-600"
                         }
                       >
                         {control.uncovered_risk_count ?? 0}
                       </span>
                     </div>
                   </div>
-                ))}
+                  ))}
+                </div>
+
+                <div className="h-full rounded-lg border border-slate-200 bg-slate-50 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        Control Intensity
+                      </div>
+
+                      <div className="mt-2 text-3xl font-semibold text-cyan-600">
+                        {formatPercentage(topControlRiskShare)}%
+                      </div>
+
+                      <div className="mt-1 text-xs leading-5 text-slate-500">
+                        Risk concentration carried by the leading control.
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-cyan-100 bg-cyan-50 p-2.5">
+                      <Target className="h-5 w-5 text-cyan-600" />
+                    </div>
+                  </div>
+
+                  <div className="mt-6">
+                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-wider">
+                      <span className="text-slate-500">
+                        Control risk share
+                      </span>
+
+                      <span className="text-slate-700">
+                        {topControls.length
+                          ? `${Math.max(
+                              ...topControls.map((control) =>
+                                Number(control.risk_count ?? 0),
+                              ),
+                            )} of ${summary.total_risks ?? 0} risks`
+                          : "0 of 0 risks"}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className="h-full rounded-full bg-cyan-500 transition-all"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(0, topControlRiskShare),
+                          )}%`,
+                        }}
+                      />
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500">
+                      <span>0%</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 border-t border-slate-200 pt-4">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Leading control
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between gap-4">
+                      <span className="text-sm font-semibold text-cyan-600">
+                        {topControls[0]?.control_code ?? "No control"}
+                      </span>
+
+                      <span className="text-sm font-semibold text-slate-900">
+                        {topControls[0]?.risk_count ?? 0} risks
+                      </span>
+                    </div>
+
+                    <div className="mt-1 text-xs leading-5 text-slate-500">
+                      {topControls[0]?.control_title ??
+                        "No control-level intelligence available."}
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
               <EmptyState message="No control-level intelligence is currently available." />
@@ -1136,12 +1236,12 @@ export default function RiskIntelligencePage() {
         {/* =====================================================
             ALERTS + INTELLIGENCE INTERPRETATION
         ====================================================== */}
-        <section className="mt-6 grid gap-6 xl:grid-cols-2">
+        <section className="mt-5 grid gap-5 xl:grid-cols-2">
           <Panel
             title="Executive Risk Alerts"
             subtitle="Highest-priority signals surfaced by the current intelligence dataset"
             icon={
-              <AlertTriangle className="h-5 w-5 text-red-300" />
+              <AlertTriangle className="h-5 w-5 text-red-600" />
             }
           >
             {executiveAlerts.length ? (
@@ -1149,7 +1249,7 @@ export default function RiskIntelligencePage() {
                 {executiveAlerts.slice(0, 6).map((risk) => (
                   <div
                     key={risk.risk_id}
-                    className="rounded-xl border border-red-500/15 bg-red-500/[0.035] p-4 transition hover:border-red-500/25 hover:bg-red-500/[0.055]"
+                    className="rounded-xl border border-red-200 bg-red-50/60 p-4 transition hover:border-red-300 hover:bg-red-50"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="min-w-0">
@@ -1188,7 +1288,7 @@ export default function RiskIntelligencePage() {
                       </div>
 
                       <div className="shrink-0 text-right">
-                        <div className="text-lg font-semibold text-red-300">
+                        <div className="text-lg font-semibold text-red-600">
                           {formatPercentage(
                             risk.escalation_probability_30d,
                           )}
@@ -1212,7 +1312,7 @@ export default function RiskIntelligencePage() {
             title="Risk Intelligence Signals"
             subtitle="Decision-support interpretation of the available risk metrics"
             icon={
-              <TrendingUp className="h-5 w-5 text-cyan-300" />
+              <TrendingUp className="h-5 w-5 text-cyan-600" />
             }
           >
             <div className="space-y-3">
@@ -1272,12 +1372,12 @@ export default function RiskIntelligencePage() {
                 emphasis={insufficientHistory > 0}
               />
 
-              <div className="mt-4 rounded-xl border border-cyan-400/10 bg-cyan-400/[0.035] p-4">
+              <div className="mt-4 rounded-xl border border-cyan-100 bg-cyan-50/60 p-4">
                 <div className="flex items-start gap-3">
-                  <BrainCircuit className="mt-0.5 h-4 w-4 text-cyan-300" />
+                  <BrainCircuit className="mt-0.5 h-4 w-4 text-cyan-600" />
 
                   <div>
-                    <div className="text-xs font-semibold text-cyan-200">
+                    <div className="text-xs font-semibold text-cyan-700">
                       Intelligence interpretation
                     </div>
 
@@ -1321,11 +1421,11 @@ function Metric({
 }) {
   return (
     <div
-      className={`rounded-2xl border p-5 ${
+      className={`rounded-xl border p-4 ${
         danger
-          ? "border-red-500/20 bg-red-500/[0.035]"
+          ? "border-red-200 bg-red-50/60"
           : positive
-            ? "border-emerald-500/20 bg-emerald-500/[0.035]"
+            ? "border-emerald-200 bg-emerald-50/60"
             : "border-slate-200 bg-white"
       }`}
     >
@@ -1333,10 +1433,10 @@ function Metric({
         <span
           className={
             danger
-              ? "text-red-300"
+              ? "text-red-600"
               : positive
-                ? "text-emerald-300"
-                : "text-cyan-300"
+                ? "text-emerald-600"
+                : "text-cyan-600"
           }
         >
           {icon}
@@ -1347,11 +1447,11 @@ function Metric({
         </span>
       </div>
 
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-slate-900">
+      <div className="mt-2.5 text-2xl font-semibold tracking-tight text-slate-900">
         {value}
       </div>
 
-      <div className="mt-1 text-[11px] text-slate-500">
+      <div className="mt-1 text-[11px] leading-4 text-slate-500">
         {caption}
       </div>
     </div>
@@ -1373,18 +1473,18 @@ function Panel({
 }) {
   return (
     <div
-      className={`rounded-2xl border border-slate-200 bg-white p-5 ${className}`}
+      className={`rounded-xl border border-slate-200 bg-white p-5 ${className}`}
     >
-      <div className="mb-5 flex items-start gap-3">
+      <div className="mb-4 flex items-start gap-3">
         <div className="mt-0.5 shrink-0">{icon}</div>
 
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold text-slate-900">
             {title}
           </h2>
 
           {subtitle && (
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs leading-5 text-slate-500">
               {subtitle}
             </p>
           )}
@@ -1409,24 +1509,24 @@ function PostureCard({
 }) {
   const valueClass =
     tone === "danger"
-      ? "text-red-300"
+      ? "text-red-600"
       : tone === "warning"
-        ? "text-orange-300"
+        ? "text-orange-600"
         : tone === "safe"
-          ? "text-emerald-300"
-          : "text-cyan-300";
+          ? "text-emerald-600"
+          : "text-cyan-600";
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </div>
 
-      <div className={`mt-2 text-2xl font-semibold ${valueClass}`}>
+      <div className={`mt-1.5 text-2xl font-semibold ${valueClass}`}>
         {value}
       </div>
 
-      <p className="mt-2 text-xs leading-5 text-slate-500">
+      <p className="mt-1.5 text-xs leading-5 text-slate-500">
         {description}
       </p>
     </div>
@@ -1443,14 +1543,14 @@ function MiniMetric({
   danger?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">
         {label}
       </div>
 
       <div
         className={`mt-1 text-xl font-semibold ${
-          danger ? "text-orange-300" : "text-cyan-300"
+          danger ? "text-orange-600" : "text-cyan-600"
         }`}
       >
         {value}
@@ -1560,7 +1660,7 @@ function InsightRow({
 
       <div
         className={`shrink-0 text-sm font-semibold ${
-          emphasis ? "text-orange-300" : "text-cyan-300"
+          emphasis ? "text-orange-600" : "text-cyan-600"
         }`}
       >
         {value}

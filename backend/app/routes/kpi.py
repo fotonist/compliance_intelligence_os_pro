@@ -11,6 +11,8 @@ from app.core.security import get_current_user
 from app.db.session import get_db
 from app.services.uee_engine import UEEEngine
 from app.models.audit_log import AuditLog
+from app.models.evidence_file_history import EvidenceFileHistory
+from app.models.evidence_files import EvidenceFile
 from app.models.risks import Risk
 
 
@@ -139,17 +141,20 @@ def kpi_trends(
 
     approvals = (
         db.query(
-            func.date(AuditLog.created_at).label("day"),
-            func.count(AuditLog.id).label("count"),
+            func.date(EvidenceFileHistory.created_at).label("day"),
+            func.count(EvidenceFileHistory.id).label("count"),
+        )
+        .join(
+            EvidenceFile,
+            EvidenceFile.id == EvidenceFileHistory.evidence_file_id,
         )
         .filter(
-            AuditLog.entity_type == "Evidence",
-            AuditLog.action == "STATUS_CHANGE",
-            cast(AuditLog.new_value["status"], String).in_(["Approved", "APPROVED"]),
-            AuditLog.created_at >= since,
+            EvidenceFile.tenant_id == tenant_id,
+            EvidenceFileHistory.action == "APPROVE",
+            EvidenceFileHistory.created_at >= since,
         )
-        .group_by(func.date(AuditLog.created_at))
-        .order_by(func.date(AuditLog.created_at))
+        .group_by(func.date(EvidenceFileHistory.created_at))
+        .order_by(func.date(EvidenceFileHistory.created_at))
         .all()
     )
 

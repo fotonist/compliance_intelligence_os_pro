@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.controls import Control
 from app.models.controls_coverage import ControlsCoverage
+from app.models.process_applicable_controls import ProcessApplicableControl
 from app.models.process import Process
 from app.models.process_risk_link import ProcessRiskLink
 from app.models.risk_forecasts import RiskForecast
@@ -164,6 +165,34 @@ class AuditPlanEngine:
         if not process:
             raise ValueError("Process not found")
 
+        # The audit scope is defined by controls explicitly marked
+        # applicable to this process. Risks enrich and prioritize that scope.
+        applicable_control_rows = db.execute(
+            select(ProcessApplicableControl.control_id).where(
+                and_(
+                    ProcessApplicableControl.process_id == process_id,
+                    ProcessApplicableControl.tenant_id == user.tenant_id,
+                )
+            )
+        ).all()
+
+        control_ids = sorted(
+            {
+                int(row[0])
+                for row in applicable_control_rows
+                if row[0] is not None
+            }
+        )
+
+        if not control_ids:
+            return AuditPlanResponse(
+                process_id=process_id,
+                total_actions=0,
+                critical_actions=0,
+                actions=[],
+            )
+
+        # Risks are optional enrichment for the already-resolved audit scope.
         # Only risks explicitly assigned to this process are eligible.
         risk_links = db.execute(
             select(ProcessRiskLink).where(
@@ -174,43 +203,33 @@ class AuditPlanEngine:
             )
         ).scalars().all()
 
-        # A process-risk link should be unique, but tolerate legacy duplicate
-        # link rows so one risk cannot inflate an audit action's risk_count or
-        # distort its priority.
-        risk_ids = {int(link.risk_id) for link in risk_links if link.risk_id is not None}
-        if not risk_ids:
-            return AuditPlanResponse(
-                process_id=process_id,
-                total_actions=0,
-                critical_actions=0,
-                actions=[],
-            )
+        risk_ids = {
+            int(link.risk_id)
+            for link in risk_links
+            if link.risk_id is not None
+        }
 
-        risks = db.execute(
-            select(Risk).where(
-                and_(
-                    Risk.id.in_(risk_ids),
-                    Risk.tenant_id == user.tenant_id,
+        risks = []
+
+        if risk_ids:
+            risks = db.execute(
+                select(Risk).where(
+                    and_(
+                        Risk.id.in_(risk_ids),
+                        Risk.tenant_id == user.tenant_id,
+                    )
                 )
-            )
-        ).scalars().all()
+            ).scalars().all()
 
-        # A control is the auditable unit. Aggregate all distinct process risks
-        # that point to the same control into one prioritized audit action.
+        # A control remains auditable even when no risk is mapped to it.
+        # Risks are grouped by control only for intelligence enrichment.
         risk_by_control: Dict[int, Dict[int, Risk]] = {}
         for risk in risks:
             if risk.control_id is not None:
-                risk_by_control.setdefault(int(risk.control_id), {})[int(risk.id)] = risk
-
-        if not risk_by_control:
-            return AuditPlanResponse(
-                process_id=process_id,
-                total_actions=0,
-                critical_actions=0,
-                actions=[],
-            )
-
-        control_ids = list(risk_by_control.keys())
+                risk_by_control.setdefault(
+                    int(risk.control_id),
+                    {},
+                )[int(risk.id)] = risk
 
         controls = db.execute(
             select(Control).where(
@@ -243,8 +262,11 @@ class AuditPlanEngine:
 
         actions: List[AuditActionItem] = []
 
-        for control_id, risk_map in risk_by_control.items():
-            control_risks = list(risk_map.values())
+        for control_id in control_ids:
+            control_risks = list(
+                risk_by_control.get(control_id, {}).values()
+            )
+
             control = controls_by_id.get(control_id)
             if not control:
                 continue
@@ -252,14 +274,24 @@ class AuditPlanEngine:
             coverage = coverage_by_control.get(control_id)
             coverage_status = AuditPlanEngine._coverage_status(coverage)
 
-            max_risk_score = max(int(r.score or 0) for r in control_risks)
+            max_risk_score = max(
+                (int(r.score or 0) for r in control_risks),
+                default=0,
+            )
+
             highest_risk = max(
                 control_risks,
                 key=lambda r: int(r.score or 0),
+                default=None,
             )
-            highest_risk_level = AuditPlanEngine._risk_level(
-                highest_risk.score,
-                highest_risk.risk_level,
+
+            highest_risk_level = (
+                AuditPlanEngine._risk_level(
+                    highest_risk.score,
+                    highest_risk.risk_level,
+                )
+                if highest_risk
+                else "LOW"
             )
 
             relevant_forecasts = [
@@ -309,8 +341,30 @@ class AuditPlanEngine:
                     clause_code=clause.code if clause else None,
                     requirement_code=requirement.code if requirement else None,
                     control_code=control.code,
+                    control_title=control.title,
+                    control_description=control.description,
+                    requirement_title=(
+                        requirement.title
+                        if requirement
+                        else None
+                    ),
+                    requirement_description=(
+                        requirement.description
+                        if requirement
+                        else None
+                    ),
                     control_id=control.id,
                     status="planned",
+                    risks=[
+                        {
+                            "id": risk.id,
+                            "title": risk.title,
+                            "description": risk.description,
+                            "score": risk.score,
+                            "risk_level": risk.risk_level,
+                        }
+                        for risk in control_risks
+                    ],
                     risk_count=len(control_risks),
                     max_risk_score=max_risk_score,
                     highest_risk_level=highest_risk_level,

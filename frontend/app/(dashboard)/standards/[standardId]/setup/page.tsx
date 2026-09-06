@@ -22,6 +22,8 @@ type StandardVersion = {
 type MatrixSummary = {
   controls: number;
   ready: boolean;
+  mode: string | null;
+  maturityAreas: number;
 };
 
 type Adoption = {
@@ -117,6 +119,8 @@ export default function StandardSetupPage() {
   const [matrix, setMatrix] = useState<MatrixSummary>({
     controls: 0,
     ready: false,
+    mode: null,
+    maturityAreas: 0,
   });
 
   const [loading, setLoading] = useState(true);
@@ -187,17 +191,42 @@ export default function StandardSetupPage() {
             ? matrixData.rows
             : [];
 
+          const normalizedMode = String(
+            matrixData?.mode || ""
+          ).toLowerCase();
+
+          const isMaturityBased =
+            String(found.type || "").toUpperCase() === "MATURITY_BASED";
+
+          const maturityRows = rows.filter(
+            (row: any) => row?.process_area_id != null
+          );
+
+          const controlRows = rows.filter(
+            (row: any) => row?.control_id != null
+          );
+
           setMatrix({
-            controls: rows.filter(
-              (row: any) => row?.control_id != null
-            ).length,
-            ready: rows.length > 0,
+            controls: isMaturityBased ? 0 : controlRows.length,
+            ready: isMaturityBased
+              ? maturityRows.length > 0
+              : controlRows.length > 0,
+            mode: normalizedMode || null,
+            maturityAreas: isMaturityBased
+              ? new Set(
+                  maturityRows.map(
+                    (row: any) => String(row.process_area_id)
+                  )
+                ).size
+              : 0,
           });
         }
       } catch {
         setMatrix({
           controls: 0,
           ready: false,
+          mode: null,
+          maturityAreas: 0,
         });
       }
 
@@ -251,6 +280,9 @@ export default function StandardSetupPage() {
 
   const selectedProcessIds = adoption?.process_ids || [];
 
+  const isMaturityBased =
+    String(standard?.type || "").toUpperCase() === "MATURITY_BASED";
+
   const readiness = useMemo(() => {
     const definition = Boolean(
       standard?.code &&
@@ -258,7 +290,8 @@ export default function StandardSetupPage() {
       standard?.type
     );
 
-    const matrixReady = matrix.ready;
+    const matrixReady = !isMaturityBased && matrix.ready;
+    const maturityReady = isMaturityBased && matrix.ready;
 
     const scopeReady = selectedProcessIds.length > 0;
 
@@ -272,7 +305,7 @@ export default function StandardSetupPage() {
 
     const activationReady =
       !!adoption &&
-      matrixReady &&
+      (isMaturityBased ? maturityReady : matrixReady) &&
       scopeReady &&
       canonicalReady &&
       !adoptionActive;
@@ -280,12 +313,20 @@ export default function StandardSetupPage() {
     return {
       definition,
       matrix: matrixReady,
+      maturity: maturityReady,
       scope: scopeReady,
       activation: activationReady,
       canonicalReady,
       adoptionActive,
     };
-  }, [standard, version, matrix, adoption, selectedProcessIds.length]);
+  }, [
+    standard,
+    version,
+    matrix,
+    adoption,
+    selectedProcessIds.length,
+    isMaturityBased,
+  ]);
 
   async function ensureAdoption(): Promise<Adoption | null> {
     if (!standard || !version) {
@@ -374,8 +415,13 @@ export default function StandardSetupPage() {
       return;
     }
 
-    if (!readiness.matrix) {
+    if (!isMaturityBased && !readiness.matrix) {
       alert("Build the compliance matrix before activation.");
+      return;
+    }
+
+    if (isMaturityBased && !readiness.maturity) {
+      alert("Configure the maturity structure before activation.");
       return;
     }
 
@@ -529,9 +575,11 @@ export default function StandardSetupPage() {
                 "Canonical framework definition is available.",
               ],
               [
-                "Compliance Matrix",
-                readiness.matrix,
-                `${matrix.controls} controls available.`,
+                isMaturityBased ? "Maturity Structure" : "Compliance Matrix",
+                isMaturityBased ? readiness.maturity : readiness.matrix,
+                isMaturityBased
+                  ? `${matrix.maturityAreas} process areas available.`
+                  : `${matrix.controls} controls available.`,
               ],
               [
                 "Organizational Scope",
@@ -545,7 +593,9 @@ export default function StandardSetupPage() {
                 isActive,
                 isActive
                   ? "Tenant adoption is active."
-                  : "Activation requires a valid matrix and organizational scope.",
+                  : isMaturityBased
+                    ? "Activation requires a valid maturity structure and organizational scope."
+                    : "Activation requires a valid compliance matrix and organizational scope.",
               ],
             ].map(([title, done, detail]) => (
               <div
@@ -646,46 +696,63 @@ export default function StandardSetupPage() {
                 </div>
 
                 <h2 className="mt-1 text-base font-semibold">
-                  Compliance Matrix
+                  {isMaturityBased ? "Maturity Structure" : "Compliance Matrix"}
                 </h2>
 
                 <p className="mt-1 text-sm text-slate-500">
-                  Operational baseline for assessment and evidence management.
+                  {isMaturityBased
+                    ? "Canonical process areas and practices used by the maturity assessment model."
+                    : "Operational baseline for assessment and evidence management."}
                 </p>
               </div>
 
               <span
                 className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-                  matrix.ready
+                  (isMaturityBased ? readiness.maturity : readiness.matrix)
                     ? "bg-emerald-50 text-emerald-700"
                     : "bg-amber-50 text-amber-700"
                 }`}
               >
-                {matrix.ready ? "Ready" : "Not built"}
+                {(isMaturityBased ? readiness.maturity : readiness.matrix)
+                  ? "Ready"
+                  : "Not configured"}
               </span>
             </div>
 
             <div className="mt-5 flex items-end justify-between">
               <div>
                 <div className="text-3xl font-semibold">
-                  {matrix.controls}
+                  {isMaturityBased
+                    ? matrix.maturityAreas
+                    : matrix.controls}
                 </div>
 
                 <div className="text-xs text-slate-400">
-                  Controls in matrix
+                  {isMaturityBased
+                    ? "Process areas in structure"
+                    : "Controls in matrix"}
                 </div>
               </div>
 
-              <button
-                onClick={() =>
-                  router.push(
-                    `/matrix/builder?standard_id=${standard.id}`
-                  )
-                }
-                className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-800"
-              >
-                {matrix.ready ? "View Matrix" : "Build Matrix"}
-              </button>
+              {isMaturityBased ? (
+                <button
+                  onClick={() => router.push("/maturity")}
+                  className="rounded-lg bg-indigo-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-800"
+                >
+                  Open Maturity
+                </button>
+              ) : (
+                <button
+                  onClick={() =>
+                    router.push(
+                      `/matrix/builder?standard_id=${standard.id}`
+                    )
+                  }
+                  className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-800"
+                >
+                  {matrix.ready ? "View Matrix" : "Build Matrix"}
+                </button>
+              )}
             </div>
           </section>
 
@@ -814,8 +881,8 @@ export default function StandardSetupPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Activate the tenant adoption after the canonical version, matrix,
-              and organizational scope are ready.
+              Activate the tenant adoption after the canonical version, assessment
+              structure, and organizational scope are ready.
             </p>
 
             <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -837,9 +904,13 @@ export default function StandardSetupPage() {
                 <div className="text-sm text-amber-700">
                   The selected canonical version is not published or active.
                 </div>
-              ) : !matrix.ready ? (
+              ) : !isMaturityBased && !readiness.matrix ? (
                 <div className="text-sm text-slate-600">
                   Build the compliance matrix before activation.
+                </div>
+              ) : isMaturityBased && !readiness.maturity ? (
+                <div className="text-sm text-slate-600">
+                  Configure the maturity structure before activation.
                 </div>
               ) : !readiness.scope ? (
                 <div className="text-sm text-slate-600">

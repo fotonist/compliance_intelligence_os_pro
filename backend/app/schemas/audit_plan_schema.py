@@ -6,6 +6,14 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class AuditRiskItem(BaseModel):
+    id: int
+    title: Optional[str] = None
+    description: Optional[str] = None
+    score: Optional[int] = None
+    risk_level: Optional[str] = None
+
+
 class AuditActionItem(BaseModel):
     priority_score: int
 
@@ -13,11 +21,17 @@ class AuditActionItem(BaseModel):
     clause_code: Optional[str] = None
     requirement_code: Optional[str] = None
     control_code: Optional[str] = None
+    control_title: Optional[str] = None
+    control_description: Optional[str] = None
+
+    requirement_title: Optional[str] = None
+    requirement_description: Optional[str] = None
 
     control_id: int
     status: str
 
     risk_count: int
+    risks: List[AuditRiskItem] = Field(default_factory=list)
     max_risk_score: Optional[int] = None
     highest_risk_level: Optional[str] = None
 

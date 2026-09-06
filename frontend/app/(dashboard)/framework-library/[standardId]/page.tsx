@@ -283,6 +283,9 @@ export default function FrameworkDetailPage() {
   const clauseCount = structure?.clauses?.length ?? 0;
   const processAreaCount = structure?.process_areas?.length ?? 0;
   const practiceCount = structure?.practices?.length ?? 0;
+  const isMaturityBased =
+    String(standard?.type || structure?.type || "").toUpperCase() ===
+    "MATURITY_BASED";
 
 
   function toggleClause(id: number) {
@@ -724,7 +727,7 @@ export default function FrameworkDetailPage() {
 
             <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
 
-              {structure?.type === "MATURITY_BASED" ? (
+              {isMaturityBased ? (
                 <>
                   <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1068,7 +1071,7 @@ export default function FrameworkDetailPage() {
                   ))}
                 </div>
               </section>
-            ) : structure?.type === "MATURITY_BASED" ? (
+            ) : isMaturityBased ? (
               <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
                 <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
@@ -1084,7 +1087,7 @@ export default function FrameworkDetailPage() {
                 </div>
 
                 <div className="divide-y divide-slate-100">
-                  {(structure.process_areas ?? []).map((area) => {
+                  {(structure?.process_areas ?? []).map((area) => {
                     const expanded = expandedAreas.includes(area.id);
 
                     return (

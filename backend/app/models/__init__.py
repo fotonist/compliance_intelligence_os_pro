@@ -85,6 +85,7 @@ from app.models.governance_document_history import GovernanceDocumentHistory
 
 # --- Benchmarking ---
 from app.models.benchmark_snapshot import BenchmarkSnapshot
+from app.models.peer_population import PeerPopulation, PeerPopulationMember
 
 # --- Decision Register ---
 from app.models.decision_register import DecisionRegister

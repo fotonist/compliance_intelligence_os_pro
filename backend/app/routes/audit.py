@@ -83,9 +83,9 @@ def get_logs(
 ):
     logs = (
         db.query(AuditLog)
-        .join(User, AuditLog.user_id == User.id, isouter=True)
+        .join(User, AuditLog.actor_id == User.id)
         .filter(User.tenant_id == user.tenant_id)
-        .order_by(AuditLog.timestamp.desc())
+        .order_by(AuditLog.created_at.desc())
         .limit(200)
         .all()
     )
@@ -96,11 +96,17 @@ def get_logs(
             {
                 "id": log.id,
                 "user_email": log.user.email if log.user else "Unknown",
+                "actor_id": log.actor_id,
+                "actor_role": log.actor_role,
                 "action": log.action,
-                "entity": log.entity,
+                "entity": log.entity_type,
+                "entity_type": log.entity_type,
                 "entity_id": log.entity_id,
-                "detail": log.detail,
-                "timestamp": log.timestamp,
+                "old_value": log.old_value,
+                "new_value": log.new_value,
+                "detail": log.new_value or log.old_value,
+                "timestamp": log.created_at,
+                "created_at": log.created_at,
             }
         )
 

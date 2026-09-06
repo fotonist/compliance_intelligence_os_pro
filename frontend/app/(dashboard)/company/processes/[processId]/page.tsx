@@ -23,12 +23,20 @@ type RelatedStandard = {
 
 type LinkedRisk = {
   id: number;
-  code?: string;
   title: string;
-  severity?: string;
+  status?: string;
+  control_id?: number | null;
+  inherent_score?: number | null;
+  residual_score?: number | null;
 };
 /* ===== NEW: Risk picker type ===== */
 type RiskOption = {
+  id: number;
+  code?: string;
+  title: string;
+};
+
+type ControlOption = {
   id: number;
   code?: string;
   title: string;
@@ -284,7 +292,7 @@ function HeatBar({ summary }: { summary: RiskSummary | null }) {
         <div>
           <div className="text-sm text-slate-800 font-medium">Risk Exposure</div>
           <div className="text-xs text-slate-500">
-            {summary.linked_count} linked ┬À {summary.open_count} open
+            {summary.linked_count} linked / {summary.open_count} open
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -302,10 +310,10 @@ function HeatBar({ summary }: { summary: RiskSummary | null }) {
 
       <div className="flex items-center justify-between text-xs text-slate-500">
         <div className="flex items-center gap-2">
-          <span>­şşó {b.LOW}</span>
-          <span>­şşí {b.MEDIUM}</span>
-          <span>­şşá {b.HIGH}</span>
-          <span>­şö┤ {b.CRITICAL}</span>
+          <span>LOW {b.LOW}</span>
+          <span>MEDIUM {b.MEDIUM}</span>
+          <span>HIGH {b.HIGH}</span>
+          <span>CRITICAL {b.CRITICAL}</span>
         </div>
         <div>{pct}%</div>
       </div>
@@ -363,11 +371,28 @@ const [availableRisks, setAvailableRisks] = useState<RiskOption[]>([]);
 const [riskListLoading, setRiskListLoading] = useState(false);
 const [selectedRiskId, setSelectedRiskId] = useState<number | null>(null);
 
+const [controls, setControls] = useState<ControlOption[]>([]);
+const [controlListLoading, setControlListLoading] = useState(false);
+const [mappingRiskId, setMappingRiskId] = useState<number | null>(null);
+const [selectedControlId, setSelectedControlId] = useState<number | null>(null);
+const [controlMapOpen, setControlMapOpen] = useState(false);
+
+const [applicableControls, setApplicableControls] = useState<any[]>([]);
+const [applicableControlsLoading, setApplicableControlsLoading] = useState(false);
+const [applicableControlModalOpen, setApplicableControlModalOpen] = useState(false);
+const [selectedApplicableControlId, setSelectedApplicableControlId] = useState<number | null>(null);
+const [applicableControlSaving, setApplicableControlSaving] = useState(false);
+const [applicableControlError, setApplicableControlError] = useState<string | null>(null);
+
   const headerTitle = useMemo(() => {
     if (!processId) return "Process (invalid id)";
     if (!data) return `Process #${processId}`;
     return `${data.code} — ${data.name}`;
   }, [data, processId]);
+
+  useEffect(() => {
+    loadControls();
+  }, []);
 
   useEffect(() => {
     if (!processId) {
@@ -484,7 +509,187 @@ useEffect(() => {
     }
   }
 
-  async function refreshLinkedRisks(pid: number) {
+  function openControlMapping(
+    riskId: number,
+    currentControlId?: number | null
+  ) {
+    setMappingRiskId(riskId);
+    setSelectedControlId(currentControlId ?? null);
+    setControlMapOpen(true);
+  }
+
+  async function mapRiskToControl() {
+    if (!mappingRiskId || !selectedControlId) return;
+
+    try {
+      setLinking(true);
+      setRiskUiError(null);
+
+      const res = await apiFetch(`/risks/${mappingRiskId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          source_type: "CONTROL",
+          source_id: selectedControlId,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(body || "Control mapping failed.");
+      }
+
+      setControlMapOpen(false);
+      setMappingRiskId(null);
+      setSelectedControlId(null);
+
+      if (processId) {
+        await refreshLinkedRisks(processId);
+        await refreshRiskSummary(processId);
+        await load(processId);
+      }
+    } catch (e: any) {
+      setRiskUiError(e?.message || "Control mapping failed.");
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  async function loadControls() {
+  try {
+    setControlListLoading(true);
+
+    const res = await apiFetch("/controls/", { method: "GET" });
+
+    if (!res.ok) {
+      setControls([]);
+      return;
+    }
+
+    const json = await res.json();
+    const items = Array.isArray(json)
+      ? json
+      : Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data)
+          ? json.data
+          : [];
+
+    setControls(items);
+  } catch (err) {
+    console.error("Failed to load controls", err);
+    setControls([]);
+  } finally {
+    setControlListLoading(false);
+  }
+}
+
+async function refreshApplicableControls(pid: number) {
+  try {
+    setApplicableControlsLoading(true);
+    setApplicableControlError(null);
+
+    const res = await apiFetch(
+      `/company/processes/${pid}/applicable-controls`,
+      { method: "GET" }
+    );
+
+    if (!res.ok) {
+      const body = await safeText(res);
+      throw new Error(body || `Failed to load applicable controls (${res.status})`);
+    }
+
+    const json = await res.json();
+
+    if (Array.isArray(json)) {
+      setApplicableControls(json);
+      return;
+    }
+
+    if (Array.isArray(json?.items)) {
+      setApplicableControls(json.items);
+      return;
+    }
+
+    setApplicableControls([]);
+  } catch (err: any) {
+    console.error("Failed to load applicable controls", err);
+    setApplicableControls([]);
+    setApplicableControlError(
+      err?.message || "Failed to load applicable controls."
+    );
+  } finally {
+    setApplicableControlsLoading(false);
+  }
+}
+
+async function addApplicableControl() {
+  if (!processId || !selectedApplicableControlId) return;
+
+  try {
+    setApplicableControlSaving(true);
+    setApplicableControlError(null);
+
+    const res = await apiFetch(
+      `/company/processes/${processId}/applicable-controls`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          control_id: selectedApplicableControlId,
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const body = await safeText(res);
+      throw new Error(body || `Failed to add applicable control (${res.status})`);
+    }
+
+    setApplicableControlModalOpen(false);
+    setSelectedApplicableControlId(null);
+
+    await refreshApplicableControls(processId);
+  } catch (err: any) {
+    setApplicableControlError(
+      err?.message || "Failed to add applicable control."
+    );
+  } finally {
+    setApplicableControlSaving(false);
+  }
+}
+
+async function removeApplicableControl(controlId: number) {
+  if (!processId) return;
+
+  try {
+    setApplicableControlSaving(true);
+    setApplicableControlError(null);
+
+    const res = await apiFetch(
+      `/company/processes/${processId}/applicable-controls/${controlId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!res.ok) {
+      const body = await safeText(res);
+      throw new Error(body || `Failed to remove applicable control (${res.status})`);
+    }
+
+    await refreshApplicableControls(processId);
+  } catch (err: any) {
+    setApplicableControlError(
+      err?.message || "Failed to remove applicable control."
+    );
+  } finally {
+    setApplicableControlSaving(false);
+  }
+}
+
+async function refreshLinkedRisks(pid: number) {
     setRiskUiError(null);
     try {
       setRiskLoading(true);
@@ -742,6 +947,51 @@ const rid = selectedRiskId;
   const risksToRender: LinkedRisk[] =
     (data?.linked_risks && data.linked_risks.length > 0 ? data.linked_risks : linkedRisks) || [];
 
+  const riskLinkedControls = useMemo(() => {
+    const applicableIds = new Set(
+      applicableControls
+        .map((item) => Number(item?.control_id))
+        .filter((id) => Number.isFinite(id)),
+    );
+
+    const grouped = new Map<
+      number,
+      {
+        control_id: number;
+        control_code: string;
+        control_title: string;
+        risks: LinkedRisk[];
+      }
+    >();
+
+    risksToRender.forEach((risk) => {
+      const controlId = Number(risk?.control_id);
+
+      if (!Number.isFinite(controlId) || applicableIds.has(controlId)) {
+        return;
+      }
+
+      const control = controls.find((item) => item.id === controlId);
+
+      if (!grouped.has(controlId)) {
+        grouped.set(controlId, {
+          control_id: controlId,
+          control_code: control?.code || `Control #${controlId}`,
+          control_title: control?.title || "Control",
+          risks: [],
+        });
+      }
+
+      const entry = grouped.get(controlId);
+
+      if (entry) {
+        entry.risks.push(risk);
+      }
+    });
+
+    return Array.from(grouped.values());
+  }, [applicableControls, controls, risksToRender]);
+
   const auditToRender = audit?.items || [];
   const auditTotalPages = audit?.total_pages || 1;
   const auditTotal = audit?.total || 0;
@@ -912,7 +1162,7 @@ const rid = selectedRiskId;
 
          <Section
   title="Related Standards"
-  subtitle="Derived from linked risks ÔåÆ controls ÔåÆ requirements"
+  subtitle="Derived from linked risks -> controls -> requirements"
 >
   <div className="rounded-lg border border-slate-200 overflow-hidden">
     <div className="grid grid-cols-2 bg-white/50 text-xs text-slate-500 px-4 py-3">
@@ -1013,50 +1263,133 @@ const rid = selectedRiskId;
 
                 {activeRiskTab === "risks" ? (
                   <div className="rounded-lg border border-slate-200 overflow-hidden">
-                    <div className="grid grid-cols-12 bg-white/50 text-xs text-slate-500 px-4 py-3">
-                      <div className="col-span-3">Risk</div>
-                      <div className="col-span-6">Title</div>
-                      <div className="col-span-2">Severity</div>
-                      <div className="col-span-1 text-right"> </div>
+                    <div
+                      className="grid items-center bg-white/50 px-4 py-3 text-xs text-slate-500"
+                      style={{
+                        gridTemplateColumns: "72px minmax(0, 1fr) 72px 280px 100px",
+                      }}
+                    >
+                      <div>Risk</div>
+                      <div>Title</div>
+                      <div>Score</div>
+                      <div>Related Control</div>
+                      <div className="text-right">Action</div>
                     </div>
 
                     {riskLoading ? (
-                      <div className="px-4 py-4 text-sm text-slate-500">Loading...</div>
+                      <div className="px-4 py-4 text-sm text-slate-500">
+                        Loading...
+                      </div>
                     ) : risksToRender.length === 0 ? (
-                      <div className="px-4 py-4 text-sm text-slate-800">No linked risks.</div>
+                      <div className="px-4 py-4 text-sm text-slate-800">
+                        No linked risks.
+                      </div>
                     ) : (
                       <div>
-                        {risksToRender.map((r) => (
-                          <div
-                            key={r.id}
-                            className="grid grid-cols-12 px-4 py-3 border-t border-slate-200 hover:bg-white/40"
-                          >
+                        {risksToRender.map((r) => {
+                          const relatedControl = r.control_id
+                            ? controls.find((c) => c.id === r.control_id)
+                            : null;
+
+                          return (
                             <div
-                              className="col-span-3 cursor-pointer"
-                              onClick={() => router.push(`/risks/${r.id}`)}
-                              title="Open risk"
+                              key={r.id}
+                              className="grid items-start border-t border-slate-200 px-4 py-4 hover:bg-white/40"
+                              style={{
+                                gridTemplateColumns:
+                                  "72px minmax(0, 1fr) 72px 280px 100px",
+                              }}
                             >
-                              <span className="text-slate-900 font-medium">{r.code || `#${r.id}`}</span>
+                              <div className="min-w-0 pt-1">
+                                <button
+                                  type="button"
+                                  className="font-medium text-slate-900"
+                                  onClick={() =>
+                                    router.push(`/risks/${r.id}`)
+                                  }
+                                >
+                                  #{r.id}
+                                </button>
+                              </div>
+
+                              <div className="min-w-0 pr-6">
+                                <div
+                                  className="break-words text-sm leading-5 text-slate-800"
+                                  title={r.title}
+                                >
+                                  {r.title}
+                                </div>
+                              </div>
+
+                              <div className="min-w-0 pt-1">
+                                {r.residual_score != null ? (
+                                  <span className="text-sm text-slate-700">
+                                    {r.residual_score}
+                                  </span>
+                                ) : r.inherent_score != null ? (
+                                  <span className="text-sm text-slate-700">
+                                    {r.inherent_score}
+                                  </span>
+                                ) : (
+                                  <span className="text-sm text-slate-400">
+                                    -
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="min-w-0 overflow-hidden pr-5">
+                                {r.control_id ? (
+                                  <button
+                                    type="button"
+                                    className="block w-full min-w-0 text-left"
+                                    onClick={() =>
+                                      openControlMapping(
+                                        r.id,
+                                        r.control_id
+                                      )
+                                    }
+                                  >
+                                    <div className="truncate text-sm font-semibold text-slate-900 hover:underline">
+                                      {relatedControl?.code ||
+                                        `Control #${r.control_id}`}
+                                    </div>
+                                    <div
+                                      className="truncate text-xs text-slate-500"
+                                      title={
+                                        relatedControl?.title ||
+                                        "Mapped control"
+                                      }
+                                    >
+                                      {relatedControl?.title ||
+                                        "Mapped control"}
+                                    </div>
+                                  </button>
+                                ) : (
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() =>
+                                      openControlMapping(r.id, null)
+                                    }
+                                  >
+                                    + Map Control
+                                  </Button>
+                                )}
+                              </div>
+
+                              <div className="min-w-0 pt-1 text-right">
+                                <Button
+                                  variant="ghost"
+                                  disabled={unlinkingId === r.id}
+                                  onClick={() => doUnlinkRisk(r.id)}
+                                >
+                                  {unlinkingId === r.id
+                                    ? "..."
+                                    : "Unlink"}
+                                </Button>
+                              </div>
                             </div>
-                            <div className="col-span-6 text-sm text-slate-800">{r.title}</div>
-                            <div className="col-span-2">
-                              {r.severity ? (
-                                <Badge label={r.severity} variant={severityVariant(r.severity)} />
-                              ) : (
-                                <span className="text-sm text-slate-500">-</span>
-                              )}
-                            </div>
-                            <div className="col-span-1 text-right">
-                              <Button
-                                variant="ghost"
-                                disabled={unlinkingId === r.id}
-                                onClick={() => doUnlinkRisk(r.id)}
-                              >
-                                {unlinkingId === r.id ? "..." : "Unlink"}
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -1103,7 +1436,14 @@ const rid = selectedRiskId;
 
                     <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200 bg-white/30">
                       <div className="text-xs text-slate-500">
-                        {auditTotal === 0 ? "Showing 0" : `Showing ${auditShowingStart}ÔÇô${auditShowingEnd} of ${auditTotal}`}
+                        {auditTotal === 0
+                          ? "No audit events"
+                          : "Showing " +
+                            ((auditPage - 1) * auditPageSize + 1) +
+                            "-" +
+                            Math.min(auditPage * auditPageSize, auditTotal) +
+                            " of " +
+                            auditTotal}
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -1151,7 +1491,99 @@ const rid = selectedRiskId;
 
            
 
-                 <ProcessRiskLinkModal
+                 {controlMapOpen ? (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/30 px-4">
+            <div className="w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-2xl">
+              <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    Map Related Control
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Select the control associated with this risk.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  className="rounded-md px-2 py-1 text-sm text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  onClick={() => {
+                    setControlMapOpen(false);
+                    setMappingRiskId(null);
+                    setSelectedControlId(null);
+                  }}
+                >
+                  X
+                </button>
+              </div>
+
+              <div className="px-5 py-5">
+                <label className="mb-2 block text-xs font-semibold text-slate-600">
+                  Related Control
+                </label>
+
+                <select
+                  value={selectedControlId ?? ""}
+                  onChange={(e) =>
+                    setSelectedControlId(
+                      e.target.value ? Number(e.target.value) : null
+                    )
+                  }
+                  disabled={controlListLoading || linking}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">
+                    {controlListLoading
+                      ? "Loading controls..."
+                      : "Select a control"}
+                  </option>
+
+                  {controls.map((control) => (
+                    <option key={control.id} value={control.id}>
+                      {control.code || `Control #${control.id}`}
+                      {control.title ? ` - ${control.title}` : ""}
+                    </option>
+                  ))}
+                </select>
+
+                {!controlListLoading && controls.length === 0 ? (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    No controls are available.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+                <Button
+                  variant="ghost"
+                  disabled={linking}
+                  onClick={() => {
+                    setControlMapOpen(false);
+                    setMappingRiskId(null);
+                    setSelectedControlId(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  variant="primary"
+                  disabled={
+                    !mappingRiskId ||
+                    !selectedControlId ||
+                    linking ||
+                    controlListLoading
+                  }
+                  onClick={mapRiskToControl}
+                >
+                  {linking ? "Saving..." : "Save Mapping"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <ProcessRiskLinkModal
   processId={processId!}
   open={linkOpen}
   onClose={() => setLinkOpen(false)}
@@ -1233,6 +1665,221 @@ const rid = selectedRiskId;
               )}
             </div>
           </Section>
+<Section
+  title="Applicable Controls"
+  subtitle="Controls explicitly included in this process compliance and audit scope"
+  actions={
+    <>
+      <Button
+        variant="secondary"
+        onClick={() => {
+          setApplicableControlError(null);
+          setSelectedApplicableControlId(null);
+          setApplicableControlModalOpen(true);
+        }}
+      >
+        + Add Applicable Control
+      </Button>
+
+      <Button
+        variant="ghost"
+        onClick={() => {
+          if (!processId) return;
+          refreshApplicableControls(processId);
+        }}
+        disabled={applicableControlsLoading}
+      >
+        Refresh
+      </Button>
+    </>
+  }
+>
+  <div className="rounded-lg border border-slate-200 overflow-hidden">
+    <div className="grid grid-cols-12 bg-white/50 text-xs text-slate-500 px-4 py-3">
+      <div className="col-span-3">Control</div>
+      <div className="col-span-5">Title</div>
+      <div className="col-span-2">Scope</div>
+      <div className="col-span-2 text-right">Actions</div>
+    </div>
+
+    {applicableControlsLoading ? (
+      <div className="px-4 py-4 text-sm text-slate-500">
+        Loading applicable controls...
+      </div>
+    ) : applicableControls.length === 0 ? (
+      <div className="px-4 py-5">
+        <div className="text-sm font-medium text-slate-900">
+          No applicable controls defined
+        </div>
+        <div className="text-xs text-slate-500 mt-1">
+          Add the controls that belong to this process compliance scope.
+        </div>
+      </div>
+    ) : (
+      applicableControls.map((control) => (
+        <div
+          key={control.id}
+          className="grid grid-cols-12 px-4 py-3 border-t border-slate-200 hover:bg-white/40"
+        >
+          <div className="col-span-3 min-w-0">
+            <div className="text-sm font-semibold text-slate-900">
+              {control.control_code || `Control #${control.control_id}`}
+            </div>
+            <div className="text-xs text-slate-500 mt-1">
+              ID {control.control_id}
+            </div>
+          </div>
+
+          <div className="col-span-5 min-w-0">
+            <div className="text-sm text-slate-900 truncate">
+              {control.control_title || "-"}
+            </div>
+            {control.control_description ? (
+              <div className="text-xs text-slate-500 mt-1 line-clamp-2">
+                {control.control_description}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="col-span-2">
+            <Badge
+              label="Applicable"
+              variant="success"
+            />
+          </div>
+
+          <div className="col-span-2 text-right">
+            <Button
+              variant="danger"
+              disabled={applicableControlSaving}
+              onClick={() => removeApplicableControl(Number(control.control_id))}
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+      ))
+    )}
+  </div>
+
+  {applicableControlError ? (
+    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {applicableControlError}
+    </div>
+  ) : null}
+</Section>
+
+{applicableControlModalOpen ? (
+  <div
+    className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4"
+    onMouseDown={() => {
+      if (!applicableControlSaving) {
+        setApplicableControlModalOpen(false);
+      }
+    }}
+  >
+    <div
+      className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-200">
+        <div>
+          <div className="text-lg font-semibold text-slate-900">
+            Add Applicable Control
+          </div>
+          <div className="text-sm text-slate-500 mt-1">
+            Select an existing control to include in this process scope.
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="text-slate-400 hover:text-slate-700 text-xl"
+          onClick={() => {
+            if (!applicableControlSaving) {
+              setApplicableControlModalOpen(false);
+            }
+          }}
+        >
+          X
+        </button>
+      </div>
+
+      <div className="p-5 space-y-4">
+        <div>
+          <Label>Control</Label>
+          <Select
+            value={selectedApplicableControlId ?? ""}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              setSelectedApplicableControlId(value > 0 ? value : null);
+            }}
+            disabled={controlListLoading || applicableControlSaving}
+          >
+            <option value="">
+              {controlListLoading
+                ? "Loading controls..."
+                : "Select a control"}
+            </option>
+
+            {controls
+              .filter(
+                (control) =>
+                  !applicableControls.some(
+                    (item) => Number(item.control_id) === Number(control.id)
+                  )
+              )
+              .map((control) => (
+                <option key={control.id} value={control.id}>
+                  {control.code || `Control #${control.id}`} - {control.title || "Untitled"}
+                </option>
+              ))}
+          </Select>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Scope behavior
+          </div>
+          <div className="text-sm text-slate-700 mt-1">
+            This mapping defines process applicability. It does not create a task or modify risk mappings.
+          </div>
+        </div>
+
+        {applicableControlError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {applicableControlError}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex items-center justify-end gap-2 p-5 border-t border-slate-200">
+        <Button
+          variant="ghost"
+          disabled={applicableControlSaving}
+          onClick={() => {
+            setApplicableControlModalOpen(false);
+            setSelectedApplicableControlId(null);
+          }}
+        >
+          Cancel
+        </Button>
+
+        <Button
+          variant="primary"
+          disabled={
+            applicableControlSaving ||
+            !selectedApplicableControlId
+          }
+          onClick={addApplicableControl}
+        >
+          {applicableControlSaving ? "Saving..." : "Add Control"}
+        </Button>
+      </div>
+    </div>
+  </div>
+) : null}
+
 <Section
   title="Process Tasks"
   subtitle="Tasks assigned to this process"

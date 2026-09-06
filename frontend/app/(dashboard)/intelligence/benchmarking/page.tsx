@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -56,6 +56,20 @@ type Comparison = {
   sufficient_data: boolean;
 };
 
+type PeerBenchmark = {
+  available: boolean;
+  reason: string | null;
+  population_id: number | null;
+  population_name: string | null;
+  current_tenant_score: number | null;
+  peer_average_score: number | null;
+  delta_vs_peer: number | null;
+  peer_sample_size: number;
+  minimum_sample_size: number | null;
+  metric: "uee_score";
+  evaluated_at: string | null;
+};
+
 type Summary = {
   tenant_id: number;
   latest: Snapshot | null;
@@ -63,6 +77,7 @@ type Summary = {
   historical_snapshot_count: number;
   peer_benchmark_available: boolean;
   peer_benchmark_reason: string | null;
+  peer_benchmark: PeerBenchmark | null;
 };
 
 const componentMeta = [
@@ -100,14 +115,14 @@ const componentMeta = [
 
 function formatNumber(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined || Number.isNaN(value)) {
-    return "—";
+    return "-";
   }
 
   return value.toFixed(digits);
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return "—";
+  if (!value) return "-";
 
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
@@ -374,7 +389,7 @@ export default function BenchmarkingPage() {
               title="Data Quality"
               value={
                 latest.data_quality_score === null
-                  ? "—"
+                  ? "-"
                   : formatNumber(latest.data_quality_score)
               }
               subtitle={
@@ -418,7 +433,7 @@ export default function BenchmarkingPage() {
                       Engine
                     </div>
                     <div className="mt-0.5 text-xs font-semibold text-slate-700">
-                      {latest.engine_version ?? "—"}
+                      {latest.engine_version ?? "-"}
                     </div>
                   </div>
                 </div>
@@ -557,32 +572,193 @@ export default function BenchmarkingPage() {
           <section className="grid gap-6 xl:grid-cols-[0.7fr_1.3fr]">
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
-                <h2 className="font-semibold text-slate-900">
-                  Peer Benchmark
-                </h2>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="font-semibold text-slate-900">
+                      Peer Benchmark
+                    </h2>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Comparison against the active eligible peer population.
+                    </p>
+                  </div>
+
+                  {summary?.peer_benchmark?.available && (
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                      Available
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="p-5">
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5">
-                  <div className="flex items-start gap-3">
-                    <BarChart3
-                      size={18}
-                      className="mt-0.5 text-slate-500"
-                    />
+                {summary?.peer_benchmark?.available ? (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Peer Population
+                          </div>
 
-                    <div>
-                      <div className="text-sm font-semibold text-slate-800">
-                        Peer comparison unavailable
+                          <div className="mt-1 text-sm font-semibold text-slate-800">
+                            {summary.peer_benchmark.population_name ??
+                              "Active peer population"}
+                          </div>
+                        </div>
+
+                        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                          Available
+                        </span>
                       </div>
 
-                      <p className="mt-1 text-xs leading-5 text-slate-500">
-                        {summary?.peer_benchmark_reason ??
-                          "No peer benchmark population is configured."}
+                      <div className="mt-5 grid grid-cols-2 gap-3">
+                        <SmallStat
+                          label="Your UEE"
+                          value={formatNumber(
+                            summary.peer_benchmark.current_tenant_score
+                          )}
+                        />
+
+                        <SmallStat
+                          label="Peer Average"
+                          value={formatNumber(
+                            summary.peer_benchmark.peer_average_score
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <SmallStat
+                        label="Delta vs Peer"
+                        value={formatNumber(
+                          summary.peer_benchmark.delta_vs_peer
+                        )}
+                      />
+
+                      <SmallStat
+                        label="Peer Sample"
+                        value={`${summary.peer_benchmark.peer_sample_size} peers`}
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                            Benchmark Position
+                          </div>
+
+                          <div className="mt-1 text-sm font-semibold text-slate-800">
+                            {summary.peer_benchmark.delta_vs_peer !== null &&
+                            summary.peer_benchmark.current_tenant_score !== null &&
+                            summary.peer_benchmark.peer_average_score !== null
+                              ? summary.peer_benchmark.delta_vs_peer < 0
+                                ? "Lower exposure than peer average"
+                                : summary.peer_benchmark.delta_vs_peer > 0
+                                  ? "Higher exposure than peer average"
+                                  : "Equal to peer average"
+                              : "Comparison available"}
+                          </div>
+                        </div>
+
+                        <BarChart3
+                          size={20}
+                          className="text-slate-400"
+                        />
+                      </div>
+
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        UEE uses the exposure convention: 0 = best, 100 = worst.
                       </p>
                     </div>
                   </div>
-                </div>
-              </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">
+                            Benchmark Status
+                          </div>
+
+                          <div className="mt-1 text-sm font-semibold text-slate-800">
+                            Insufficient sample
+                          </div>
+                        </div>
+
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+                          Pending
+                        </span>
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-slate-600">
+                            Eligible peer observations
+                          </span>
+
+                          <span className="font-semibold text-slate-800">
+                            {summary?.peer_benchmark
+                              ? `${summary.peer_benchmark.peer_sample_size} / ${summary.peer_benchmark.minimum_sample_size ?? "-"}`
+                              : "-"}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                          <div
+                            className="h-full rounded-full bg-amber-500 transition-all"
+                            style={{
+                              width: `${
+                                summary?.peer_benchmark?.minimum_sample_size
+                                  ? Math.min(
+                                      100,
+                                      (summary.peer_benchmark.peer_sample_size /
+                                        summary.peer_benchmark.minimum_sample_size) *
+                                        100
+                                    )
+                                  : 0
+                              }%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <SmallStat
+                        label="Your UEE"
+                        value={formatNumber(
+                          summary?.peer_benchmark?.current_tenant_score
+                        )}
+                      />
+
+                      <SmallStat
+                        label="Population"
+                        value={
+                          summary?.peer_benchmark?.population_name ?? "-"
+                        }
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Availability Requirement
+                      </div>
+
+                      <div className="mt-2 text-sm font-semibold text-slate-800">
+                        Minimum peer sample has not been reached
+                      </div>
+
+                      <p className="mt-2 text-xs leading-5 text-slate-500">
+                        A peer comparison is withheld until the configured
+                        minimum sample size is satisfied. No peer average or
+                        delta is displayed until the benchmark is statistically
+                        eligible.
+                      </p>
+                    </div>
+                  </div>
+                )}              </div>
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -673,7 +849,7 @@ export default function BenchmarkingPage() {
                           <td className="px-5 py-3 text-slate-700">
                             {snapshot.data_quality_score ===
                             null
-                              ? "—"
+                              ? "-"
                               : formatNumber(
                                   snapshot.data_quality_score
                                 )}
@@ -711,7 +887,7 @@ export default function BenchmarkingPage() {
 
               <TraceItem
                 label="Engine"
-                value={latest.engine_version ?? "—"}
+                value={latest.engine_version ?? "-"}
               />
 
               <TraceItem
@@ -811,4 +987,6 @@ function TraceItem({
     </div>
   );
 }
+
+
 

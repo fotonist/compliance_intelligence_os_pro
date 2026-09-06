@@ -22,6 +22,7 @@ from app.models.requirements import Requirement
 from app.models.clauses import Clause
 from app.models.standards import Standard
 from app.models.risk_forecasts import RiskForecast
+from app.services.audit_plan_engine import AuditPlanEngine
 
 from app.schemas.coverage_schema import (
     CoverageResponse,
@@ -587,79 +588,9 @@ def generate_audit_plan(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    gap_response = get_process_gaps(process_id, db, user)
-
-    actions = []
-    critical_count = 0
-
-    for gap in gap_response.gaps:
-        risk_rank = _risk_level_rank(gap.highest_risk_level)
-
-        # HARD: AI drives priority
-        priority_score = int(round(gap.ai_priority_score))
-
-        # HARD: AI drives due date
-        if gap.avg_escalation_probability >= 0.80:
-            due = date.today() + timedelta(days=5)
-            critical_count += 1
-        elif gap.avg_escalation_probability >= 0.65:
-            due = date.today() + timedelta(days=10)
-        elif gap.avg_escalation_probability >= 0.50:
-            due = date.today() + timedelta(days=20)
-        else:
-            due = date.today() + timedelta(days=30)
-
-        # owner suggestion rule engine (keep existing clause heuristic)
-        clause = (gap.clause_code or "").upper()
-        if clause.startswith("A.6"):
-            owner = "HR Manager"
-        elif clause.startswith("A.5"):
-            owner = "IT Manager"
-        elif clause.startswith("A.8"):
-            owner = "Security Officer"
-        else:
-            owner = "Process Owner"
-
-        # HARD: executive escalation when forecast is very high
-        if gap.avg_escalation_probability >= 0.80 and risk_rank >= 3:
-            owner = "Executive Risk Committee"
-
-        evidence_types = [
-            "Policy Document",
-            "Procedure Record",
-            "Access Log",
-            "Training Record",
-        ]
-
-        actions.append(
-            AuditActionItem(
-                priority_score=priority_score,
-                standard_code=gap.standard_code,
-                clause_code=gap.clause_code,
-                requirement_code=gap.requirement_code,
-                control_code=gap.control_code,
-                control_id=gap.control_id,
-                status=gap.status,
-                risk_count=gap.risk_count,
-                max_risk_score=gap.max_risk_score,
-                highest_risk_level=gap.highest_risk_level,
-
-                escalation_probability=float(gap.avg_escalation_probability),
-                expected_score_delta=float(gap.expected_score_delta_sum),
-                ai_priority_score=float(gap.ai_priority_score),
-                forecast_version=gap.forecast_version,
-
-                suggested_owner_role=owner,
-                suggested_due_date=due,
-                suggested_evidence_types=evidence_types,
-            )
-        )
-
-    actions.sort(key=lambda x: -x.priority_score)
-
-    return AuditPlanResponse(
+    return AuditPlanEngine.generate(
         process_id=process_id,
-        total_actions=len(actions),
-        critical_actions=critical_count,
-        actions=actions,
+        db=db,
+        user=user,
     )
+

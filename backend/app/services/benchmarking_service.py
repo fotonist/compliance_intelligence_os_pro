@@ -7,6 +7,9 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.benchmark_snapshot import BenchmarkSnapshot
+from app.models.framework_adoption import FrameworkAdoption
+from app.models.organization import Organization
+from app.models.peer_population import PeerPopulation, PeerPopulationMember
 from app.services.uee_engine import UEEEngine
 from app.services.uee_config_provider import get_active_uee_weights
 
@@ -20,6 +23,20 @@ class BenchmarkComparison:
     sufficient_data: bool
 
 
+@dataclass(frozen=True)
+class PeerBenchmarkResult:
+    available: bool
+    reason: str | None
+    population_id: int | None
+    population_name: str | None
+    current_tenant_score: float | None
+    peer_average_score: float | None
+    delta_vs_peer: float | None
+    peer_sample_size: int
+    minimum_sample_size: int | None
+    evaluated_at: datetime | None
+
+
 class BenchmarkingService:
     """
     Enterprise benchmarking service.
@@ -27,11 +44,7 @@ class BenchmarkingService:
     Benchmarking is based exclusively on persisted, tenant-scoped UEE
     snapshots. No mock, seed, or synthetic benchmark values are generated.
 
-    UEE remains the canonical calculation engine. This service only:
-      1. captures a real UEE state,
-      2. persists it as a benchmark snapshot,
-      3. reads historical snapshots,
-      4. calculates comparisons from persisted observations.
+    UEE remains the canonical calculation engine.
     """
 
     def __init__(self) -> None:
@@ -196,24 +209,296 @@ class BenchmarkingService:
             sufficient_data=True,
         )
 
+    def get_peer_benchmark(
+        self,
+        *,
+        db: Session,
+        tenant_id: int,
+        evaluated_at: datetime | None = None,
+    ) -> PeerBenchmarkResult:
+        if tenant_id <= 0:
+            raise ValueError("Invalid tenant_id")
+
+        evaluation_time = evaluated_at or datetime.now(timezone.utc)
+
+        adoption = (
+            db.query(FrameworkAdoption)
+            .filter(
+                FrameworkAdoption.tenant_id == tenant_id,
+                FrameworkAdoption.status == "ACTIVE",
+                FrameworkAdoption.applicability == "APPLICABLE",
+            )
+            .order_by(
+                FrameworkAdoption.updated_at.desc(),
+                FrameworkAdoption.id.desc(),
+            )
+            .first()
+        )
+
+        population_query = (
+            db.query(PeerPopulation)
+            .filter(
+                PeerPopulation.status == "ACTIVE",
+            )
+        )
+
+        if adoption is not None:
+            population_query = population_query.filter(
+                (
+                    PeerPopulation.standard_id.is_(None)
+                    | (
+                        PeerPopulation.standard_id
+                        == adoption.standard_id
+                    )
+                )
+            )
+        else:
+            population_query = population_query.filter(
+                PeerPopulation.standard_id.is_(None)
+            )
+
+        population = (
+            population_query
+            .order_by(
+                PeerPopulation.updated_at.desc(),
+                PeerPopulation.id.desc(),
+            )
+            .first()
+        )
+
+        if population is None:
+            return PeerBenchmarkResult(
+                available=False,
+                reason="No active peer population is configured.",
+                population_id=None,
+                population_name=None,
+                current_tenant_score=None,
+                peer_average_score=None,
+                delta_vs_peer=None,
+                peer_sample_size=0,
+                minimum_sample_size=None,
+                evaluated_at=evaluation_time,
+            )
+
+        current_snapshot = self.get_latest(
+            db=db,
+            tenant_id=tenant_id,
+        )
+
+        if current_snapshot is None:
+            return PeerBenchmarkResult(
+                available=False,
+                reason="Current tenant has no persisted benchmark snapshot.",
+                population_id=population.id,
+                population_name=population.name,
+                current_tenant_score=None,
+                peer_average_score=None,
+                delta_vs_peer=None,
+                peer_sample_size=0,
+                minimum_sample_size=population.minimum_sample_size,
+                evaluated_at=evaluation_time,
+            )
+
+        members = (
+            db.query(PeerPopulationMember)
+            .filter(
+                PeerPopulationMember.population_id == population.id,
+                PeerPopulationMember.eligibility_status == "ELIGIBLE",
+                (
+                    PeerPopulationMember.effective_from.is_(None)
+                    | (
+                        PeerPopulationMember.effective_from
+                        <= evaluation_time
+                    )
+                ),
+                (
+                    PeerPopulationMember.effective_to.is_(None)
+                    | (
+                        PeerPopulationMember.effective_to
+                        >= evaluation_time
+                    )
+                ),
+            )
+            .all()
+        )
+
+        candidate_tenant_ids = {
+            int(item.tenant_id)
+            for item in members
+            if int(item.tenant_id) != tenant_id
+        }
+
+        if not candidate_tenant_ids:
+            return PeerBenchmarkResult(
+                available=False,
+                reason="Peer population has no eligible peer tenants.",
+                population_id=population.id,
+                population_name=population.name,
+                current_tenant_score=float(current_snapshot.uee_score),
+                peer_average_score=None,
+                delta_vs_peer=None,
+                peer_sample_size=0,
+                minimum_sample_size=population.minimum_sample_size,
+                evaluated_at=evaluation_time,
+            )
+
+        candidate_tenant_ids = self._filter_peer_tenants(
+            db=db,
+            population=population,
+            tenant_ids=candidate_tenant_ids,
+        )
+
+        if not candidate_tenant_ids:
+            return PeerBenchmarkResult(
+                available=False,
+                reason="No eligible peer tenants satisfy the population criteria.",
+                population_id=population.id,
+                population_name=population.name,
+                current_tenant_score=float(current_snapshot.uee_score),
+                peer_average_score=None,
+                delta_vs_peer=None,
+                peer_sample_size=0,
+                minimum_sample_size=population.minimum_sample_size,
+                evaluated_at=evaluation_time,
+            )
+
+        latest_snapshots = self._latest_snapshots_for_tenants(
+            db=db,
+            tenant_ids=candidate_tenant_ids,
+        )
+
+        peer_scores = [
+            float(snapshot.uee_score)
+            for snapshot in latest_snapshots
+            if snapshot.uee_score is not None
+        ]
+
+        sample_size = len(peer_scores)
+
+        if sample_size < population.minimum_sample_size:
+            return PeerBenchmarkResult(
+                available=False,
+                reason=(
+                    "Peer population does not have enough valid benchmark "
+                    "snapshots to satisfy the minimum sample size."
+                ),
+                population_id=population.id,
+                population_name=population.name,
+                current_tenant_score=float(current_snapshot.uee_score),
+                peer_average_score=None,
+                delta_vs_peer=None,
+                peer_sample_size=sample_size,
+                minimum_sample_size=population.minimum_sample_size,
+                evaluated_at=evaluation_time,
+            )
+
+        peer_average = sum(peer_scores) / sample_size
+        current_score = float(current_snapshot.uee_score)
+
+        return PeerBenchmarkResult(
+            available=True,
+            reason=None,
+            population_id=population.id,
+            population_name=population.name,
+            current_tenant_score=current_score,
+            peer_average_score=peer_average,
+            delta_vs_peer=current_score - peer_average,
+            peer_sample_size=sample_size,
+            minimum_sample_size=population.minimum_sample_size,
+            evaluated_at=evaluation_time,
+        )
+
+    def _filter_peer_tenants(
+        self,
+        *,
+        db: Session,
+        population: PeerPopulation,
+        tenant_ids: set[int],
+    ) -> set[int]:
+        if not tenant_ids:
+            return set()
+
+        filtered = set(tenant_ids)
+
+        if population.industry:
+            rows = (
+                db.query(Organization.tenant_id)
+                .filter(
+                    Organization.tenant_id.in_(filtered),
+                    Organization.industry == population.industry,
+                )
+                .all()
+            )
+            filtered &= {int(row[0]) for row in rows}
+
+        if population.company_size_band:
+            rows = (
+                db.query(Organization.tenant_id)
+                .filter(
+                    Organization.tenant_id.in_(filtered),
+                    Organization.company_size == population.company_size_band,
+                )
+                .all()
+            )
+            filtered &= {int(row[0]) for row in rows}
+
+        if population.geography:
+            return set()
+
+        if population.revenue_band:
+            return set()
+
+        if population.standard_id:
+            rows = (
+                db.query(FrameworkAdoption.tenant_id)
+                .filter(
+                    FrameworkAdoption.tenant_id.in_(filtered),
+                    FrameworkAdoption.standard_id == population.standard_id,
+                    FrameworkAdoption.status == "ACTIVE",
+                    FrameworkAdoption.applicability == "APPLICABLE",
+                )
+                .all()
+            )
+            filtered &= {int(row[0]) for row in rows}
+
+        return filtered
+
+    @staticmethod
+    def _latest_snapshots_for_tenants(
+        *,
+        db: Session,
+        tenant_ids: set[int],
+    ) -> list[BenchmarkSnapshot]:
+        if not tenant_ids:
+            return []
+
+        snapshots = (
+            db.query(BenchmarkSnapshot)
+            .filter(
+                BenchmarkSnapshot.tenant_id.in_(tenant_ids),
+            )
+            .order_by(
+                BenchmarkSnapshot.tenant_id.asc(),
+                BenchmarkSnapshot.snapshot_at.desc(),
+                BenchmarkSnapshot.id.desc(),
+            )
+            .all()
+        )
+
+        latest_by_tenant: dict[int, BenchmarkSnapshot] = {}
+
+        for snapshot in snapshots:
+            tenant_id = int(snapshot.tenant_id)
+            if tenant_id not in latest_by_tenant:
+                latest_by_tenant[tenant_id] = snapshot
+
+        return list(latest_by_tenant.values())
+
     @staticmethod
     def _calculate_data_quality(
         source_stats: dict[str, Any],
         warnings: tuple[str, ...],
     ) -> float:
-        """
-        Conservative data-quality indicator.
-
-        This is not a compliance score and does not alter UEE.
-        It communicates whether the benchmark observation had sufficient
-        underlying source data.
-
-        100 = no source warnings
-        80  = one source warning
-        60  = two source warnings
-        ...
-        """
-
         warning_count = len(warnings)
 
         if warning_count <= 0:
@@ -223,3 +508,6 @@ class BenchmarkingService:
             0.0,
             100.0 - (warning_count * 20.0),
         )
+
+
+

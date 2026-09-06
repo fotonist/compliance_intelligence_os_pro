@@ -147,7 +147,7 @@ export default function EvidenceDetailPage() {
 
       setAllRisks(
         raw.map((r: any) => ({
-          id: Number(r.id ?? r.risk_id),
+          id: Number(r.id / r.risk_id),
           title: r.title ?? r.risk_title ?? `Risk #${r.id ?? r.risk_id}`,
           score: r.score ?? undefined,
           risk_level: r.risk_level ?? undefined,
@@ -376,7 +376,7 @@ if (!ev) return null;
               onClick={() => router.back()}
               className="mb-4 inline-flex items-center text-sm font-medium text-slate-500 transition hover:text-slate-900"
             >
-              â† Evidence Library
+               Evidence Library
             </button>
 
             <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-blue-600">
@@ -404,13 +404,13 @@ if (!ev) return null;
                 {standardLabel}
               </span>
 
-              <span className="text-slate-300">â†’</span>
+              <span className="px-1 text-slate-300">/</span>
 
               <span className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700">
                 {requirementLabel}
               </span>
 
-              <span className="text-slate-300">â†’</span>
+              <span className="px-1 text-slate-300">/</span>
 
               <span className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700">
                 {controlLabel}
@@ -542,7 +542,7 @@ if (!ev) return null;
                   Assessment
                 </div>
                 <div className="mt-1.5 text-sm font-semibold capitalize text-slate-900">
-                  {ev.assessment_type ?? "â€”"}
+                  {ev.assessment_type ?? "-"}
                 </div>
               </div>
 
@@ -652,11 +652,11 @@ if (!ev) return null;
                     </div>
 
                     <div className="text-xs font-semibold text-slate-600">
-                      {r.risk_level ?? "â€”"}
+                      {r.risk_level ?? "-"}
                     </div>
 
                     <div className="text-sm font-semibold text-slate-900">
-                      {r.score ?? "â€”"}
+                      {r.score ?? "-"}
                     </div>
 
                     <div className="text-right">
@@ -933,7 +933,7 @@ if (!ev) return null;
                       {riskLoading ? (
 
                         <div className="py-8 text-center text-sm text-slate-500">
-                          Loading available risksâ€¦
+                          Loading available risks...
                         </div>
 
                       ) : riskError ? (
@@ -976,7 +976,7 @@ if (!ev) return null;
                               </div>
 
                               <div className="mt-1 text-xs text-slate-500">
-                                Score: {r.score ?? "-"} Â· Level: {r.risk_level ?? "-"}
+                                Score: {r.score ?? "-"} / Level: {r.risk_level ?? "-"}
                               </div>
 
                             </div>
@@ -1021,7 +1021,7 @@ if (!ev) return null;
                     }
                     className="rounded-xl bg-[#0b5cff] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#084ed6] disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {linkingRisks ? "Addingâ€¦" : "Link Selected Risks"}
+                    {linkingRisks ? "Adding..." : "Link Selected Risks"}
                   </button>
 
                 </div>

@@ -107,25 +107,77 @@ function EvidencesPageContent() {
         {err && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{err}</div>}
 
         <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_2px_8px_rgba(15,23,42,0.04)]">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+          <div className="w-full overflow-x-auto">
+            <table className="w-full min-w-[1280px] table-fixed text-left text-sm">
+              <colgroup>
+                <col style={{ width: "220px" }} />
+                <col style={{ width: "130px" }} />
+                <col style={{ width: "110px" }} />
+                <col style={{ width: "130px" }} />
+                <col style={{ width: "170px" }} />
+                <col style={{ width: "130px" }} />
+                <col style={{ width: "140px" }} />
+                <col style={{ width: "70px" }} />
+                <col style={{ width: "70px" }} />
+                <col style={{ width: "110px" }} />
+              </colgroup>
+
               <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                <tr>{["Evidence","Task","Standard","Requirement","Control","Status","Coverage","Files","Risks","Action"].map((h) => <th key={h} className="px-5 py-3.5">{h}</th>)}</tr>
+                <tr>
+                  <th className="px-5 py-3.5 font-bold">Evidence</th>
+                  <th className="px-5 py-3.5 font-bold">Task</th>
+                  <th className="px-5 py-3.5 font-bold">Standard</th>
+                  <th className="px-5 py-3.5 font-bold">Requirement</th>
+                  <th className="px-5 py-3.5 font-bold">Control</th>
+                  <th className="px-5 py-3.5 font-bold">Status</th>
+                  <th className="px-5 py-3.5 font-bold">Coverage</th>
+                  <th className="px-5 py-3.5 text-center font-bold">Files</th>
+                  <th className="px-5 py-3.5 text-center font-bold">Risks</th>
+                  <th className="px-5 py-3.5 text-right font-bold">Action</th>
+                </tr>
               </thead>
+
               <tbody className="divide-y divide-slate-100">
-                {loading && <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-500">Loading evidence...</td></tr>}
-                {!loading && filtered.length === 0 && <tr><td colSpan={10} className="px-4 py-12 text-center text-slate-500">No evidence found.</td></tr>}
+                {loading && (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-10 text-center text-slate-500">
+                      Loading evidence...
+                    </td>
+                  </tr>
+                )}
+
+                {!loading && filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
+                      No evidence found.
+                    </td>
+                  </tr>
+                )}
+
                 {!loading && filtered.map((r) => (
-                  <tr key={r.evidence_id} className="transition-colors hover:bg-slate-50/70">
-                    <td className="px-5 py-4 font-semibold text-slate-950">{r.evidence_title}</td>
-                    <td className="px-5 py-4">
+                  <tr
+                    key={r.evidence_id}
+                    className="transition-colors hover:bg-slate-50/70"
+                  >
+                    <td className="min-w-0 px-5 py-4 align-top">
+                      <div
+                        className="break-words font-semibold leading-5 text-slate-950"
+                        title={r.evidence_title}
+                      >
+                        {r.evidence_title}
+                      </div>
+                    </td>
+
+                    <td className="min-w-0 px-5 py-4 align-top">
                       {(r.task_ids || []).length > 0 ? (
                         <div className="flex flex-wrap gap-1.5">
                           {(r.task_ids || []).map((taskId) => (
                             <button
                               key={taskId}
                               type="button"
-                              onClick={() => router.push(`/company/tasks/${taskId}`)}
+                              onClick={() =>
+                                router.push(`/company/tasks/${taskId}`)
+                              }
                               className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 transition hover:border-blue-300 hover:bg-blue-100"
                             >
                               TASK-{taskId}
@@ -136,22 +188,91 @@ function EvidencesPageContent() {
                         <span className="text-slate-400">Unlinked</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-slate-600">{r.standard?.code || "Ã¢â‚¬â€"}</td>
-                    <td className="px-5 py-4 text-slate-600">{r.requirement?.code || "Ã¢â‚¬â€"}</td>
-                    <td className="px-5 py-4 text-slate-600">{r.control?.code || "Ã¢â‚¬â€"}</td>
-                    <td className="px-5 py-3.5"><Badge value={r.status} /></td>
-                    <td className="px-5 py-3.5"><Badge value={r.coverage_status || r.coverage} /></td>
-                    <td className="px-5 py-4 font-semibold text-slate-800">{r.files_count ?? 0}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-800">{r.related_risks_count ?? 0}</td>
-                    <td className="px-5 py-3.5"><button onClick={() => router.push(`/evidences/${r.evidence_id}`)} className="inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 hover:text-blue-800">Open â†’</button></td>
+
+                    <td className="min-w-0 px-5 py-4 align-top text-slate-600">
+                      <span className="block truncate" title={r.standard?.code || ""}>
+                        {r.standard?.code || "-"}
+                      </span>
+                    </td>
+
+                    <td className="min-w-0 px-5 py-4 align-top text-slate-600">
+                      <span className="block truncate" title={r.requirement?.code || ""}>
+                        {r.requirement?.code || "-"}
+                      </span>
+                    </td>
+
+                    <td className="min-w-0 px-5 py-4 align-top text-slate-600">
+                      <div
+                        className="font-medium text-slate-700"
+                        title={r.control?.code || ""}
+                      >
+                        {r.control?.code || "-"}
+                      </div>
+                      {r.control?.title ? (
+                        <div
+                          className="mt-0.5 truncate text-xs text-slate-400"
+                          title={r.control.title}
+                        >
+                          {r.control.title}
+                        </div>
+                      ) : null}
+                    </td>
+
+                    <td className="px-5 py-3.5 align-top">
+                      <Badge value={r.status} />
+                    </td>
+
+                    <td className="px-5 py-3.5 align-top">
+                      <Badge value={r.coverage_status || r.coverage} />
+                    </td>
+
+                    <td className="px-5 py-4 text-center align-top font-semibold text-slate-800">
+                      {r.files_count ?? 0}
+                    </td>
+
+                    <td className="px-5 py-4 text-center align-top font-semibold text-slate-800">
+                      {r.related_risks_count ?? 0}
+                    </td>
+
+                    <td className="px-5 py-3.5 text-right align-top">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(`/evidences/${r.evidence_id}`)
+                        }
+                        className="inline-flex items-center rounded-lg px-2.5 py-1.5 text-sm font-semibold text-blue-600 transition hover:bg-blue-50 hover:text-blue-800"
+                      >
+                        Open
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
           <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50/50 px-5 py-4 text-sm text-slate-500">
-            <span>Page {page} of {pageCount}</span>
-            <div className="flex gap-2"><button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Previous</button><button disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)} className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">Next</button></div>
+            <span>
+              Page {page} of {pageCount}
+            </span>
+
+            <div className="flex gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => p - 1)}
+                className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+
+              <button
+                disabled={page >= pageCount}
+                onClick={() => setPage((p) => p + 1)}
+                className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </section>
       </div>

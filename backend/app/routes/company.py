@@ -266,6 +266,7 @@ def list_process_risks(
             "id": r.id,
             "title": r.title,
             "status": r.status,
+            "control_id": getattr(r, "control_id", None),
             "inherent_score": getattr(r, "inherent_score", None),
             "residual_score": getattr(r, "residual_score", None),
         }

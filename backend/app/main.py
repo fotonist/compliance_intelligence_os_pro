@@ -11,6 +11,7 @@ from app.api.compliance_object import router as compliance_object_router
 # ROUTER IMPORTS
 # ==============================
 from app.routes.user import router as user_router
+from app.routes.process_applicable_controls import router as process_applicable_controls_router
 from app.routes.roles import router as roles_router
 from app.routes.compliance_obligations import router as compliance_obligations_router
 from app.api import auth, assessments
@@ -161,6 +162,7 @@ def startup():
 # ==============================
 
 application.include_router(auth.router, tags=["auth"])
+application.include_router(process_applicable_controls_router)
 # Matrix generation/preview must win the shared GET /matrix route. The legacy
 # matrix_view router is registered after the canonical matrix router.
 application.include_router(matrix_router)
