@@ -26,6 +26,16 @@ class GovernanceMeeting(Base):
     )
 
     meeting_code = Column(String(100), nullable=False, index=True)
+
+    committee_id = Column(
+        Integer,
+        ForeignKey(
+            "governance_committees.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
     title = Column(String(500), nullable=False)
     meeting_type = Column(String(100), nullable=False, index=True)
 
@@ -85,6 +95,11 @@ class GovernanceMeeting(Base):
     tenant = relationship(
         "Tenant",
         lazy="joined",
+    )
+
+    committee = relationship(
+        "GovernanceCommittee",
+        back_populates="meetings",
     )
 
     chairperson = relationship(

@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -40,6 +40,8 @@ class GovernanceProcedureBase(BaseModel):
 
     review_date: Optional[datetime] = None
 
+    review_definition: Optional[str] = None
+
 
 class GovernanceProcedureCreate(
     GovernanceProcedureBase
@@ -65,6 +67,8 @@ class GovernanceProcedureUpdate(BaseModel):
 
     review_date: Optional[datetime] = None
 
+    review_definition: Optional[str] = None
+
 
 class GovernanceProcedureInDBBase(BaseModel):
 
@@ -84,6 +88,7 @@ class GovernanceProcedureInDBBase(BaseModel):
 
 
 class GovernanceProcedure(
+    GovernanceProcedureBase,
     GovernanceProcedureInDBBase
 ):
 

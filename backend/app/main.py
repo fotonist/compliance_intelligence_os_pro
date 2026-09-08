@@ -1,4 +1,4 @@
-﻿import os
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -81,6 +81,8 @@ from app.routes.admin_tenants import router as admin_tenants_router
 from app.routes.admin_users import router as admin_users_router
 from app.routes.identity_verification import router as identity_verification_router
 from app.routes.governance_meeting import router as governance_meeting_router
+from app.routes.governance_committee import router as governance_committee_router
+from app.routes.governance_approval import router as governance_approval_router
 from app.routes.benchmarking import router as benchmarking_router
 
 
@@ -244,6 +246,8 @@ application.include_router(audit_findings_router)
 application.include_router(audit_router)
 application.include_router(actions_router)
 application.include_router(governance_meeting_router)
+application.include_router(governance_committee_router)
+application.include_router(governance_approval_router)
 application.include_router(benchmarking_router)
 
 
@@ -277,6 +281,9 @@ import app.models.governance_meeting_agenda_item
 import app.models.governance_meeting_decision
 import app.models.governance_meeting_action
 import app.models.governance_meeting_history
+import app.models.governance_committee
+import app.models.governance_committee_history
+import app.models.governance_approval
 
 
 

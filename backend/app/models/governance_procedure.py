@@ -1,4 +1,4 @@
-﻿from sqlalchemy import (
+from sqlalchemy import (
     Column,
     Integer,
     String,
@@ -86,6 +86,11 @@ class GovernanceProcedure(Base):
 
     review_date = Column(
         DateTime,
+        nullable=True,
+    )
+
+    review_definition = Column(
+        String(length=50),
         nullable=True,
     )
 

@@ -1,4 +1,4 @@
-﻿from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
@@ -55,6 +55,20 @@ from app.models.intelligence_model_config import IntelligenceModelConfig
 from app.models.governance_policy import GovernancePolicy
 from app.models.governance_procedure import GovernanceProcedure
 
+# --- Governance Meetings ---
+from app.models.governance_meeting import GovernanceMeeting
+from app.models.governance_meeting_participant import GovernanceMeetingParticipant
+from app.models.governance_meeting_agenda_item import GovernanceMeetingAgendaItem
+from app.models.governance_meeting_decision import GovernanceMeetingDecision
+from app.models.governance_meeting_action import GovernanceMeetingAction
+from app.models.governance_meeting_history import GovernanceMeetingHistory
+
+# --- Governance Committees ---
+from app.models.governance_committee import GovernanceCommittee, GovernanceCommitteeMember
+from app.models.governance_committee_history import GovernanceCommitteeHistory
+
+# --- Governance Approvals & Delegations ---
+from app.models.governance_approval import GovernanceApprovalAuthority, GovernanceDelegation, GovernanceApprovalHistory
 # --- Notifications ---
 from app.models.notifications import Notification, NotificationDelivery, NotificationPreference
 
