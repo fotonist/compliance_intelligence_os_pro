@@ -1,4 +1,4 @@
-import os
+﻿import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +12,8 @@ from app.api.compliance_object import router as compliance_object_router
 # ==============================
 from app.routes.user import router as user_router
 from app.routes.process_applicable_controls import router as process_applicable_controls_router
+from app.routes.integrations import router as integrations_router
+from app.routes.notifications import router as notifications_router
 from app.routes.roles import router as roles_router
 from app.routes.compliance_obligations import router as compliance_obligations_router
 from app.api import auth, assessments
@@ -57,10 +59,13 @@ from app.routes.process_readiness import router as process_readiness_router
 from app.routes.license import router as license_router
 from app.routes.analytics_control import router as analytics_control_router
 from app.routes.company_tasks import router as company_tasks_router
+from app.routes.remediation import router as remediation_router
+from app.routes.task_sync import router as task_sync_router
 from app.routes.intelligence import api_router as intelligence_api_router
 from app.models.maturity_workspace_sessions import MaturityWorkspaceSession
 from app.api.risk_appetite import router as risk_appetite_router
 from app.routes.audit_plans import router as audit_plans_router
+from app.routes.audit_plan_auditors import router as audit_plan_auditors_router
 from app.routes.audit import router as audit_router
 from app.routes.audit_findings import router as audit_findings_router
 from app.routes.audit_finding_workflow import router as audit_finding_workflow_router
@@ -175,6 +180,8 @@ application.include_router(control_assessments_router)
 application.include_router(evidence_files_router)
 application.include_router(user_router)
 application.include_router(company_tasks_router)
+application.include_router(remediation_router)
+application.include_router(task_sync_router)
 # Register the version-aware create endpoint before the legacy evidence router.
 # This preserves all existing evidence routes while making POST /evidences and
 # POST /company/evidences resolve through the canonical standard-version contract.
@@ -221,6 +228,8 @@ application.include_router(uee_router)
 application.include_router(process_readiness_router)
 application.include_router(analytics_router)
 application.include_router(analytics_control_router)
+application.include_router(integrations_router)
+application.include_router(notifications_router)
 application.include_router(roles_router)
 application.include_router(compliance_obligations_router)
 application.include_router(maturity_router)
@@ -229,6 +238,7 @@ application.include_router(risk_appetite_router)
 application.include_router(compliance_object_router)
 application.include_router(license_router)
 application.include_router(audit_plans_router)
+application.include_router(audit_plan_auditors_router)
 application.include_router(audit_finding_workflow_router)
 application.include_router(audit_findings_router)
 application.include_router(audit_router)
@@ -267,3 +277,6 @@ import app.models.governance_meeting_agenda_item
 import app.models.governance_meeting_decision
 import app.models.governance_meeting_action
 import app.models.governance_meeting_history
+
+
+

@@ -1,4 +1,4 @@
-from app.db.base import Base
+﻿from app.db.base import Base
 
 # --- Standards Hierarchy ---
 from app.models.standards import Standard
@@ -87,6 +87,9 @@ from app.models.governance_document_history import GovernanceDocumentHistory
 from app.models.benchmark_snapshot import BenchmarkSnapshot
 from app.models.peer_population import PeerPopulation, PeerPopulationMember
 
+# --- Notifications ---
+from app.models.notifications import Notification, NotificationDelivery, NotificationPreference
+
 # --- Decision Register ---
 from app.models.decision_register import DecisionRegister
 from app.models.decision_register_history import DecisionRegisterHistory
@@ -97,3 +100,4 @@ from app.models.decision_register_task import DecisionRegisterTask
 
 # --- Framework Adoption ---
 from app.models.framework_adoption import FrameworkAdoption, FrameworkAdoptionScope
+

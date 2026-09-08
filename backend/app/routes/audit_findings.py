@@ -1,4 +1,4 @@
-from datetime import date, datetime
+﻿from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_
@@ -11,6 +11,12 @@ from app.models.audit_finding_records import AuditFindingRecord
 from app.models.audit_finding_workflow_events import AuditFindingWorkflowEvent
 from app.models.audit_plans import AuditPlan
 from app.models.user import User
+from app.services.notification_events import (
+    NotificationCategory,
+    NotificationEvent,
+    NotificationEventType,
+)
+from app.services.notification_service import NotificationManager
 
 router = APIRouter(prefix="/audit/findings", tags=["Audit Findings"])
 
@@ -225,6 +231,28 @@ def create_finding(payload: dict, db: Session = Depends(get_db), user: User = De
         _event(record, db, user, "PROCESS_MANAGER_ASSIGNED", initial_status, initial_status)
     db.commit()
     db.refresh(record)
+
+    recipient_id = record.assigned_owner_id or record.process_manager_id
+    if recipient_id is not None:
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.FINDING_CREATED,
+                category=NotificationCategory.AUDIT,
+                tenant_id=record.tenant_id,
+                actor_user_id=user.id,
+                entity_type="AUDIT_FINDING",
+                entity_id=record.id,
+                title="Finding created",
+                message=f"Finding created: {record.title}",
+                payload={
+                    "severity": "INFO",
+                    "action_url": f"/audit/findings?finding_id={record.id}",
+                },
+            ),
+            recipient_user_id=recipient_id,
+        )
+
     return _serialize(record)
 
 
@@ -285,6 +313,27 @@ def assign_owner(finding_id: int, payload: dict, db: Session = Depends(get_db), 
         _event(record, db, user, "PROCESS_MANAGER_ASSIGNED", record.status, record.status, payload.get("manager_comment"))
     db.commit()
     db.refresh(record)
+
+    if record.assigned_owner_id is not None:
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.FINDING_ASSIGNED,
+                category=NotificationCategory.AUDIT,
+                tenant_id=record.tenant_id,
+                actor_user_id=user.id,
+                entity_type="AUDIT_FINDING",
+                entity_id=record.id,
+                title="Finding assigned",
+                message=f"Finding assigned to you: {record.title}",
+                payload={
+                    "severity": "MEDIUM",
+                    "action_url": f"/audit/findings?finding_id={record.id}",
+                },
+            ),
+            recipient_user_id=record.assigned_owner_id,
+        )
+
     return _serialize(record)
 
 
@@ -337,6 +386,27 @@ def owner_submit(finding_id: int, payload: dict, db: Session = Depends(get_db), 
     _event(record, db, user, "OWNER_SUBMITTED_FOR_REVIEW", old_status, record.status, payload.get("comment"))
     db.commit()
     db.refresh(record)
+
+    if record.process_manager_id is not None:
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.FINDING_SUBMITTED_FOR_REVIEW,
+                category=NotificationCategory.AUDIT,
+                tenant_id=record.tenant_id,
+                actor_user_id=user.id,
+                entity_type="AUDIT_FINDING",
+                entity_id=record.id,
+                title="Finding submitted for review",
+                message=f"Finding submitted for review: {record.title}",
+                payload={
+                    "severity": "MEDIUM",
+                    "action_url": f"/audit/findings?finding_id={record.id}",
+                },
+            ),
+            recipient_user_id=record.process_manager_id,
+        )
+
     return _serialize(record)
 
 
@@ -358,6 +428,27 @@ def manager_approve(finding_id: int, payload: dict, db: Session = Depends(get_db
     _event(record, db, user, "PLAN_APPROVED", old_status, record.status, record.manager_review_comment)
     db.commit()
     db.refresh(record)
+
+    if record.assigned_owner_id is not None:
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.FINDING_PLAN_APPROVED,
+                category=NotificationCategory.AUDIT,
+                tenant_id=record.tenant_id,
+                actor_user_id=user.id,
+                entity_type="AUDIT_FINDING",
+                entity_id=record.id,
+                title="Finding plan approved",
+                message=f"Corrective action plan approved: {record.title}",
+                payload={
+                    "severity": "INFO",
+                    "action_url": f"/audit/findings?finding_id={record.id}",
+                },
+            ),
+            recipient_user_id=record.assigned_owner_id,
+        )
+
     return _serialize(record)
 
 
@@ -382,6 +473,27 @@ def manager_revision(finding_id: int, payload: dict, db: Session = Depends(get_d
     _event(record, db, user, "REVISION_REQUIRED", old_status, record.status, comment)
     db.commit()
     db.refresh(record)
+
+    if record.assigned_owner_id is not None:
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.FINDING_REVISION_REQUIRED,
+                category=NotificationCategory.AUDIT,
+                tenant_id=record.tenant_id,
+                actor_user_id=user.id,
+                entity_type="AUDIT_FINDING",
+                entity_id=record.id,
+                title="Finding revision required",
+                message=f"Revision required for finding: {record.title}",
+                payload={
+                    "severity": "HIGH",
+                    "action_url": f"/audit/findings?finding_id={record.id}",
+                },
+            ),
+            recipient_user_id=record.assigned_owner_id,
+        )
+
     return _serialize(record)
 
 
@@ -406,6 +518,27 @@ def implementation_complete(finding_id: int, payload: dict, db: Session = Depend
     _event(record, db, user, "IMPLEMENTATION_COMPLETED", old_status, record.status, payload.get("comment"))
     db.commit()
     db.refresh(record)
+
+    if record.process_manager_id is not None:
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.FINDING_IMPLEMENTATION_COMPLETED,
+                category=NotificationCategory.AUDIT,
+                tenant_id=record.tenant_id,
+                actor_user_id=user.id,
+                entity_type="AUDIT_FINDING",
+                entity_id=record.id,
+                title="Finding implementation completed",
+                message=f"Implementation completed: {record.title}",
+                payload={
+                    "severity": "INFO",
+                    "action_url": f"/audit/findings?finding_id={record.id}",
+                },
+            ),
+            recipient_user_id=record.process_manager_id,
+        )
+
     return _serialize(record)
 
 
@@ -442,4 +575,37 @@ def verify_finding(finding_id: int, payload: dict, db: Session = Depends(get_db)
     _event(record, db, user, action, old_status, record.status, comment)
     db.commit()
     db.refresh(record)
+
+    if record.assigned_owner_id is not None:
+        if effective:
+            event_type = NotificationEventType.FINDING_CLOSED
+            title = "Finding closed"
+            message = f"Finding closed: {record.title}"
+            severity = "INFO"
+        else:
+            event_type = NotificationEventType.FINDING_VERIFICATION_FAILED
+            title = "Finding verification failed"
+            message = f"Finding verification failed: {record.title}"
+            severity = "HIGH"
+
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=event_type,
+                category=NotificationCategory.AUDIT,
+                tenant_id=record.tenant_id,
+                actor_user_id=user.id,
+                entity_type="AUDIT_FINDING",
+                entity_id=record.id,
+                title=title,
+                message=message,
+                payload={
+                    "severity": severity,
+                    "action_url": f"/audit/findings?finding_id={record.id}",
+                },
+            ),
+            recipient_user_id=record.assigned_owner_id,
+        )
+
     return _serialize(record)
+

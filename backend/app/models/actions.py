@@ -41,6 +41,47 @@ class Action(Base):
     priority = Column(String(50), nullable=False, default="MEDIUM", server_default="MEDIUM")
     due_date = Column(Date, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    
+    created_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    assigned_to_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    reviewer_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    closed_by_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    assigned_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    submitted_for_review_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    closed_at = Column(DateTime, nullable=True)
+
+    review_comment = Column(Text, nullable=True)
+    verification_comment = Column(Text, nullable=True)
+    closure_comment = Column(Text, nullable=True)
+
     updated_at = Column(
         DateTime,
         nullable=False,

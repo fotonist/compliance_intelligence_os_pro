@@ -23,6 +23,13 @@ from app.schemas.compliance_task_schema import (
     TaskEvidenceRequirementUpdate,
 )
 
+from app.services.notification_events import (
+    NotificationCategory,
+    NotificationEvent,
+    NotificationEventType,
+)
+from app.services.notification_service import NotificationManager
+
 from app.services.task_authorization import (
     TASK_PERMISSIONS,
     require_assignee_access,
@@ -415,6 +422,26 @@ class TaskService:
         db.commit()
         db.refresh(task)
 
+        if task.assignee_user_id is not None:
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.TASK_CREATED,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="TASK",
+                    entity_id=task.id,
+                    title="Task created",
+                    message=f"Task created: {task.title}",
+                    payload={
+                        "severity": "INFO",
+                        "action_url": f"/company/tasks/{task.id}",
+                    },
+                ),
+                recipient_user_id=task.assignee_user_id,
+            )
+
         return task
 
     # ==========================================================
@@ -444,6 +471,8 @@ class TaskService:
         values = payload.model_dump(
             exclude_unset=True,
         )
+
+        previous_assignee_id = task.assignee_user_id
 
         # Status deliberately cannot be updated here.
         values.pop("status", None)
@@ -493,6 +522,30 @@ class TaskService:
 
         db.commit()
         db.refresh(task)
+
+        if (
+            "assignee_user_id" in values
+            and task.assignee_user_id is not None
+            and task.assignee_user_id != previous_assignee_id
+        ):
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.TASK_ASSIGNED,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="TASK",
+                    entity_id=task.id,
+                    title="Task assigned",
+                    message=f"Task assigned to you: {task.title}",
+                    payload={
+                        "severity": "MEDIUM",
+                        "action_url": f"/company/tasks/{task.id}",
+                    },
+                ),
+                recipient_user_id=task.assignee_user_id,
+            )
 
         return task
 
@@ -549,6 +602,25 @@ class TaskService:
         db.commit()
         db.refresh(task)
 
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.TASK_ASSIGNED,
+                category=NotificationCategory.TASK,
+                tenant_id=task.tenant_id,
+                actor_user_id=user.id,
+                entity_type="TASK",
+                entity_id=task.id,
+                title="Task assigned",
+                message=f"Task assigned to you: {task.title}",
+                payload={
+                    "severity": "MEDIUM",
+                    "action_url": f"/company/tasks/{task.id}",
+                },
+            ),
+            recipient_user_id=assignee.id,
+        )
+
         return task
 
     # ==========================================================
@@ -602,6 +674,28 @@ class TaskService:
         db.commit()
         db.refresh(task)
 
+        if task.assignee_user_id is not None:
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.TASK_STATUS_CHANGED,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="TASK",
+                    entity_id=task.id,
+                    title="Task status changed",
+                    message=f"Task status changed: {current} -> {target}",
+                    payload={
+                        "severity": "LOW",
+                        "action_url": f"/company/tasks/{task.id}",
+                        "previous_status": current,
+                        "new_status": target,
+                    },
+                ),
+                recipient_user_id=task.assignee_user_id,
+            )
+
         return task
 
     # ==========================================================
@@ -644,6 +738,26 @@ class TaskService:
 
         db.commit()
         db.refresh(task)
+
+        if task.assignee_user_id is not None:
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.TASK_CANCELLED,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="TASK",
+                    entity_id=task.id,
+                    title="Task cancelled",
+                    message=f"Task cancelled: {task.title}",
+                    payload={
+                        "severity": "HIGH",
+                        "action_url": f"/company/tasks/{task.id}",
+                    },
+                ),
+                recipient_user_id=task.assignee_user_id,
+            )
 
         return task
 
@@ -692,6 +806,26 @@ class TaskService:
 
         db.commit()
         db.refresh(task)
+
+        if task.assignee_user_id is not None:
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.TASK_COMPLETED,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="TASK",
+                    entity_id=task.id,
+                    title="Task completed",
+                    message=f"Task completed: {task.title}",
+                    payload={
+                        "severity": "INFO",
+                        "action_url": f"/company/tasks/{task.id}",
+                    },
+                ),
+                recipient_user_id=task.assignee_user_id,
+            )
 
         return task
 

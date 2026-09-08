@@ -8,6 +8,77 @@ from app.models.task_external_links import TaskExternalLink
 class ClickUpClient:
 
     @staticmethod
+    def test_connection(integration):
+        if not integration.api_token:
+            return {
+                "provider": "clickup",
+                "success": False,
+                "message": "ClickUp token is not configured",
+            }
+
+        url = "https://api.clickup.com/api/v2/team"
+
+        headers = {
+            "Authorization": integration.api_token,
+            "Accept": "application/json",
+        }
+
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=20,
+            )
+        except requests.RequestException:
+            return {
+                "provider": "clickup",
+                "success": False,
+                "message": "Unable to reach ClickUp",
+            }
+
+        if response.status_code != 200:
+            if response.status_code in (401, 403):
+                return {
+                    "provider": "clickup",
+                    "success": False,
+                    "message": "ClickUp authentication failed",
+                }
+
+            return {
+                "provider": "clickup",
+                "success": False,
+                "message": "ClickUp connection test failed",
+            }
+
+        if integration.team_id:
+            try:
+                teams = response.json().get("teams", [])
+                team_ids = {
+                    str(team.get("id"))
+                    for team in teams
+                    if team.get("id") is not None
+                }
+
+                if str(integration.team_id) not in team_ids:
+                    return {
+                        "provider": "clickup",
+                        "success": False,
+                        "message": "Configured ClickUp team was not found",
+                    }
+            except (TypeError, ValueError):
+                return {
+                    "provider": "clickup",
+                    "success": False,
+                    "message": "Invalid ClickUp response",
+                }
+
+        return {
+            "provider": "clickup",
+            "success": True,
+            "message": "ClickUp connection successful",
+        }
+
+    @staticmethod
     def sync_task(task, db: Session):
         integration = db.query(ExternalIntegration).filter_by(
             tenant_id=task.tenant_id,
@@ -18,7 +89,6 @@ class ClickUpClient:
         if not integration:
             raise Exception("ClickUp integration not configured")
 
-        # Idempotency check
         existing = db.query(TaskExternalLink).filter_by(
             tenant_id=task.tenant_id,
             task_id=task.id,

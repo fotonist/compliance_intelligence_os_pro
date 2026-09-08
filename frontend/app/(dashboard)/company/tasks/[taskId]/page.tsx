@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import {
+  AlertCircle,
+  CheckCircle2,
+  X,
+} from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
 
 /* =========================================================
@@ -155,6 +160,12 @@ function fileStatusClass(status?: string | null) {
    COMPONENT
 ========================================================= */
 
+type JiraToast = {
+  type: "success" | "error";
+  title: string;
+  message: string;
+};
+
 export default function TaskWorkspacePage() {
   const router = useRouter();
   const params = useParams();
@@ -180,6 +191,8 @@ export default function TaskWorkspacePage() {
   const [assignmentError, setAssignmentError] = useState("");
 
   const [newEvidenceTitle, setNewEvidenceTitle] = useState("");
+  const [syncingJira, setSyncingJira] = useState(false);
+  const [jiraToast, setJiraToast] = useState<JiraToast | null>(null);
   const [newEvidenceDescription, setNewEvidenceDescription] = useState("");
 
   const [newRequirementName, setNewRequirementName] = useState("");
@@ -479,6 +492,63 @@ export default function TaskWorkspacePage() {
     }
   }
 
+  /* =========================================================
+     SYNC TO JIRA
+  ========================================================= */
+
+  useEffect(() => {
+    if (!jiraToast) return;
+
+    const timer = window.setTimeout(() => {
+      setJiraToast(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timer);
+  }, [jiraToast]);
+
+  async function syncToJira() {
+    if (!taskId || syncingJira) return;
+
+    setSyncingJira(true);
+    setJiraToast(null);
+
+    try {
+      const res = await apiFetch(`/company/tasks/${taskId}/sync/jira`, {
+        method: "POST",
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(
+          data?.detail ||
+          data?.message ||
+          `Jira sync failed (${res.status})`
+        );
+      }
+
+      const issueKey = data?.jira_issue;
+
+      setJiraToast({
+        type: "success",
+        title: "Jira synchronization completed",
+        message: issueKey
+          ? `Task was successfully synced to ${issueKey}.`
+          : "Task was successfully synchronized with Jira.",
+      });
+    } catch (err) {
+      setJiraToast({
+        type: "error",
+        title: "Jira synchronization failed",
+        message:
+          err instanceof Error
+            ? err.message
+            : "The task could not be synchronized with Jira.",
+      });
+    } finally {
+      setSyncingJira(false);
+    }
+  }
   /* =========================================================
      CREATE EVIDENCE
   ========================================================= */
@@ -835,6 +905,64 @@ export default function TaskWorkspacePage() {
 
   return (
     <main className="min-h-screen bg-slate-50">
+      {jiraToast ? (
+        <div
+          className="pointer-events-none fixed right-5 top-5 z-[100] w-[380px] max-w-[calc(100vw-2rem)]"
+          role="status"
+          aria-live="polite"
+        >
+          <div
+            className={`pointer-events-auto overflow-hidden rounded-xl border bg-white shadow-[0_18px_50px_rgba(15,23,42,0.16)] ${
+              jiraToast.type === "success"
+                ? "border-emerald-200"
+                : "border-red-200"
+            }`}
+          >
+            <div className="flex items-start gap-3 px-4 py-4">
+              <div
+                className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                  jiraToast.type === "success"
+                    ? "bg-emerald-50 text-emerald-600"
+                    : "bg-red-50 text-red-600"
+                }`}
+              >
+                {jiraToast.type === "success" ? (
+                  <CheckCircle2 size={19} strokeWidth={2} />
+                ) : (
+                  <AlertCircle size={19} strokeWidth={2} />
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-slate-950">
+                  {jiraToast.title}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-slate-500">
+                  {jiraToast.message}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setJiraToast(null)}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                aria-label="Dismiss notification"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div
+              className={`h-0.5 ${
+                jiraToast.type === "success"
+                  ? "bg-emerald-500"
+                  : "bg-red-500"
+              }`}
+            />
+          </div>
+        </div>
+      ) : null}
+
       <div className="mx-auto max-w-[1480px] px-6 py-6 lg:px-8">
 
         {/* Header / breadcrumb */}
@@ -888,6 +1016,15 @@ export default function TaskWorkspacePage() {
           >
             Back to Task Register
           </button>
+          <button
+            type="button"
+            onClick={syncToJira}
+            disabled={syncingJira || closed}
+            className="inline-flex h-9 shrink-0 items-center justify-center rounded-md bg-slate-900 px-3.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {syncingJira ? "Syncing..." : "Sync to Jira"}
+          </button>
+          
         </div>
 
         {error && (
@@ -1520,3 +1657,5 @@ export default function TaskWorkspacePage() {
     </main>
   );
 }
+
+

@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.core.security import get_current_user
-from app.models.compliance_task import ComplianceTask
+from app.dependencies.permission_checker import require_permission
+from app.models.compliance_tasks import ComplianceTask
 from app.services.jira_client import JiraClient
 from app.services.clickup_client import ClickUpClient
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/company/tasks", tags=["External Sync"])
 def sync_task_to_jira(
     task_id: int,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_permission("integration.sync")),
 ):
     task = db.query(ComplianceTask).filter_by(
         id=task_id,
@@ -32,7 +32,7 @@ def sync_task_to_jira(
 def sync_task_to_clickup(
     task_id: int,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_permission("integration.sync")),
 ):
     task = db.query(ComplianceTask).filter_by(
         id=task_id,

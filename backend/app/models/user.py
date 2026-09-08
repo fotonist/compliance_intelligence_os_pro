@@ -167,6 +167,7 @@ class User(Base):
 
     actions = relationship(
         "Action",
+        foreign_keys="Action.owner_id",
         back_populates="user",
         cascade="all, delete",
     )

@@ -140,7 +140,10 @@ export default function UpdateRiskModal({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form
+          onSubmit={handleSubmit}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <div className="min-h-0 flex-1 overflow-y-auto space-y-6 px-6 py-6">
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -153,9 +156,9 @@ export default function UpdateRiskModal({
 
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
                 <span>Risk #{risk.id}</span>
-                <span>•</span>
+                <span>|</span>
                 <span>Current score: {risk.score ?? "-"}</span>
-                <span>•</span>
+                <span>|</span>
                 <span>Current level: {risk.risk_level ?? "-"}</span>
               </div>
             </div>
@@ -311,7 +314,7 @@ export default function UpdateRiskModal({
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
             <button
               type="button"
               onClick={onClose}

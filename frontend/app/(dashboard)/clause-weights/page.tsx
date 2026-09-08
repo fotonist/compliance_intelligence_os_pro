@@ -1,8 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useState } from "react";
-
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+import { apiFetch } from "../../lib/api";
 
 type Clause = {
   id: number;
@@ -17,20 +16,12 @@ export default function ClauseWeightsPage() {
 
   const standardCode = "ISO27001";
 
-  const token =
-    typeof window !== "undefined"
-      ? localStorage.getItem("access_token") ||
-        sessionStorage.getItem("access_token")
-      : null;
-
   async function load() {
     try {
       setLoading(true);
 
-      const cRes = await fetch(`${API_BASE}/standards/2/clauses`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const cRes = await apiFetch("/standards/2/clauses", {
+        method: "GET",
       });
 
       if (!cRes.ok) {
@@ -39,14 +30,9 @@ export default function ClauseWeightsPage() {
 
       const clausesData = await cRes.json();
 
-      const oRes = await fetch(
-        `${API_BASE}/company/clause-weights/overrides`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const oRes = await apiFetch("/company/clause-weights/overrides", {
+        method: "GET",
+      });
 
       const overrides = oRes.ok ? await oRes.json() : [];
 
@@ -54,7 +40,9 @@ export default function ClauseWeightsPage() {
 
       if (Array.isArray(overrides)) {
         overrides.forEach((o: any) => {
-          weightMap[o.clause_id] = o.weight_pct;
+          if (o?.clause_id != null) {
+            weightMap[Number(o.clause_id)] = Number(o.weight_pct ?? 0);
+          }
         });
       }
 
@@ -77,156 +65,148 @@ export default function ClauseWeightsPage() {
     const weight = weights[clause.id] ?? 0;
 
     try {
-      const res = await fetch(
-        `${API_BASE}/company/clause-weights/overrides`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            standard_code: standardCode,
-            clause_code: clause.code,
-            weight_pct: weight,
-          }),
-        }
-      );
+      const res = await apiFetch("/company/clause-weights/overrides", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          standard_code: standardCode,
+          clause_code: clause.code,
+          weight_pct: weight,
+        }),
+      });
 
       if (!res.ok) {
-        throw new Error("Save failed.");
+        throw new Error(`Save failed: ${res.status}`);
       }
 
       alert("Clause weight saved successfully.");
     } catch (err) {
-      console.error(err);
+      console.error("ClauseWeights save error:", err);
       alert("Failed to save clause weight.");
     }
   }
 
-  function updateWeight(clauseId: number, value: number) {
-    setWeights((prev) => ({
-      ...prev,
-      [clauseId]: value,
+  function updateWeight(clauseId: number, value: string) {
+    const parsed = Number(value);
+
+    setWeights((current) => ({
+      ...current,
+      [clauseId]: Number.isFinite(parsed) ? parsed : 0,
     }));
   }
 
   if (loading) {
     return (
-      <div className="p-6 text-slate-200">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-slate-100">
-            Clause Weights
-          </h1>
-
-          <p className="mt-1 text-sm text-slate-400">
-            Configure the importance weight of each clause.
-          </p>
+      <main className="min-h-full bg-slate-50 p-6">
+        <div className="mx-auto max-w-[1400px]">
+          <div className="border border-slate-200 bg-white p-6 text-sm text-slate-500">
+            Loading clause weights...
+          </div>
         </div>
-
-        <div className="text-slate-400">
-          Loading clause weights...
-        </div>
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="p-6 text-slate-200">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-100">
-          Clause Weights
-        </h1>
+    <main className="min-h-full bg-slate-50 p-6">
+      <div className="mx-auto max-w-[1400px] space-y-6">
+        <header className="border-b border-slate-200 pb-5">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-600">
+            Governance
+          </div>
 
-        <p className="mt-1 text-sm text-slate-400">
-          Configure the importance weight of each clause for your
-          organization.
-        </p>
-      </div>
+          <div className="mt-2 flex items-end justify-between gap-6">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                Clause Weights
+              </h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Configure clause-level weighting for {standardCode}.
+              </p>
+            </div>
 
-      {clauses.length === 0 ? (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6 text-center text-slate-400">
-          No clauses found.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {clauses.map((c, index) => (
-            <div
-              key={c.id}
-              className={`
-                flex items-center justify-between
-                rounded-xl border px-4 py-4
-                transition-all duration-200
-                ${
-                  index % 2 === 0
-                    ? "bg-slate-900/60 border-slate-800"
-                    : "bg-slate-900/40 border-slate-800"
-                }
-                hover:bg-slate-900
-                hover:border-slate-700
-              `}
-            >
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-100">
-                  Clause {c.code}
-                </div>
-
-                <div className="mt-1 text-sm text-slate-400">
-                  {c.title}
-                </div>
+            <div className="border border-slate-200 bg-white px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                Standard
               </div>
-
-              <div className="flex items-center gap-3">
-                <div className="flex items-center rounded-lg border border-slate-700 bg-slate-950 px-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    value={weights[c.id] ?? 0}
-                    onChange={(e) =>
-                      updateWeight(
-                        c.id,
-                        Number(e.target.value)
-                      )
-                    }
-                    className="
-                      w-16
-                      bg-transparent
-                      py-2
-                      text-right
-                      text-sm
-                      text-slate-100
-                      outline-none
-                    "
-                  />
-
-                  <span className="ml-1 text-xs text-slate-500">
-                    %
-                  </span>
-                </div>
-
-                <button
-                  onClick={() => save(c)}
-                  className="
-                    rounded-lg
-                    bg-blue-600
-                    px-4 py-2
-                    text-xs
-                    font-medium
-                    text-white
-                    transition-all duration-200
-                    hover:bg-blue-500
-                    hover:shadow-lg
-                    hover:shadow-blue-500/20
-                  "
-                >
-                  Save
-                </button>
+              <div className="mt-1 font-mono text-sm font-bold text-slate-800">
+                {standardCode}
               </div>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+          </div>
+        </header>
+
+        <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+            <div className="text-sm font-bold text-slate-800">
+              Clause Configuration
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Current clause records and tenant-specific weight overrides.
+            </div>
+          </div>
+
+          {clauses.length === 0 ? (
+            <div className="px-5 py-12 text-center text-sm text-slate-500">
+              No clauses found.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {clauses.map((clause) => (
+                <div
+                  key={clause.id}
+                  className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-center"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-xs font-bold text-blue-700">
+                        {clause.code}
+                      </span>
+
+                      <span className="text-sm font-semibold text-slate-900">
+                        {clause.title}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <label
+                        htmlFor={`weight-${clause.id}`}
+                        className="mb-1 block text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-400"
+                      >
+                        Weight %
+                      </label>
+
+                      <input
+                        id={`weight-${clause.id}`}
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={weights[clause.id] ?? 0}
+                        onChange={(e) =>
+                          updateWeight(clause.id, e.target.value)
+                        }
+                        className="h-9 w-28 border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-400"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => save(clause)}
+                      className="mt-5 h-9 bg-slate-950 px-4 text-xs font-semibold text-white hover:bg-slate-800"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }

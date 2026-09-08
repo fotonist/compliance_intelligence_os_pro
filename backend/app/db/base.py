@@ -55,4 +55,8 @@ from app.models.intelligence_model_config import IntelligenceModelConfig
 from app.models.governance_policy import GovernancePolicy
 from app.models.governance_procedure import GovernanceProcedure
 
+# --- Notifications ---
+from app.models.notifications import Notification, NotificationDelivery, NotificationPreference
+
+
 

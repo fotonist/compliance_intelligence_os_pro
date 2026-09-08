@@ -96,7 +96,7 @@ export default function LoginPage() {
                 width={91}
                 height={90}
                 priority
-                className="h-[90px] w-[91px] object-contain"
+                className="h-auto w-[260px] max-w-[260px] object-contain object-left"
               />
             </div>
 
@@ -122,8 +122,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="relative z-10 border-t border-white/40 px-12 py-6 text-xs font-medium text-slate-500 xl:px-16 xl:px-16">
-            ComplianceOS Pro Â· Secure enterprise access
+          <div className="relative z-10 border-t border-white/40 px-12 py-6 text-xs font-medium text-slate-500 xl:px-16">
+            ComplianceOS Pro · Secure enterprise access
           </div>
         </aside>
 
@@ -215,7 +215,7 @@ export default function LoginPage() {
             <div className="mt-6 text-center text-[11px] leading-5 text-slate-400">
               Authorized access only. All authentication attempts are logged.
               <br />
-              ISO 27001 Â· KVKK Â· GDPR aligned platform
+              ISO 27001 · KVKK · GDPR aligned platform
             </div>
           </div>
         </main>

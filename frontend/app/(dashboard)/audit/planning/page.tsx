@@ -18,6 +18,9 @@ import {
   Target,
   X,
   Zap,
+  UserPlus,
+  Users,
+  Trash2,
 } from "lucide-react";
 import { apiFetch } from "@/app/lib/api";
 
@@ -87,6 +90,22 @@ type AuditPlan = {
   planned_end?: string | null;
   objective?: string | null;
   scope?: string | null;
+};
+
+type AuditUser = {
+  id: number;
+  email?: string | null;
+  full_name?: string | null;
+  name?: string | null;
+  role?: string | null;
+  roles?: Array<string | { name?: string | null; code?: string | null }>;
+  is_active?: boolean | null;
+};
+
+type AuditTeamMember = {
+  user_id: number;
+  assignment_role: "LEAD_AUDITOR" | "AUDITOR" | "TECHNICAL_EXPERT" | "OBSERVER";
+  assigned_scope: string;
 };
 
 type NewAuditPlan = {
@@ -274,6 +293,9 @@ export default function AuditPlanningPage() {
   const router = useRouter();
 
   const [processes, setProcesses] = useState<ProcessRow[]>([]);
+  const [auditUsers, setAuditUsers] = useState<AuditUser[]>([]);
+  const [auditUsersLoading, setAuditUsersLoading] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<AuditTeamMember[]>([]);
   const [auditPlans, setAuditPlans] = useState<AuditPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const [riskPlan, setRiskPlan] = useState<AuditPlanResponse | null>(null);
@@ -382,6 +404,43 @@ export default function AuditPlanningPage() {
       setError(e?.message || "Failed to load processes.");
     } finally {
       setLoadingProcesses(false);
+    }
+  }
+
+  async function loadAuditUsers() {
+    setAuditUsersLoading(true);
+
+    try {
+      const res = await apiFetch("/users/?page=1&page_size=100", {
+        method: "GET",
+      });
+
+      if (!res.ok) {
+        throw new Error(await safeText(res));
+      }
+
+      const json = await res.json();
+
+      const rows = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.items)
+          ? json.items
+          : Array.isArray(json?.data)
+            ? json.data
+            : [];
+
+      setAuditUsers(
+        rows.filter(
+          (item: AuditUser) =>
+            item &&
+            typeof item.id === "number" &&
+            item.is_active !== false,
+        ),
+      );
+    } catch (e) {
+      setAuditUsers([]);
+    } finally {
+      setAuditUsersLoading(false);
     }
   }
 
@@ -569,7 +628,12 @@ export default function AuditPlanningPage() {
         : "",
     });
 
+    setTeamMembers([]);
     setShowCreate(true);
+
+    if (auditUsers.length === 0) {
+      void loadAuditUsers();
+    }
   }
 
   function closeCreatePlan() {
@@ -598,6 +662,10 @@ export default function AuditPlanningPage() {
     try {
       if (!form.reference.trim() || !form.name.trim()) {
         throw new Error("Reference and audit name are required.");
+      }
+
+      if (!form.lead_auditor_id) {
+        throw new Error("Lead auditor is required.");
       }
 
       if (
@@ -649,6 +717,40 @@ export default function AuditPlanningPage() {
       }
 
       const created = (await res.json()) as AuditPlan;
+
+      const leadId = Number(form.lead_auditor_id);
+
+      const normalizedTeam = [
+        {
+          user_id: leadId,
+          assignment_role: "LEAD_AUDITOR",
+          assigned_scope: "",
+        },
+        ...teamMembers
+          .filter((member) => Number(member.user_id) !== leadId)
+          .map((member) => ({
+            user_id: Number(member.user_id),
+            assignment_role: member.assignment_role,
+            assigned_scope: member.assigned_scope || null,
+          })),
+      ];
+
+      for (const member of normalizedTeam) {
+        const teamRes = await apiFetch(
+          `/audit/plans/${created.id}/auditors`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(member),
+          },
+        );
+
+        if (!teamRes.ok) {
+          throw new Error(await safeText(teamRes));
+        }
+      }
 
       setCreatedPlan(created);
       await loadAuditPlans(created.id);
@@ -1710,7 +1812,159 @@ export default function AuditPlanningPage() {
                     </div>
 
                     <div className="mt-5 space-y-5">
-                      <Field label="Audit Objective">
+                      <div className="border border-slate-200 bg-slate-50 rounded-xl p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        Audit Team
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        Assign additional auditors and technical experts to this engagement.
+                      </div>
+                    </div>
+                    <UserPlus size={16} className="text-slate-400" />
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_190px_auto]">
+                    <select
+                      id="audit-team-user"
+                      className={inputClass}
+                      defaultValue=""
+                    >
+                      <option value="">
+                        Select team member
+                      </option>
+                      {auditUsers
+                        .filter(
+                          (user) =>
+                            !teamMembers.some(
+                              (member) =>
+                                Number(member.user_id) === Number(user.id),
+                            ) &&
+                            Number(user.id) !==
+                              Number(form.lead_auditor_id || 0),
+                        )
+                        .map((user) => (
+                          <option key={user.id} value={user.id}>
+                            {user.full_name ||
+                              user.name ||
+                              user.email ||
+                              `User #${user.id}`}
+                          </option>
+                        ))}
+                    </select>
+
+                    <select
+                      id="audit-team-role"
+                      className={inputClass}
+                      defaultValue="AUDITOR"
+                    >
+                      <option value="AUDITOR">Auditor</option>
+                      <option value="TECHNICAL_EXPERT">
+                        Technical Expert
+                      </option>
+                      <option value="OBSERVER">Observer</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        const userSelect = document.getElementById(
+                          "audit-team-user",
+                        ) as HTMLSelectElement | null;
+
+                        const roleSelect = document.getElementById(
+                          "audit-team-role",
+                        ) as HTMLSelectElement | null;
+
+                        const userId = Number(userSelect?.value || 0);
+                        const role =
+                          (roleSelect?.value || "AUDITOR") as AuditTeamMember["assignment_role"];
+
+                        if (!userId) {
+                          setCreateError("Select an audit team member.");
+                          return;
+                        }
+
+                        setCreateError(null);
+
+                        setTeamMembers((current) => [
+                          ...current,
+                          {
+                            user_id: userId,
+                            assignment_role: role,
+                            assigned_scope: "",
+                          },
+                        ]);
+                      }}
+                    >
+                      <UserPlus size={14} />
+                      Add
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-2">
+                    {teamMembers.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-700 px-4 py-4 text-xs text-slate-500">
+                        No additional team members assigned.
+                      </div>
+                    ) : (
+                      teamMembers.map((member) => {
+                        const user = auditUsers.find(
+                          (item) =>
+                            Number(item.id) === Number(member.user_id),
+                        );
+
+                        const label =
+                          user?.full_name ||
+                          user?.name ||
+                          user?.email ||
+                          `User #${member.user_id}`;
+
+                        return (
+                          <div
+                            key={member.user_id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900 px-3 py-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-slate-100">
+                                {label}
+                              </div>
+                              <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                {member.assignment_role.replaceAll("_", " ")}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-red-600"
+                              onClick={() =>
+                                setTeamMembers((current) =>
+                                  current.filter(
+                                    (item) =>
+                                      Number(item.user_id) !==
+                                      Number(member.user_id),
+                                  ),
+                                )
+                              }
+                              aria-label="Remove team member"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-500">
+                    <Users size={13} />
+                    Lead auditor is assigned automatically as engagement lead.
+                  </div>
+                </div>
+
+                <Field label="Audit Objective">
                         <textarea
                           value={form.objective}
                           onChange={(e) =>

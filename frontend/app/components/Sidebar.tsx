@@ -1,12 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
-import { BrainCircuit,
+import {
+  usePathname,
+  useRouter
+} from "next/navigation";
+import {
+  useEffect,
+  useState,
+  type ReactNode } from "react";
+import {
+  Plug,
+
+  BrainCircuit,
   Activity,
   AlertTriangle,
   BarChart3,
+  Bell,
   BookOpen,
   Building2,
   ClipboardCheck,
@@ -31,6 +41,9 @@ import { BrainCircuit,
   Workflow,
   ChevronDown,
   ChevronUp,
+  CheckCircle2,
+  UserCheck,
+  Wrench
 } from "lucide-react";
 import PremiumMenuItem from "./PremiumMenuItem";
 import { apiFetch } from "../lib/api";
@@ -287,6 +300,23 @@ export default function Sidebar() {
           {!collapsed && "Company Home"}
         </Link>
 
+        <Link
+          href="/notifications"
+          title="Notifications"
+          className={`mb-3 flex items-center rounded-lg py-2 text-sm font-semibold transition ${
+            collapsed
+              ? "justify-center px-2"
+              : "gap-2 px-3"
+          } ${
+            isActive("/notifications")
+              ? "bg-[#eaf1fb] text-[#0f2747]"
+              : "text-slate-700 hover:bg-slate-50"
+          }`}
+        >
+          <Bell size={17} />
+          {!collapsed && "Notifications"}
+        </Link>
+
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           <Section
             title="FOUNDATION"
@@ -389,7 +419,6 @@ export default function Sidebar() {
           >
             <PremiumMenuItem label="Governance Dashboard" />
             <PremiumMenuItem label="Policies & Procedures" />
-            <PremiumMenuItem label="Roles & Responsibilities" />
             <PremiumMenuItem label="Compliance Obligations" />
             <PremiumMenuItem label="Decision Registers" />
             <PremiumMenuItem label="Governance Meetings" />
@@ -587,7 +616,10 @@ export default function Sidebar() {
               Evidence Review
             </Link>
 
-            <PremiumMenuItem label="Remediation Center" />
+            <PremiumMenuItem
+  label="Remediation Center"
+  icon={<Wrench size={14} />}
+/>
             <PremiumMenuItem label="Action Management" />
 
             <Link
@@ -644,14 +676,40 @@ export default function Sidebar() {
               href="/audit/findings"
               className={itemClass("/audit/findings")}
             >
+
               <AlertTriangle size={14} />
               Findings / Nonconformity Management
             </Link>
+ <Link
+              href="/audit/report"
+              className={itemClass("/audit/report")}
+            >
+              <ClipboardList size={14} />
+              Audit Reports
+            </Link>
 
-            <PremiumMenuItem label="Audit Reports" />
-            <PremiumMenuItem label="Follow-up Actions" />
-            <PremiumMenuItem label="Audit Analytics" />
-            <PremiumMenuItem label="Auditor Management" />
+           
+            <Link
+              href="/audit/corrective-actions"
+              className={itemClass("/audit/corrective-actions")}
+            >
+              <CheckCircle2 size={14} />
+              Follow-up Actions
+            </Link>
+            <Link
+              href="/audit/analytics"
+              className={itemClass("/audit/analytics")}
+            >
+              <BarChart3 size={14} />
+              Audit Analytics
+            </Link>
+            <Link
+              href="/audit/auditors"
+              className={itemClass("/audit/auditors")}
+            >
+              <UserCheck size={14} />
+              Auditor Management
+            </Link>
           </Section>
 
           <Section
@@ -679,19 +737,28 @@ export default function Sidebar() {
             </Link>
 
 
-            <PremiumMenuItem label="Roles & Permissions" />
-            <PremiumMenuItem label="Departments" />
+            <Link
+  href="/admin/roles"
+  className={itemClass("/admin/roles")}
+>
+  <Users size={14} />
+  Roles & Permissions
+</Link>
 
             <Link
-              href="/settings/scoring"
-              className={itemClass("/settings/scoring")}
+  href="/admin/integrations"
+  className={itemClass("/admin/integrations")}
+>
+  <Plug size={14} />
+  Integrations
+</Link>
+            <Link
+              href="/admin/notifications"
+              className={itemClass("/admin/notifications")}
             >
-              <Settings size={14} />
-              Settings
+              <Bell size={14} />
+              Notification Monitoring
             </Link>
-
-            <PremiumMenuItem label="Integrations" />
-            <PremiumMenuItem label="Notifications" />
 
             <Link
               href="/admin/logs"
@@ -881,3 +948,15 @@ function FolderOpenIcon() {
     </svg>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
