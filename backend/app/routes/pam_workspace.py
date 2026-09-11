@@ -8,11 +8,8 @@ from app.models.pam_assessment import (
     PamAssessmentProcess,
     PamProcessAttributeEvaluation,
 )
-from app.models.pam_capability import (
-    PamCapabilityLevel,
-    PamProcessAttribute,
-)
-from app.models.pam_definition import PamProcess
+from app.models.pam_capability import PamCapabilityLevel, PamProcessAttribute
+from app.models.pam_definition import PamProcess, PamProcessWorkProduct
 from app.models.user import User
 
 
@@ -46,7 +43,6 @@ def get_pam_workspace(
         )
         .first()
     )
-
     if not assessment:
         raise HTTPException(status_code=404, detail="PAM assessment not found")
 
@@ -76,15 +72,12 @@ def get_pam_workspace(
         db.query(PamAssessmentProcess)
         .options(
             joinedload(PamAssessmentProcess.tenant_process),
-            joinedload(PamAssessmentProcess.pam_process)
-            .joinedload(PamProcess.process_group),
-            joinedload(PamAssessmentProcess.pam_process)
-            .joinedload(PamProcess.outcomes),
-            joinedload(PamAssessmentProcess.pam_process)
-            .joinedload(PamProcess.base_practices),
+            joinedload(PamAssessmentProcess.pam_process).joinedload(PamProcess.process_group),
+            joinedload(PamAssessmentProcess.pam_process).joinedload(PamProcess.outcomes),
+            joinedload(PamAssessmentProcess.pam_process).joinedload(PamProcess.base_practices),
             joinedload(PamAssessmentProcess.pam_process)
             .joinedload(PamProcess.work_products)
-            .joinedload("work_product"),
+            .joinedload(PamProcessWorkProduct.work_product),
             joinedload(PamAssessmentProcess.attribute_evaluations)
             .joinedload(PamProcessAttributeEvaluation.process_attribute),
         )
@@ -99,8 +92,8 @@ def get_pam_workspace(
     evaluated_processes = 0
     evaluated_attributes = 0
     total_attributes = len(attributes) * len(assessment_processes)
-
     process_payload = []
+
     for assessment_process in assessment_processes:
         process = assessment_process.pam_process
         tenant_process = assessment_process.tenant_process
@@ -109,11 +102,7 @@ def get_pam_workspace(
             for evaluation in assessment_process.attribute_evaluations
         }
 
-        process_evaluated = any(
-            evaluation.rating or evaluation.justification
-            for evaluation in assessment_process.attribute_evaluations
-        )
-        if process_evaluated:
+        if any(evaluation.rating or evaluation.justification for evaluation in assessment_process.attribute_evaluations):
             evaluated_processes += 1
 
         attribute_payload = []
@@ -157,14 +146,18 @@ def get_pam_workspace(
             {
                 "assessment_process_id": assessment_process.id,
                 "tenant_process_id": tenant_process.id if tenant_process else None,
-                "tenant_process": {
-                    "id": tenant_process.id,
-                    "code": tenant_process.code,
-                    "name": tenant_process.name,
-                    "type": tenant_process.type,
-                    "owner": tenant_process.owner,
-                    "status": tenant_process.status,
-                } if tenant_process else None,
+                "tenant_process": (
+                    {
+                        "id": tenant_process.id,
+                        "code": tenant_process.code,
+                        "name": tenant_process.name,
+                        "type": tenant_process.type,
+                        "owner": tenant_process.owner,
+                        "status": tenant_process.status,
+                    }
+                    if tenant_process
+                    else None
+                ),
                 "pam_process_id": process.id,
                 "code": process.code,
                 "name": process.name,
@@ -182,7 +175,10 @@ def get_pam_workspace(
                         "text": outcome.text,
                         "sort_order": outcome.sort_order,
                     }
-                    for outcome in sorted(process.outcomes, key=lambda value: (value.sort_order, value.code or ""))
+                    for outcome in sorted(
+                        process.outcomes,
+                        key=lambda value: (value.sort_order, value.code or ""),
+                    )
                 ],
                 "base_practices": _indicator_list(process.base_practices),
                 "work_products": [
@@ -195,7 +191,13 @@ def get_pam_workspace(
                         "direction": link.direction,
                         "sort_order": link.sort_order,
                     }
-                    for link in sorted(process.work_products, key=lambda value: (value.sort_order, value.work_product.code or ""))
+                    for link in sorted(
+                        process.work_products,
+                        key=lambda value: (
+                            value.sort_order,
+                            value.work_product.code if value.work_product else "",
+                        ),
+                    )
                     if link.work_product
                 ],
                 "target_capability_level": assessment_process.target_capability_level,
@@ -242,7 +244,10 @@ def get_pam_workspace(
                         "description": attribute.description,
                         "sort_order": attribute.sort_order,
                     }
-                    for attribute in sorted(level.attributes, key=lambda value: (value.sort_order, value.code or ""))
+                    for attribute in sorted(
+                        level.attributes,
+                        key=lambda value: (value.sort_order, value.code or ""),
+                    )
                 ],
             }
             for level in capability_levels
