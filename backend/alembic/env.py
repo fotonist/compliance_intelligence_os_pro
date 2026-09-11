@@ -48,6 +48,13 @@ from app.models.pam_definition import (
     PamWorkProduct,
     PamProcessWorkProduct,
 )
+from app.models.pam_capability import (
+    PamCapabilityLevel,
+    PamProcessAttribute,
+    PamGenericPractice,
+    PamGenericResource,
+    PamGenericWorkProduct,
+)
 
 # --- Risk ---
 from app.models.risks import Risk
