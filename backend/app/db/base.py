@@ -31,6 +31,18 @@ from app.models.controls import Control
 from app.models.framework_model import FrameworkModel
 from app.models.framework_relationship import FrameworkRelationship
 
+# --- Canonical PAM ---
+from app.models.pam_process_category import PamProcessCategory
+from app.models.pam_definition import (
+    PamProcessGroup,
+    PamProcess,
+    PamProcessOutcome,
+    PamBasePractice,
+    PamBasePracticeOutcome,
+    PamWorkProduct,
+    PamProcessWorkProduct,
+)
+
 # --- Maturity / Standard ---
 from app.models.standard_process_area import StandardProcessArea
 from app.models.standard_capability_level import StandardCapabilityLevel
@@ -74,8 +86,6 @@ from app.models.governance_committee_history import GovernanceCommitteeHistory
 
 # --- Governance Approvals & Delegations ---
 from app.models.governance_approval import GovernanceApprovalAuthority, GovernanceDelegation, GovernanceApprovalHistory
+
 # --- Notifications ---
 from app.models.notifications import Notification, NotificationDelivery, NotificationPreference
-
-
-
