@@ -58,6 +58,18 @@ def _model(db: Session, version_id: int, model_type: str):
     )
 
 
+def _ensure_pam(db: Session, standard: Standard, version: StandardVersion):
+    """Ensure the canonical PAM exists for maturity-based standards."""
+    pam = _model(db, version.id, "PAM")
+    if pam or standard.code != "ISO15504":
+        return pam
+
+    from app.seed.iso15504_2006 import seed_iso15504_2006
+
+    seed_iso15504_2006(db)
+    return _model(db, version.id, "PAM")
+
+
 def _reference_model(db: Session, pam_id: int):
     relation = (
         db.query(FrameworkRelationship)
@@ -67,9 +79,11 @@ def _reference_model(db: Session, pam_id: int):
         )
         .first()
     )
-    if not relation:
-        return None
-    return db.query(FrameworkModel).filter(FrameworkModel.id == relation.target_model_id).first()
+    if relation:
+        return db.query(FrameworkModel).filter(FrameworkModel.id == relation.target_model_id).first()
+
+    # ISO/IEC 15504-5 exemplar PAM is itself the process reference structure.
+    return db.query(FrameworkModel).filter(FrameworkModel.id == pam_id).first()
 
 
 def _process_payload(db: Session, process: PamProcess) -> Dict[str, Any]:
@@ -110,7 +124,7 @@ def get_pam_matrix(
 ):
     tenant_id = _tenant(user)
     standard, version = _resolve_version(db, standard_id, standard_version_id)
-    pam = _model(db, version.id, "PAM")
+    pam = _ensure_pam(db, standard, version)
     cmf = _model(db, version.id, "CMF")
     if not pam:
         raise HTTPException(status_code=409, detail="Canonical PAM is not configured for this framework version")
@@ -177,7 +191,7 @@ def generate_pam_matrix(body: Dict[str, Any] = Body(...), db: Session = Depends(
         raise HTTPException(status_code=422, detail="standard_id and standard_version_id are required")
 
     standard, version = _resolve_version(db, standard_id, version_id)
-    pam = _model(db, version.id, "PAM")
+    pam = _ensure_pam(db, standard, version)
     if not pam:
         raise HTTPException(status_code=409, detail="Canonical PAM is not configured for this framework version")
     cmf = _model(db, version.id, "CMF")
@@ -288,4 +302,4 @@ def get_pam_instance_rows(instance_id: int, limit: int = Query(default=100, ge=1
         raise HTTPException(status_code=404, detail="Matrix instance not found")
     query = db.query(MatrixRow).filter(MatrixRow.instance_id == instance_id, MatrixRow.tenant_id == tenant_id).order_by(MatrixRow.id)
     total = query.count()
-    return {"items": [{"id": row.id, "row_key": row.row_key, "category_id": row.pam_process_category_id, "group_id": row.pam_process_group_id, "pam_process_id": row.pam_process_id, "payload": row.payload} for row in query.offset(offset).limit(limit).all()], "total": total}
+    return {"items": [{"id": row.id, "row_key": row.row_key, "category_id": row.pam_process_category_id, "group_id": row.pam_process_group_id, "pam_process_id": row.pam_process_id, "mode": row.mode, "payload": row.payload} for row in query.offset(offset).limit(limit).all()], "total": total, "limit": limit, "offset": offset}
