@@ -46,3 +46,9 @@ class StandardVersion(Base):
         back_populates="standard_version",
         cascade="all, delete-orphan",
     )
+
+    framework_models = relationship(
+        "FrameworkModel",
+        back_populates="standard_version",
+        cascade="all, delete-orphan",
+    )
