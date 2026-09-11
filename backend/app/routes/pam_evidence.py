@@ -7,15 +7,9 @@ from sqlalchemy.orm import Session
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.evidences import Evidence
+from app.models.framework_model import FrameworkModel
 from app.models.pam_assessment import PamAssessment, PamAssessmentProcess
 from app.models.pam_indicator_evaluation import PamIndicatorEvaluation, PamIndicatorEvidenceLink
-from app.models.pam_definition import (
-    PamBasePractice,
-    PamGenericPractice,
-    PamGenericResource,
-    PamGenericWorkProduct,
-    PamWorkProduct,
-)
 from app.models.user import User
 
 
@@ -26,19 +20,6 @@ class PamEvidenceLinkRequest(BaseModel):
     evaluation_id: int
     relevance: str | None = None
     note: str | None = None
-
-
-def _get_tenant_assessment_process(db: Session, assessment_process_id: int, tenant_id: int):
-    return (
-        db.query(PamAssessmentProcess)
-        .join(PamAssessment, PamAssessment.id == PamAssessmentProcess.assessment_id)
-        .filter(
-            PamAssessmentProcess.id == assessment_process_id,
-            PamAssessment.tenant_id == tenant_id,
-            PamAssessmentProcess.in_scope.is_(True),
-        )
-        .first()
-    )
 
 
 def _get_evaluation(db: Session, evaluation_id: int, tenant_id: int):
@@ -76,6 +57,60 @@ def _indicator_payload(evaluation: PamIndicatorEvaluation):
     }
 
 
+@router.get("/pam-candidates/{evaluation_id}")
+def list_pam_evidence_candidates(
+    evaluation_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    tenant_id = getattr(current_user, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="User tenant is not available")
+
+    evaluation = _get_evaluation(db, evaluation_id, tenant_id)
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="PAM indicator evaluation not found")
+
+    assessment = (
+        db.query(PamAssessment)
+        .filter(PamAssessment.id == evaluation.assessment_process.assessment_id, PamAssessment.tenant_id == tenant_id)
+        .first()
+    )
+    if not assessment:
+        raise HTTPException(status_code=404, detail="PAM assessment not found")
+
+    framework_model = db.query(FrameworkModel).filter(FrameworkModel.id == assessment.framework_model_id).first()
+    standard_version_id = framework_model.standard_version_id if framework_model else None
+
+    query = db.query(Evidence).filter(
+        Evidence.tenant_id == tenant_id,
+        Evidence.is_deleted.is_(False),
+    )
+    if standard_version_id is not None:
+        query = query.filter(Evidence.standard_version_id == standard_version_id)
+
+    linked_ids = {
+        row.evidence_id
+        for row in db.query(PamIndicatorEvidenceLink).filter(PamIndicatorEvidenceLink.evaluation_id == evaluation.id).all()
+    }
+
+    items = query.order_by(Evidence.updated_at.desc(), Evidence.id.desc()).limit(200).all()
+    return {
+        "evaluation": _indicator_payload(evaluation),
+        "items": [
+            {
+                "id": item.id,
+                "title": item.title,
+                "status": item.status,
+                "assessment_type": item.assessment_type,
+                "description": item.description,
+                "linked": item.id in linked_ids,
+            }
+            for item in items
+        ],
+    }
+
+
 @router.get("/{evidence_id}/pam-links")
 def list_pam_evidence_links(
     evidence_id: int,
@@ -86,15 +121,11 @@ def list_pam_evidence_links(
     if not tenant_id:
         raise HTTPException(status_code=403, detail="User tenant is not available")
 
-    evidence = (
-        db.query(Evidence)
-        .filter(
-            Evidence.id == evidence_id,
-            Evidence.tenant_id == tenant_id,
-            Evidence.is_deleted.is_(False),
-        )
-        .first()
-    )
+    evidence = db.query(Evidence).filter(
+        Evidence.id == evidence_id,
+        Evidence.tenant_id == tenant_id,
+        Evidence.is_deleted.is_(False),
+    ).first()
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
@@ -136,15 +167,11 @@ def link_evidence_to_pam_indicator(
     if not tenant_id:
         raise HTTPException(status_code=403, detail="User tenant is not available")
 
-    evidence = (
-        db.query(Evidence)
-        .filter(
-            Evidence.id == evidence_id,
-            Evidence.tenant_id == tenant_id,
-            Evidence.is_deleted.is_(False),
-        )
-        .first()
-    )
+    evidence = db.query(Evidence).filter(
+        Evidence.id == evidence_id,
+        Evidence.tenant_id == tenant_id,
+        Evidence.is_deleted.is_(False),
+    ).first()
     if not evidence:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
@@ -152,14 +179,10 @@ def link_evidence_to_pam_indicator(
     if not evaluation:
         raise HTTPException(status_code=404, detail="PAM indicator evaluation not found")
 
-    existing = (
-        db.query(PamIndicatorEvidenceLink)
-        .filter(
-            PamIndicatorEvidenceLink.evaluation_id == evaluation.id,
-            PamIndicatorEvidenceLink.evidence_id == evidence.id,
-        )
-        .first()
-    )
+    existing = db.query(PamIndicatorEvidenceLink).filter(
+        PamIndicatorEvidenceLink.evaluation_id == evaluation.id,
+        PamIndicatorEvidenceLink.evidence_id == evidence.id,
+    ).first()
     if existing:
         existing.relevance = payload.relevance
         existing.note = payload.note
@@ -177,7 +200,6 @@ def link_evidence_to_pam_indicator(
     db.add(link)
     db.commit()
     db.refresh(link)
-
     return {"id": link.id, "evaluation": _indicator_payload(evaluation), "relevance": link.relevance, "note": link.note}
 
 
