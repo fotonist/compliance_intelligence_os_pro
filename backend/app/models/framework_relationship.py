@@ -22,7 +22,7 @@ class FrameworkRelationship(Base):
         index=True,
     )
     relationship_type = Column(String(50), nullable=False, index=True)
-    metadata = Column(JSON, nullable=True)
+    relationship_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
 
     source_model = relationship(
