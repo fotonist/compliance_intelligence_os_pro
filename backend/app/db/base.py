@@ -23,7 +23,6 @@ from app.models.permission import Permission
 # --- Standards Hierarchy ---
 from app.models.standards import Standard
 from app.models.standard_versions import StandardVersion
-from app.models.standards import Standard
 from app.models.clauses import Clause
 from app.models.requirements import Requirement
 from app.models.controls import Control
