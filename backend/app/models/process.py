@@ -22,10 +22,16 @@ class Process(Base):
     owner = Column(String(255), nullable=True)
     status = Column(String(50), default="draft")
 
-    # ✅ Process ↔ Risk link (many-to-many via ProcessRiskLink)
     risk_links = relationship(
         "ProcessRiskLink",
         primaryjoin="Process.id==ProcessRiskLink.process_id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    pam_mappings = relationship(
+        "ProcessPamMapping",
+        back_populates="process",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
