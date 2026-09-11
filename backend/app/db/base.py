@@ -54,6 +54,13 @@ from app.models.pam_capability import (
 from app.models.process import Process
 from app.models.process_pam_mapping import ProcessPamMapping
 
+# --- Canonical PAM Assessment ---
+from app.models.pam_assessment import (
+    PamAssessment,
+    PamAssessmentProcess,
+    PamProcessAttributeEvaluation,
+)
+
 # --- Maturity / Standard ---
 from app.models.standard_process_area import StandardProcessArea
 from app.models.standard_capability_level import StandardCapabilityLevel
@@ -70,7 +77,7 @@ from app.models.risks import Risk
 from app.models.risk_history import RiskHistory
 from app.models.risk_evidence_link import RiskEvidenceLink
 
-# --- Maturity Assessment ---
+# --- Legacy Maturity Assessment ---
 from app.models.maturity_assessment_session import MaturityAssessmentSession
 from app.models.maturity_practice_evaluation import MaturityPracticeEvaluation
 
