@@ -39,6 +39,7 @@ class PamAssessmentProcess(Base):
     tenant_process = relationship("Process")
     pam_process = relationship("PamProcess")
     attribute_evaluations = relationship("PamProcessAttributeEvaluation", back_populates="assessment_process", cascade="all, delete-orphan")
+    indicator_evaluations = relationship("PamIndicatorEvaluation", back_populates="assessment_process", cascade="all, delete-orphan")
 
 
 class PamProcessAttributeEvaluation(Base):
