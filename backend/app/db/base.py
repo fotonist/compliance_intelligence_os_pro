@@ -60,6 +60,10 @@ from app.models.pam_assessment import (
     PamAssessmentProcess,
     PamProcessAttributeEvaluation,
 )
+from app.models.pam_indicator_evaluation import (
+    PamIndicatorEvaluation,
+    PamIndicatorEvidenceLink,
+)
 
 # --- Maturity / Standard ---
 from app.models.standard_process_area import StandardProcessArea
