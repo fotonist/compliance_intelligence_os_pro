@@ -42,6 +42,13 @@ from app.models.pam_definition import (
     PamWorkProduct,
     PamProcessWorkProduct,
 )
+from app.models.pam_capability import (
+    PamCapabilityLevel,
+    PamProcessAttribute,
+    PamGenericPractice,
+    PamGenericResource,
+    PamGenericWorkProduct,
+)
 
 # --- Maturity / Standard ---
 from app.models.standard_process_area import StandardProcessArea
