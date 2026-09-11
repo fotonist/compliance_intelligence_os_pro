@@ -11,6 +11,7 @@ from app.models.standard_versions import StandardVersion
 from app.models.framework_model import FrameworkModel
 from app.models.framework_relationship import FrameworkRelationship
 from app.models.framework_adoption import FrameworkAdoption, FrameworkAdoptionScope
+from app.models.process_pam_mapping import ProcessPamMapping
 from app.models.pam_process_category import PamProcessCategory
 from app.models.pam_definition import (
     PamProcessGroup,
@@ -82,7 +83,6 @@ def _reference_model(db: Session, pam_id: int):
     if relation:
         return db.query(FrameworkModel).filter(FrameworkModel.id == relation.target_model_id).first()
 
-    # ISO/IEC 15504-5 exemplar PAM is itself the process reference structure.
     return db.query(FrameworkModel).filter(FrameworkModel.id == pam_id).first()
 
 
@@ -113,6 +113,35 @@ def _process_payload(db: Session, process: PamProcess) -> Dict[str, Any]:
         "base_practices": [{"id": item.id, "code": item.code, "text": item.text, "guidance": item.guidance} for item in practices],
         "work_products": products,
     }
+
+
+def _adoption_pam_process_ids(db: Session, adoption_id: int, pam_id: int):
+    """Translate tenant Process scope into canonical PAM process ids."""
+    scoped_process_ids = [
+        item.process_id
+        for item in db.query(FrameworkAdoptionScope)
+        .filter(FrameworkAdoptionScope.adoption_id == adoption_id)
+        .all()
+    ]
+    if not scoped_process_ids:
+        return []
+
+    mappings = (
+        db.query(ProcessPamMapping)
+        .filter(
+            ProcessPamMapping.process_id.in_(scoped_process_ids),
+            ProcessPamMapping.pam_process_id.isnot(None),
+        )
+        .all()
+    )
+    valid_pam_ids = {
+        item.pam_process_id
+        for item in mappings
+        if item.pam_process_id
+        and item.pam_process
+        and item.pam_process.framework_model_id == pam_id
+    }
+    return sorted(valid_pam_ids)
 
 
 @router.get("/pam")
@@ -162,9 +191,7 @@ def get_pam_matrix(
         FrameworkAdoption.standard_version_id == version.id,
         FrameworkAdoption.status == "ACTIVE",
     ).order_by(FrameworkAdoption.id.desc()).first()
-    process_ids = []
-    if adoption:
-        process_ids = [item.process_id for item in db.query(FrameworkAdoptionScope).filter(FrameworkAdoptionScope.adoption_id == adoption.id).order_by(FrameworkAdoptionScope.process_id).all()]
+    process_ids = _adoption_pam_process_ids(db, adoption.id, pam.id) if adoption else []
 
     return {
         "mode": "pam",
