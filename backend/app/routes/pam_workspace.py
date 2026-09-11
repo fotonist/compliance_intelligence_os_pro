@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.security import get_current_user
@@ -14,6 +17,12 @@ from app.models.user import User
 
 
 router = APIRouter(prefix="/maturity/workspace", tags=["PAM Assessment Workspace"])
+
+
+class AttributeEvaluationRequest(BaseModel):
+    rating: str | None = None
+    justification: str | None = None
+    status: str = "DRAFT"
 
 
 def _indicator_list(items):
@@ -253,4 +262,87 @@ def get_pam_workspace(
             for level in capability_levels
         ],
         "processes": process_payload,
+    }
+
+
+@router.put("/{session_id}/processes/{assessment_process_id}/attributes/{attribute_id}")
+def update_pam_attribute_evaluation(
+    session_id: int,
+    assessment_process_id: int,
+    attribute_id: int,
+    payload: AttributeEvaluationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    assessment = (
+        db.query(PamAssessment)
+        .filter(
+            PamAssessment.id == session_id,
+            PamAssessment.tenant_id == current_user.tenant_id,
+        )
+        .first()
+    )
+    if not assessment:
+        raise HTTPException(status_code=404, detail="PAM assessment not found")
+
+    assessment_process = (
+        db.query(PamAssessmentProcess)
+        .filter(
+            PamAssessmentProcess.id == assessment_process_id,
+            PamAssessmentProcess.assessment_id == assessment.id,
+            PamAssessmentProcess.in_scope.is_(True),
+        )
+        .first()
+    )
+    if not assessment_process:
+        raise HTTPException(status_code=404, detail="Assessment process not found")
+
+    attribute = (
+        db.query(PamProcessAttribute)
+        .join(PamCapabilityLevel)
+        .filter(
+            PamProcessAttribute.id == attribute_id,
+            PamCapabilityLevel.framework_model_id == assessment.framework_model_id,
+        )
+        .first()
+    )
+    if not attribute:
+        raise HTTPException(status_code=404, detail="Process attribute not found")
+
+    evaluation = (
+        db.query(PamProcessAttributeEvaluation)
+        .filter(
+            PamProcessAttributeEvaluation.assessment_process_id == assessment_process.id,
+            PamProcessAttributeEvaluation.process_attribute_id == attribute.id,
+        )
+        .first()
+    )
+
+    now = datetime.utcnow()
+    if evaluation is None:
+        evaluation = PamProcessAttributeEvaluation(
+            assessment_process_id=assessment_process.id,
+            process_attribute_id=attribute.id,
+        )
+        db.add(evaluation)
+
+    evaluation.rating = payload.rating
+    evaluation.justification = payload.justification
+    evaluation.status = payload.status
+    evaluation.evaluated_by = current_user.id
+    evaluation.evaluated_at = now
+    assessment_process.status = "IN_PROGRESS"
+
+    db.commit()
+    db.refresh(evaluation)
+
+    return {
+        "id": evaluation.id,
+        "assessment_process_id": evaluation.assessment_process_id,
+        "process_attribute_id": evaluation.process_attribute_id,
+        "rating": evaluation.rating,
+        "justification": evaluation.justification,
+        "status": evaluation.status,
+        "evaluated_by": evaluation.evaluated_by,
+        "evaluated_at": evaluation.evaluated_at,
     }
