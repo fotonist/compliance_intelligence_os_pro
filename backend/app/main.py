@@ -34,6 +34,7 @@ from app.routes.ai_dashboard import router as ai_dashboard_router
 from app.routes.kpi import router as kpi_router
 from app.routes.data_explorer import router as data_explorer_router
 from app.routes.maturity import router as maturity_router
+from app.routes.pam_workspace import router as pam_workspace_router
 from app.routes.standard_maturity_structure import router as standard_maturity_structure_router
 from app.routes.control_assessments import router as control_assessments_router
 from app.routes.requirements import router as requirements_router
@@ -234,6 +235,7 @@ application.include_router(integrations_router)
 application.include_router(notifications_router)
 application.include_router(roles_router)
 application.include_router(compliance_obligations_router)
+application.include_router(pam_workspace_router)
 application.include_router(maturity_router)
 application.include_router(clause_router)
 application.include_router(risk_appetite_router)
