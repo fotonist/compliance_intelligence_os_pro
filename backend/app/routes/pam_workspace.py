@@ -11,12 +11,15 @@ from app.models.pam_assessment import (
     PamAssessmentProcess,
     PamProcessAttributeEvaluation,
 )
-from app.models.pam_capability import PamCapabilityLevel, PamProcessAttribute
-from app.models.pam_definition import (
-    PamBasePractice,
+from app.models.pam_capability import (
+    PamCapabilityLevel,
     PamGenericPractice,
     PamGenericResource,
     PamGenericWorkProduct,
+    PamProcessAttribute,
+)
+from app.models.pam_definition import (
+    PamBasePractice,
     PamProcess,
     PamProcessWorkProduct,
     PamWorkProduct,
@@ -52,19 +55,6 @@ INDICATOR_TARGETS = {
 }
 
 
-def _indicator_list(items):
-    return [
-        {
-            "id": item.id,
-            "code": item.code,
-            "text": item.text,
-            "guidance": getattr(item, "guidance", None),
-            "sort_order": item.sort_order,
-        }
-        for item in sorted(items, key=lambda value: (value.sort_order, value.code or ""))
-    ]
-
-
 def _get_assessment(db: Session, session_id: int, tenant_id: int):
     return (
         db.query(PamAssessment)
@@ -85,6 +75,35 @@ def _get_assessment_process(db: Session, session_id: int, assessment_process_id:
         )
         .first()
     )
+
+
+def _evaluation_payload(evaluation):
+    if not evaluation:
+        return None
+    return {
+        "id": evaluation.id,
+        "rating": evaluation.rating,
+        "observation": evaluation.observation,
+        "justification": evaluation.justification,
+        "status": evaluation.status,
+        "evidence_count": len(evaluation.evidence_links),
+        "evaluated_by": evaluation.evaluator_user_id,
+        "evaluated_at": evaluation.evaluated_at,
+    }
+
+
+def _indicator_list_with_evaluations(items, indicator_type, evaluations):
+    return [
+        {
+            "id": item.id,
+            "code": item.code,
+            "text": item.text,
+            "guidance": getattr(item, "guidance", None),
+            "sort_order": item.sort_order,
+            "evaluation": _evaluation_payload(evaluations.get((indicator_type, item.id))),
+        }
+        for item in sorted(items, key=lambda value: (value.sort_order, value.code or ""))
+    ]
 
 
 @router.get("/{session_id}")
@@ -323,35 +342,6 @@ def get_pam_workspace(
     }
 
 
-def _evaluation_payload(evaluation):
-    if not evaluation:
-        return None
-    return {
-        "id": evaluation.id,
-        "rating": evaluation.rating,
-        "observation": evaluation.observation,
-        "justification": evaluation.justification,
-        "status": evaluation.status,
-        "evidence_count": len(evaluation.evidence_links),
-        "evaluated_by": evaluation.evaluator_user_id,
-        "evaluated_at": evaluation.evaluated_at,
-    }
-
-
-def _indicator_list_with_evaluations(items, indicator_type, evaluations):
-    return [
-        {
-            "id": item.id,
-            "code": item.code,
-            "text": item.text,
-            "guidance": getattr(item, "guidance", None),
-            "sort_order": item.sort_order,
-            "evaluation": _evaluation_payload(evaluations.get((indicator_type, item.id))),
-        }
-        for item in sorted(items, key=lambda value: (value.sort_order, value.code or ""))
-    ]
-
-
 @router.put("/{session_id}/processes/{assessment_process_id}/attributes/{attribute_id}")
 def update_pam_attribute_evaluation(
     session_id: int,
@@ -390,7 +380,6 @@ def update_pam_attribute_evaluation(
         .first()
     )
 
-    now = datetime.utcnow()
     if evaluation is None:
         evaluation = PamProcessAttributeEvaluation(
             assessment_process_id=assessment_process.id,
@@ -402,7 +391,7 @@ def update_pam_attribute_evaluation(
     evaluation.justification = payload.justification
     evaluation.status = payload.status
     evaluation.evaluated_by = current_user.id
-    evaluation.evaluated_at = now
+    evaluation.evaluated_at = datetime.utcnow()
     assessment_process.status = "IN_PROGRESS"
 
     db.commit()
@@ -442,11 +431,7 @@ def update_pam_indicator_evaluation(
         raise HTTPException(status_code=422, detail="Unsupported PAM indicator type")
 
     target_field, target_model = target_config
-    target = (
-        db.query(target_model)
-        .filter(target_model.id == payload.indicator_id)
-        .first()
-    )
+    target = db.query(target_model).filter(target_model.id == payload.indicator_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="PAM indicator not found")
 
@@ -457,56 +442,50 @@ def update_pam_indicator_evaluation(
         ).first()
     elif indicator_type == "WORK_PRODUCT":
         valid = (
-            db.query(PamProcessWorkProduct)
+            db.query(PamWorkProduct)
+            .join(PamProcessWorkProduct, PamProcessWorkProduct.work_product_id == PamWorkProduct.id)
             .filter(
+                PamWorkProduct.id == target.id,
                 PamProcessWorkProduct.process_id == assessment_process.pam_process_id,
-                PamProcessWorkProduct.work_product_id == target.id,
             )
             .first()
         )
     else:
         valid = (
             db.query(target_model)
-            .filter(
-                target_model.id == target.id,
-                target_model.process_attribute_id.in_(
-                    db.query(PamProcessAttribute.id)
-                    .join(PamCapabilityLevel)
-                    .filter(PamCapabilityLevel.framework_model_id == assessment.framework_model_id)
-                )
-            )
+            .filter(target_model.id == target.id)
             .first()
         )
-    if not valid:
-        raise HTTPException(status_code=422, detail="PAM indicator is not part of the assessment process")
 
-    existing = (
+    if not valid:
+        raise HTTPException(status_code=404, detail="PAM indicator is outside the assessment process scope")
+
+    evaluation = (
         db.query(PamIndicatorEvaluation)
         .filter(
             PamIndicatorEvaluation.assessment_process_id == assessment_process.id,
-            PamIndicatorEvaluation.indicator_type == indicator_type,
             getattr(PamIndicatorEvaluation, target_field) == target.id,
         )
         .first()
     )
 
-    if existing is None:
-        existing = PamIndicatorEvaluation(
+    if evaluation is None:
+        evaluation = PamIndicatorEvaluation(
             assessment_process_id=assessment_process.id,
             indicator_type=indicator_type,
             **{target_field: target.id},
         )
-        db.add(existing)
+        db.add(evaluation)
 
-    existing.rating = payload.rating
-    existing.observation = payload.observation
-    existing.justification = payload.justification
-    existing.status = payload.status
-    existing.evaluator_user_id = current_user.id
-    existing.evaluated_at = datetime.utcnow()
+    evaluation.rating = payload.rating
+    evaluation.observation = payload.observation
+    evaluation.justification = payload.justification
+    evaluation.status = payload.status
+    evaluation.evaluator_user_id = current_user.id
+    evaluation.evaluated_at = datetime.utcnow()
     assessment_process.status = "IN_PROGRESS"
 
     db.commit()
-    db.refresh(existing)
+    db.refresh(evaluation)
 
-    return _evaluation_payload(existing)
+    return _evaluation_payload(evaluation)
