@@ -12,7 +12,16 @@ from app.models.pam_assessment import (
     PamProcessAttributeEvaluation,
 )
 from app.models.pam_capability import PamCapabilityLevel, PamProcessAttribute
-from app.models.pam_definition import PamProcess, PamProcessWorkProduct
+from app.models.pam_definition import (
+    PamBasePractice,
+    PamGenericPractice,
+    PamGenericResource,
+    PamGenericWorkProduct,
+    PamProcess,
+    PamProcessWorkProduct,
+    PamWorkProduct,
+)
+from app.models.pam_indicator_evaluation import PamIndicatorEvaluation
 from app.models.user import User
 
 
@@ -23,6 +32,24 @@ class AttributeEvaluationRequest(BaseModel):
     rating: str | None = None
     justification: str | None = None
     status: str = "DRAFT"
+
+
+class IndicatorEvaluationRequest(BaseModel):
+    indicator_type: str
+    indicator_id: int
+    rating: str | None = None
+    observation: str | None = None
+    justification: str | None = None
+    status: str = "DRAFT"
+
+
+INDICATOR_TARGETS = {
+    "BASE_PRACTICE": ("base_practice_id", PamBasePractice),
+    "WORK_PRODUCT": ("work_product_id", PamWorkProduct),
+    "GENERIC_PRACTICE": ("generic_practice_id", PamGenericPractice),
+    "GENERIC_RESOURCE": ("generic_resource_id", PamGenericResource),
+    "GENERIC_WORK_PRODUCT": ("generic_work_product_id", PamGenericWorkProduct),
+}
 
 
 def _indicator_list(items):
@@ -38,20 +65,35 @@ def _indicator_list(items):
     ]
 
 
+def _get_assessment(db: Session, session_id: int, tenant_id: int):
+    return (
+        db.query(PamAssessment)
+        .filter(PamAssessment.id == session_id, PamAssessment.tenant_id == tenant_id)
+        .first()
+    )
+
+
+def _get_assessment_process(db: Session, session_id: int, assessment_process_id: int, tenant_id: int):
+    return (
+        db.query(PamAssessmentProcess)
+        .join(PamAssessment, PamAssessment.id == PamAssessmentProcess.assessment_id)
+        .filter(
+            PamAssessmentProcess.id == assessment_process_id,
+            PamAssessmentProcess.assessment_id == session_id,
+            PamAssessmentProcess.in_scope.is_(True),
+            PamAssessment.tenant_id == tenant_id,
+        )
+        .first()
+    )
+
+
 @router.get("/{session_id}")
 def get_pam_workspace(
     session_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    assessment = (
-        db.query(PamAssessment)
-        .filter(
-            PamAssessment.id == session_id,
-            PamAssessment.tenant_id == current_user.tenant_id,
-        )
-        .first()
-    )
+    assessment = _get_assessment(db, session_id, current_user.tenant_id)
     if not assessment:
         raise HTTPException(status_code=404, detail="PAM assessment not found")
 
@@ -89,6 +131,18 @@ def get_pam_workspace(
             .joinedload(PamProcessWorkProduct.work_product),
             joinedload(PamAssessmentProcess.attribute_evaluations)
             .joinedload(PamProcessAttributeEvaluation.process_attribute),
+            joinedload(PamAssessmentProcess.indicator_evaluations)
+            .joinedload(PamIndicatorEvaluation.base_practice),
+            joinedload(PamAssessmentProcess.indicator_evaluations)
+            .joinedload(PamIndicatorEvaluation.work_product),
+            joinedload(PamAssessmentProcess.indicator_evaluations)
+            .joinedload(PamIndicatorEvaluation.generic_practice),
+            joinedload(PamAssessmentProcess.indicator_evaluations)
+            .joinedload(PamIndicatorEvaluation.generic_resource),
+            joinedload(PamAssessmentProcess.indicator_evaluations)
+            .joinedload(PamIndicatorEvaluation.generic_work_product),
+            joinedload(PamAssessmentProcess.indicator_evaluations)
+            .joinedload(PamIndicatorEvaluation.evidence_links),
         )
         .filter(
             PamAssessmentProcess.assessment_id == assessment.id,
@@ -110,6 +164,18 @@ def get_pam_workspace(
             evaluation.process_attribute_id: evaluation
             for evaluation in assessment_process.attribute_evaluations
         }
+        indicator_evaluations = {}
+        for evaluation in assessment_process.indicator_evaluations:
+            if evaluation.base_practice_id:
+                indicator_evaluations[("BASE_PRACTICE", evaluation.base_practice_id)] = evaluation
+            if evaluation.work_product_id:
+                indicator_evaluations[("WORK_PRODUCT", evaluation.work_product_id)] = evaluation
+            if evaluation.generic_practice_id:
+                indicator_evaluations[("GENERIC_PRACTICE", evaluation.generic_practice_id)] = evaluation
+            if evaluation.generic_resource_id:
+                indicator_evaluations[("GENERIC_RESOURCE", evaluation.generic_resource_id)] = evaluation
+            if evaluation.generic_work_product_id:
+                indicator_evaluations[("GENERIC_WORK_PRODUCT", evaluation.generic_work_product_id)] = evaluation
 
         if any(evaluation.rating or evaluation.justification for evaluation in assessment_process.attribute_evaluations):
             evaluated_processes += 1
@@ -145,9 +211,9 @@ def get_pam_workspace(
                         if evaluation
                         else None
                     ),
-                    "generic_practices": _indicator_list(attribute.generic_practices),
-                    "generic_resources": _indicator_list(attribute.generic_resources),
-                    "generic_work_products": _indicator_list(attribute.generic_work_products),
+                    "generic_practices": _indicator_list_with_evaluations(attribute.generic_practices, "GENERIC_PRACTICE", indicator_evaluations),
+                    "generic_resources": _indicator_list_with_evaluations(attribute.generic_resources, "GENERIC_RESOURCE", indicator_evaluations),
+                    "generic_work_products": _indicator_list_with_evaluations(attribute.generic_work_products, "GENERIC_WORK_PRODUCT", indicator_evaluations),
                 }
             )
 
@@ -184,12 +250,9 @@ def get_pam_workspace(
                         "text": outcome.text,
                         "sort_order": outcome.sort_order,
                     }
-                    for outcome in sorted(
-                        process.outcomes,
-                        key=lambda value: (value.sort_order, value.code or ""),
-                    )
+                    for outcome in sorted(process.outcomes, key=lambda value: (value.sort_order, value.code or ""))
                 ],
-                "base_practices": _indicator_list(process.base_practices),
+                "base_practices": _indicator_list_with_evaluations(process.base_practices, "BASE_PRACTICE", indicator_evaluations),
                 "work_products": [
                     {
                         "id": link.work_product.id,
@@ -199,13 +262,11 @@ def get_pam_workspace(
                         "characteristics": link.work_product.characteristics,
                         "direction": link.direction,
                         "sort_order": link.sort_order,
+                        "evaluation": _evaluation_payload(indicator_evaluations.get(("WORK_PRODUCT", link.work_product.id))),
                     }
                     for link in sorted(
                         process.work_products,
-                        key=lambda value: (
-                            value.sort_order,
-                            value.work_product.code if value.work_product else "",
-                        ),
+                        key=lambda value: (value.sort_order, value.work_product.code if value.work_product else ""),
                     )
                     if link.work_product
                 ],
@@ -253,16 +314,42 @@ def get_pam_workspace(
                         "description": attribute.description,
                         "sort_order": attribute.sort_order,
                     }
-                    for attribute in sorted(
-                        level.attributes,
-                        key=lambda value: (value.sort_order, value.code or ""),
-                    )
+                    for attribute in sorted(level.attributes, key=lambda value: (value.sort_order, value.code or ""))
                 ],
             }
             for level in capability_levels
         ],
         "processes": process_payload,
     }
+
+
+def _evaluation_payload(evaluation):
+    if not evaluation:
+        return None
+    return {
+        "id": evaluation.id,
+        "rating": evaluation.rating,
+        "observation": evaluation.observation,
+        "justification": evaluation.justification,
+        "status": evaluation.status,
+        "evidence_count": len(evaluation.evidence_links),
+        "evaluated_by": evaluation.evaluator_user_id,
+        "evaluated_at": evaluation.evaluated_at,
+    }
+
+
+def _indicator_list_with_evaluations(items, indicator_type, evaluations):
+    return [
+        {
+            "id": item.id,
+            "code": item.code,
+            "text": item.text,
+            "guidance": getattr(item, "guidance", None),
+            "sort_order": item.sort_order,
+            "evaluation": _evaluation_payload(evaluations.get((indicator_type, item.id))),
+        }
+        for item in sorted(items, key=lambda value: (value.sort_order, value.code or ""))
+    ]
 
 
 @router.put("/{session_id}/processes/{assessment_process_id}/attributes/{attribute_id}")
@@ -274,26 +361,11 @@ def update_pam_attribute_evaluation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    assessment = (
-        db.query(PamAssessment)
-        .filter(
-            PamAssessment.id == session_id,
-            PamAssessment.tenant_id == current_user.tenant_id,
-        )
-        .first()
-    )
+    assessment = _get_assessment(db, session_id, current_user.tenant_id)
     if not assessment:
         raise HTTPException(status_code=404, detail="PAM assessment not found")
 
-    assessment_process = (
-        db.query(PamAssessmentProcess)
-        .filter(
-            PamAssessmentProcess.id == assessment_process_id,
-            PamAssessmentProcess.assessment_id == assessment.id,
-            PamAssessmentProcess.in_scope.is_(True),
-        )
-        .first()
-    )
+    assessment_process = _get_assessment_process(db, session_id, assessment_process_id, current_user.tenant_id)
     if not assessment_process:
         raise HTTPException(status_code=404, detail="Assessment process not found")
 
@@ -346,3 +418,95 @@ def update_pam_attribute_evaluation(
         "evaluated_by": evaluation.evaluated_by,
         "evaluated_at": evaluation.evaluated_at,
     }
+
+
+@router.put("/{session_id}/processes/{assessment_process_id}/indicators")
+def update_pam_indicator_evaluation(
+    session_id: int,
+    assessment_process_id: int,
+    payload: IndicatorEvaluationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    assessment = _get_assessment(db, session_id, current_user.tenant_id)
+    if not assessment:
+        raise HTTPException(status_code=404, detail="PAM assessment not found")
+
+    assessment_process = _get_assessment_process(db, session_id, assessment_process_id, current_user.tenant_id)
+    if not assessment_process:
+        raise HTTPException(status_code=404, detail="Assessment process not found")
+
+    indicator_type = payload.indicator_type.strip().upper()
+    target_config = INDICATOR_TARGETS.get(indicator_type)
+    if not target_config:
+        raise HTTPException(status_code=422, detail="Unsupported PAM indicator type")
+
+    target_field, target_model = target_config
+    target = (
+        db.query(target_model)
+        .filter(target_model.id == payload.indicator_id)
+        .first()
+    )
+    if not target:
+        raise HTTPException(status_code=404, detail="PAM indicator not found")
+
+    if indicator_type == "BASE_PRACTICE":
+        valid = db.query(PamBasePractice).filter(
+            PamBasePractice.id == target.id,
+            PamBasePractice.process_id == assessment_process.pam_process_id,
+        ).first()
+    elif indicator_type == "WORK_PRODUCT":
+        valid = (
+            db.query(PamProcessWorkProduct)
+            .filter(
+                PamProcessWorkProduct.process_id == assessment_process.pam_process_id,
+                PamProcessWorkProduct.work_product_id == target.id,
+            )
+            .first()
+        )
+    else:
+        valid = (
+            db.query(target_model)
+            .filter(
+                target_model.id == target.id,
+                target_model.process_attribute_id.in_(
+                    db.query(PamProcessAttribute.id)
+                    .join(PamCapabilityLevel)
+                    .filter(PamCapabilityLevel.framework_model_id == assessment.framework_model_id)
+                )
+            )
+            .first()
+        )
+    if not valid:
+        raise HTTPException(status_code=422, detail="PAM indicator is not part of the assessment process")
+
+    existing = (
+        db.query(PamIndicatorEvaluation)
+        .filter(
+            PamIndicatorEvaluation.assessment_process_id == assessment_process.id,
+            PamIndicatorEvaluation.indicator_type == indicator_type,
+            getattr(PamIndicatorEvaluation, target_field) == target.id,
+        )
+        .first()
+    )
+
+    if existing is None:
+        existing = PamIndicatorEvaluation(
+            assessment_process_id=assessment_process.id,
+            indicator_type=indicator_type,
+            **{target_field: target.id},
+        )
+        db.add(existing)
+
+    existing.rating = payload.rating
+    existing.observation = payload.observation
+    existing.justification = payload.justification
+    existing.status = payload.status
+    existing.evaluator_user_id = current_user.id
+    existing.evaluated_at = datetime.utcnow()
+    assessment_process.status = "IN_PROGRESS"
+
+    db.commit()
+    db.refresh(existing)
+
+    return _evaluation_payload(existing)
