@@ -1,85 +1,807 @@
+
 "use client";
 
+import ComplianceWorkspaceDrawer from "../../components/compliance-workspace/ComplianceWorkspaceDrawer";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, ChevronDown, ChevronRight, Layers3, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { apiFetch } from "@/app/lib/api";
+import ComplianceMatrixTable from "../../components/ComplianceMatrixTable";
 
-type Standard = { id: number; code: string; title?: string | null; type?: string | null };
-type Process = { id: number; code: string; name: string; purpose?: string | null; category_code: string; category_name: string; group_code: string; group_name: string; outcomes: any[]; base_practices: any[]; work_products: any[] };
-type Category = { id: number; code: string; name: string; groups: { id: number; code: string; name: string; processes: Process[] }[] };
-type PamData = { standard: any; version: any; framework_model: any; reference_model: any; capability_measurement_framework: any; adoption: any; categories: Category[]; counts: any; };
+type Mode = "control" | "maturity";
 
-type ControlRow = { clause_code?: string; clause_description?: string; requirement_code?: string; requirement_description?: string; control_code?: string; control_description?: string; coverage_status?: string; risk_level?: string };
+type StandardOption = {
+  id: number;
+  code: string;
+  title?: string | null;
+  type?: string | null;
+  version?: string | null;
+};
 
-export default function ComplianceMatrixPage() {
-  const [standards, setStandards] = useState<Standard[]>([]);
-  const [assessmentType, setAssessmentType] = useState<"control" | "pam">("pam");
-  const [standardId, setStandardId] = useState<number | "">("");
-  const [pam, setPam] = useState<PamData | null>(null);
-  const [controls, setControls] = useState<ControlRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [expanded, setExpanded] = useState<number[]>([]);
+type FrameworkAdoption = {
+  id: number;
+  tenant_id?: number;
+  standard_id: number;
+  standard_version_id: number;
+  status: string;
+  applicability?: string | null;
+  effective_date?: string | null;
+  process_ids?: number[];
+};
 
-  const maturityStandards = useMemo(() => standards.filter(s => String(s.type ?? "").toUpperCase() === "MATURITY_BASED"), [standards]);
-  const controlStandards = useMemo(() => standards.filter(s => String(s.type ?? "").toUpperCase() === "CONTROL_BASED"), [standards]);
+type MatrixKpi = {
+  mode?: "control" | "maturity";
+  matrix_instance_id?: number;
+  standard_id?: number;
+  standard_version_id?: number;
 
-  useEffect(() => {
-    (async () => {
-      try { const r = await apiFetch("/framework/standards"); const b = await r.json(); setStandards(Array.isArray(b) ? b : []); }
-      catch { setError("Frameworks could not be loaded."); }
-    })();
-  }, []);
+  compliance_percentage?: number;
 
-  useEffect(() => {
-    const list = assessmentType === "pam" ? maturityStandards : controlStandards;
-    setStandardId(list[0]?.id ?? "");
-  }, [assessmentType, standards]);
+  maturity?: {
+    total?: number;
+    achieved?: number;
+    partial?: number;
+    not_achieved?: number;
+  };
 
-  async function load() {
-    if (!standardId) return;
-    setLoading(true); setError("");
-    try {
-      if (assessmentType === "pam") {
-        const r = await apiFetch(`/matrix/pam?standard_id=${standardId}`); const b = await r.json();
-        if (!r.ok) throw new Error(b?.detail || "Canonical PAM could not be loaded.");
-        setPam(b); setControls([]); setExpanded(b.categories?.map((c: Category) => c.id) ?? []);
-      } else {
-        const r = await apiFetch(`/matrix/?standard_id=${standardId}`); const b = await r.json();
-        if (!r.ok) throw new Error(b?.detail || "Compliance matrix could not be loaded.");
-        setControls(Array.isArray(b?.rows) ? b.rows : Array.isArray(b) ? b : []); setPam(null);
-      }
-    } catch (e) { setError(e instanceof Error ? e.message : "Matrix could not be loaded."); }
-    finally { setLoading(false); }
+  controls?: {
+    total?: number;
+    covered?: number;
+    partial?: number;
+    not_covered?: number;
+  };
+
+  evidence?: {
+    total?: number;
+    approved?: number;
+    pending?: number;
+    uploaded?: number;
+    rejected?: number;
+    draft?: number;
+    linked?: number;
+  };
+
+  risk?: {
+    total?: number;
+    critical?: number;
+    high?: number;
+    medium?: number;
+    low?: number;
+  };
+};
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+function getEvidenceAssurance(kpi: MatrixKpi | null) {
+  const total = kpi?.evidence?.total ?? 0;
+
+  if (!total) return 0;
+
+  return Math.round(
+    ((kpi?.evidence?.approved ?? 0) / total) * 100
+  );
+}
+
+function getRiskExposure(kpi: MatrixKpi | null) {
+  return (
+    (kpi?.risk?.critical ?? 0) +
+    (kpi?.risk?.high ?? 0)
+  );
+}
+
+function getMaturityStatus(kpi: MatrixKpi | null) {
+  const total = kpi?.maturity?.total ?? 0;
+
+  if (!total) {
+    return {
+      total: 0,
+      achieved: 0,
+      partial: 0,
+      notAchieved: 0,
+    };
   }
 
-  useEffect(() => { if (standardId) load(); }, [standardId, assessmentType]);
+  return {
+    total,
+    achieved: kpi?.maturity?.achieved ?? 0,
+    partial: kpi?.maturity?.partial ?? 0,
+    notAchieved: kpi?.maturity?.not_achieved ?? 0,
+  };
+}
+function getControlCoverage(kpi: MatrixKpi | null) {
+  const total = kpi?.controls?.total ?? 0;
+
+  if (!total) return 0;
+
+  const covered =
+    (kpi?.controls?.covered ?? 0) +
+    (kpi?.controls?.partial ?? 0);
+
+  return Number(
+    ((covered / total) * 100).toFixed(1)
+  );
+}
+export default function MatrixPage() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [mode, setMode] = useState<Mode>("control");
+
+  const [selectedRow, setSelectedRow] =
+    useState<any | null>(null);
+
+  const [assessmentType, setAssessmentType] =
+    useState<Mode>("control");
+
+  const [standardId, setStandardId] =
+    useState<number | null>(null);
+
+  const [standards, setStandards] =
+    useState<StandardOption[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [kpi, setKpi] =
+    useState<MatrixKpi | null>(null);
+
+  const [adoption, setAdoption] =
+    useState<FrameworkAdoption | null>(null);
+
+  const [adoptionVersionCode, setAdoptionVersionCode] =
+    useState<string | null>(null);
+
+  const [adoptionVersionStatus, setAdoptionVersionStatus] =
+    useState<string | null>(null);
+
+  const [adoptionLoading, setAdoptionLoading] =
+    useState(false);
+
+
+  const [token, setToken] =
+    useState("");
+
+
+  useEffect(() => {
+    if (typeof window === "undefined")
+      return;
+
+    setToken(
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("token") ||
+      ""
+    );
+  }, []);
+
+
+  const filteredStandards = useMemo(() => {
+    const expectedType =
+      assessmentType === "control"
+        ? "CONTROL_BASED"
+        : "MATURITY_BASED";
+
+    return standards.filter(
+      (standard) =>
+        String(standard.type ?? "").toUpperCase() === expectedType
+    );
+  }, [standards, assessmentType]);
+
+
+  const selectedStandard = useMemo(() => {
+    if (standardId === null)
+      return null;
+
+    return standards.find(
+      (s) => s.id === standardId
+    ) ?? null;
+
+  }, [standardId, standards]);
+useEffect(() => {
+
+    if (!token)
+      return;
+
+    async function loadStandards(){
+
+      try{
+
+        const res =
+          await fetch(
+            `${API_BASE}/standards/`,
+            {
+              headers:{
+                Authorization:`Bearer ${token}`
+              }
+            }
+          );
+
+        const data =
+          await res.json();
+
+        setStandards(
+          Array.isArray(data)
+            ? data.filter(
+                (s: any) =>
+                  s.type === "CONTROL_BASED" ||
+                  s.type === "MATURITY_BASED"
+              )
+            : []
+        );
+
+      }catch(err){
+
+        console.error(
+          "standards load failed",
+          err
+        );
+
+        setStandards([]);
+
+      }
+
+    }
+
+    loadStandards();
+
+  },[token]);
+useEffect(() => {
+    setStandardId(null);
+    setRows([]);
+    setKpi(null);
+    setAdoption(null);
+    setAdoptionVersionCode(null);
+  }, [assessmentType]);
+
+
+  useEffect(() => {
+    if (!token || standardId === null) {
+      setAdoption(null);
+      setAdoptionVersionCode(null);
+      return;
+    }
+
+    async function loadAdoption() {
+      try {
+        setAdoptionLoading(true);
+
+        const adoptionRes = await fetch(
+          `${API_BASE}/framework/standards/${standardId}/adoption`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!adoptionRes.ok) {
+          throw new Error(
+            `Adoption request failed: ${adoptionRes.status}`
+          );
+        }
+
+        const adoptionData = await adoptionRes.json();
+
+        const adoptions: FrameworkAdoption[] =
+          Array.isArray(adoptionData)
+            ? adoptionData
+            : [];
+
+        const activeAdoption =
+          adoptions.find(
+            (item) =>
+              String(item.status ?? "").toUpperCase() === "ACTIVE"
+          ) ?? null;
+
+        setAdoption(activeAdoption);
+
+        if (!activeAdoption) {
+          setAdoptionVersionCode(null);
+          return;
+        }
+
+        const versionsRes = await fetch(
+          `${API_BASE}/framework/standards/${standardId}/versions`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!versionsRes.ok) {
+          throw new Error(
+            `Version request failed: ${versionsRes.status}`
+          );
+        }
+
+        const versionsData = await versionsRes.json();
+
+        const versions = Array.isArray(versionsData)
+          ? versionsData
+          : Array.isArray(versionsData?.versions)
+            ? versionsData.versions
+            : [];
+
+        const adoptedVersion = versions.find(
+          (version: any) =>
+            Number(version.id) ===
+            Number(activeAdoption.standard_version_id)
+        );
+
+        setAdoptionVersionCode(
+          adoptedVersion?.version_code ??
+          adoptedVersion?.version ??
+          null
+        );
+
+        setAdoptionVersionStatus(
+          adoptedVersion?.status
+            ? String(adoptedVersion.status).toUpperCase()
+            : null
+        );
+      } catch (err) {
+        console.error(
+          "framework adoption load failed",
+          err
+        );
+
+        setAdoption(null);
+        setAdoptionVersionCode(null);
+      } finally {
+        setAdoptionLoading(false);
+      }
+    }
+
+    loadAdoption();
+  }, [token, standardId]);
+
+
+  useEffect(() => {
+    if (!token || standardId === null)
+      return;
+
+    async function loadMatrix(){
+
+      try{
+
+        setLoading(true);
+
+        const url =
+          `${API_BASE}/matrix/?standard_id=${standardId}`;
+
+
+        const res =
+          await fetch(
+            url,
+            {
+              headers:{
+                Authorization:`Bearer ${token}`
+              }
+            }
+          );
+
+
+        const data =
+          await res.json();
+
+
+        const resolvedRows = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.rows)
+            ? data.rows
+            : [];
+
+        setRows(resolvedRows);
+
+        setMode(
+          data?.mode === "maturity"
+            ? "maturity"
+            : "control"
+        );
+
+
+      }catch(err){
+
+        console.error(
+          "matrix load failed",
+          err
+        );
+
+        setRows([]);
+
+      }
+      finally{
+        setLoading(false);
+      }
+
+    }
+
+
+    loadMatrix();
+
+  },[
+    token,
+    standardId
+  ]);
+useEffect(() => {
+
+    if (!token || standardId === null) {
+      setKpi(null);
+      return;
+    }
+
+    async function loadKpi(){
+
+      try{
+        const url =
+          `${API_BASE}/matrix/kpi?standard_id=${standardId}`;
+
+
+        const res =
+          await fetch(
+            url,
+            {
+              headers:{
+                Authorization:`Bearer ${token}`
+              }
+            }
+          );
+
+
+        setKpi(
+          await res.json()
+        );
+
+
+      }catch(err){
+
+        console.error(
+          "kpi load failed",
+          err
+        );
+
+        setKpi(null);
+
+      }
+
+    }
+
+
+    loadKpi();
+
+  },[
+    token,
+    standardId
+  ]);
+
+
+  const instancesHref =
+    standardId === null
+      ? "/matrix/instances"
+      : `/matrix/instances?standard_id=${standardId}`;
+  return (
+    <div className="min-h-full bg-slate-50 p-8 text-slate-900">
+
+      <div className="mx-auto max-w-[1500px] space-y-6">
+
+
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+
+            <div>
+              <div className="text-xs uppercase tracking-widest text-slate-400">
+                Compliance Intelligence Platform
+              </div>
+
+              <h1 className="mt-2 text-2xl font-semibold">
+                Compliance Matrix
+              </h1>
+
+              <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-600">
+                <span className="font-medium text-slate-800">
+                  {selectedStandard?.title || selectedStandard?.code || "Standard"}
+                </span>
+
+                <span className="text-slate-300">?</span>
+
+                <span>
+                  {adoptionVersionCode
+                    ? `Version ${adoptionVersionCode}`
+                    : "Version not resolved"}
+                </span>
+
+                {adoptionVersionStatus && (
+                  <>
+                    <span className="text-slate-300">?</span>
+                    <span className="font-medium text-slate-700">
+                      {adoptionVersionStatus}
+                    </span>
+                  </>
+                )}
+
+                {adoption && (
+                  <>
+                    <span className="text-slate-300">?</span>
+                    <span className="font-semibold text-emerald-700">
+                      {String(adoption.status).toUpperCase()}
+                    </span>
+                  </>
+                )}
+
+                {!adoption && !adoptionLoading && (
+                  <>
+                    <span className="text-slate-300">?</span>
+                    <span className="font-medium text-amber-700">
+                      No Active Adoption
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Tenant operational compliance view for the adopted framework version.
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+
+                <span className="rounded-full border px-3 py-1 text-xs">
+                  Mode: {mode === "control" ? "Control Based" : "Maturity Based"}
+                </span>
+
+                {selectedStandard && (
+                  <span className="rounded-full border px-3 py-1 text-xs">
+                    {selectedStandard.code}
+                  </span>
+                )}
+
+                {adoptionVersionCode && (
+                  <span className="rounded-full border px-3 py-1 text-xs">
+                    Version: {adoptionVersionCode}
+                  </span>
+                )}
+
+                {adoption && (
+                  <span className="rounded-full border px-3 py-1 text-xs">
+                    Adoption: #{adoption.id}
+                  </span>
+                )}
+
+                {adoption && (
+                  <span className="rounded-full border px-3 py-1 text-xs">
+                    {String(adoption.status).toUpperCase()}
+                  </span>
+                )}
+
+                <span className="rounded-full border px-3 py-1 text-xs">
+                  Rows: {rows.length}
+                </span>
+
+              </div>
+
+            </div>
+
+
+            <div className="flex flex-col items-stretch gap-3 sm:items-end">
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+
+                <div className="min-w-[190px]">
+                  <label
+                    htmlFor="matrix-assessment-type"
+                    className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+                  >
+                    Assessment Type
+                  </label>
+
+                  <select
+                    id="matrix-assessment-type"
+                    value={assessmentType}
+                    onChange={(e) =>
+                      setAssessmentType(e.target.value as Mode)
+                    }
+                    className="h-9 w-full border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-slate-500 focus:ring-1 focus:ring-slate-300"
+                  >
+                    <option value="control">
+                      Control Based
+                    </option>
+
+                    <option value="maturity">
+                      Maturity Based
+                    </option>
+                  </select>
+                </div>
+
+
+                <div className="min-w-[220px]">
+                  <label
+                    htmlFor="matrix-standard"
+                    className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+                  >
+                    Standard
+                  </label>
+
+                  <select
+                    id="matrix-standard"
+                    value={standardId ?? ""}
+                    onChange={(e) => {
+                      const value = e.target.value;
+
+                      setStandardId(
+                        value ? Number(value) : null
+                      );
+                    }}
+                    className="h-9 w-full border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-slate-500 focus:ring-1 focus:ring-slate-300"
+                  >
+                    <option value="">
+                      Select standard
+                    </option>
+
+                    {filteredStandards.map((standard) => (
+                      <option
+                        key={standard.id}
+                        value={standard.id}
+                      >
+                        {standard.code}
+                        {standard.title
+                          ? ` — ${standard.title}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+              </div>
+
+
+              <div className="flex flex-wrap justify-end gap-2">
+
+                <Link
+                  href={instancesHref}
+                  className="inline-flex h-9 items-center border border-slate-300 bg-white px-3 text-xs font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                  Matrix Instances
+                </Link>
+
+
+                <Link
+                  href="/matrix/builder"
+                  className="inline-flex h-9 items-center bg-slate-900 px-3 text-xs font-medium text-white transition hover:bg-slate-800"
+                >
+                  Matrix Builder
+                </Link>
+
+              </div>
+
+            </div>
+
+
+          </div>
+
+        </div>
+
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+
+  <KpiCard
+    title={mode === "maturity" ? "Maturity Health" : "Compliance Health"}
+    value={`${kpi?.compliance_percentage ?? 0}%`}
+  />
+
+  <KpiCard
+    title={mode === "maturity" ? "Achieved Practices" : "Evidence Assurance"}
+    value={
+      mode === "maturity"
+        ? getMaturityStatus(kpi).achieved
+        : `${getEvidenceAssurance(kpi)}%`
+    }
+  />
+
+  <KpiCard
+    title={mode === "maturity" ? "Partial Practices" : "Risk Exposure"}
+    value={
+      mode === "maturity"
+        ? getMaturityStatus(kpi).partial
+        : getRiskExposure(kpi)
+    }
+  />
+
+  <KpiCard
+    title={mode === "maturity" ? "Not Achieved" : "Control Coverage"}
+    value={
+      mode === "maturity"
+        ? getMaturityStatus(kpi).notAchieved
+        : `${getControlCoverage(kpi)}%`
+    }
+  />
+
+</div>
+
+<div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+
+
+          {loading ? (
+
+            <div className="p-10 text-center text-sm text-slate-500">
+              Loading compliance intelligence...
+            </div>
+
+          ) : rows.length === 0 ? (
+
+            <div className="p-10 text-center">
+
+              <div className="text-lg font-semibold">
+                No Compliance Matrix Available
+              </div>
+
+              <p className="mt-2 text-sm text-slate-500">
+                Generate the matrix from the standard structure before assessment.
+              </p>
+
+
+              <Link
+                href="/matrix/builder"
+                className="inline-block mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white"
+              >
+                Build Matrix
+              </Link>
+
+            </div>
+
+          ) : (
+
+            <ComplianceMatrixTable
+              rows={rows}
+              mode={mode}
+              onView={(row:any)=>{
+                setSelectedRow(row);
+              }}
+            />
+
+          )}
+
+
+        </div>
+
+
+
+        <ComplianceWorkspaceDrawer
+          open={selectedRow !== null}
+          controlId={selectedRow?.control_id ?? null}
+          row={selectedRow}
+          mode={mode}
+          onClose={() => setSelectedRow(null)}
+        />
+
+
+      </div>
+
+    </div>
+  );
+}
+
+
+
+function KpiCard({
+  title,
+  value,
+}:{
+  title:string;
+  value:any;
+}){
 
   return (
-    <main className="min-h-full bg-slate-50 px-6 py-7 lg:px-8">
-      <div className="mx-auto max-w-[1700px] space-y-6">
-        <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><Layers3 className="h-4 w-4" /> Compliance Management</div><h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Compliance Matrix</h1><p className="mt-1 text-sm text-slate-500">Operational matrix view. For maturity frameworks, the matrix displays the canonical PAM structure; assessment results live in PAM Assessment.</p></div>
-          <div className="flex gap-2"><Link href="/matrix/builder" className="inline-flex h-9 items-center gap-2 bg-slate-950 px-4 text-sm font-semibold text-white">Matrix Builder <ArrowRight className="h-4 w-4" /></Link><Link href="/matrix/instances" className="inline-flex h-9 items-center gap-2 border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700">Instances</Link></div>
-        </header>
 
-        <section className="grid gap-4 border border-slate-200 bg-white p-5 lg:grid-cols-[220px_1fr_auto] lg:items-end">
-          <div><label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">View</label><select value={assessmentType} onChange={e => setAssessmentType(e.target.value as "control" | "pam")} className="h-10 w-full border border-slate-300 bg-white px-3 text-sm"><option value="pam">PAM / Maturity</option><option value="control">Control Based</option></select></div>
-          <div><label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Framework</label><select value={standardId} onChange={e => setStandardId(e.target.value ? Number(e.target.value) : "")} className="h-10 w-full border border-slate-300 bg-white px-3 text-sm"><option value="">Select framework</option>{(assessmentType === "pam" ? maturityStandards : controlStandards).map(s => <option key={s.id} value={s.id}>{s.code} — {s.title || s.code}</option>)}</select></div>
-          <button onClick={load} disabled={!standardId || loading} className="inline-flex h-10 items-center justify-center gap-2 border border-slate-300 bg-white px-5 text-sm font-medium disabled:opacity-50"><RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh</button>
-        </section>
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 
-        {error && <div className="border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
-
-        {pam && <>
-          <section className="grid gap-3 md:grid-cols-3 lg:grid-cols-6">{[["Framework", pam.standard.code], ["Version", pam.version.version_code], ["Model", pam.framework_model.code], ["Categories", pam.counts.categories], ["Groups", pam.counts.groups], ["Processes", pam.counts.processes]].map(([label, value]) => <div key={String(label)} className="border border-slate-200 bg-white p-4"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-2 font-semibold text-slate-950">{value}</div></div>)}</section>
-          <section className="border border-slate-200 bg-white"><div className="border-b border-slate-200 bg-slate-50 p-5"><h2 className="font-semibold">Canonical PAM Process Dimension</h2><p className="mt-1 text-xs text-slate-500">Definition snapshot only — no capability ratings, evidence, gaps or assessment status are stored here.</p></div>{pam.categories.map(category => { const open = expanded.includes(category.id); return <div key={category.id} className="border-b border-slate-200 last:border-b-0"><button onClick={() => setExpanded(x => open ? x.filter(id => id !== category.id) : [...x, category.id])} className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-slate-50">{open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}<span className="font-mono text-sm font-semibold text-blue-700">{category.code}</span><span className="font-semibold">{category.name}</span><span className="ml-auto text-xs text-slate-500">{category.groups.length} groups</span></button>{open && <div className="bg-slate-50/50">{category.groups.map(group => <div key={group.id} className="border-t border-slate-100"><div className="flex items-center gap-3 px-12 py-3"><span className="font-mono text-xs font-semibold">{group.code}</span><span className="text-sm font-medium">{group.name}</span><span className="ml-auto text-xs text-slate-500">{group.processes.length} processes</span></div><div className="grid gap-2 px-12 pb-4 lg:grid-cols-2">{group.processes.map(p => <div key={p.id} className="border border-slate-200 bg-white p-4"><div className="flex items-center gap-2"><span className="font-mono text-xs font-semibold text-blue-700">{p.code}</span><span className="text-sm font-semibold">{p.name}</span></div>{p.purpose && <p className="mt-2 text-xs leading-5 text-slate-500">{p.purpose}</p>}<div className="mt-3 flex gap-2 text-[10px] text-slate-500"><span className="rounded border px-2 py-1">{p.outcomes.length} outcomes</span><span className="rounded border px-2 py-1">{p.base_practices.length} base practices</span><span className="rounded border px-2 py-1">{p.work_products.length} work products</span></div></div>)}</div></div>)}</div>}</div>; })}</section>
-          <div className="flex justify-end"><Link href="/maturity/workspace" className="inline-flex items-center gap-2 border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700">Open PAM Assessment Workspace <ArrowRight className="h-4 w-4" /></Link></div>
-        </>}
-
-        {assessmentType === "control" && <section className="overflow-hidden border border-slate-200 bg-white">{loading ? <div className="p-8 text-sm text-slate-500">Loading...</div> : controls.length === 0 ? <div className="p-12 text-center text-sm text-slate-500">No controls found.</div> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-4 py-3">Clause</th><th className="px-4 py-3">Requirement</th><th className="px-4 py-3">Control</th><th className="px-4 py-3">Coverage</th><th className="px-4 py-3">Risk</th></tr></thead><tbody className="divide-y divide-slate-100">{controls.map((r, i) => <tr key={`${r.control_code}-${i}`}><td className="px-4 py-3 font-mono text-xs">{r.clause_code || "—"}</td><td className="px-4 py-3 font-mono text-xs">{r.requirement_code || "—"}</td><td className="px-4 py-3"><div className="font-mono text-xs font-semibold">{r.control_code || "—"}</div><div className="mt-1 text-xs text-slate-500">{r.control_description || "—"}</div></td><td className="px-4 py-3 text-xs">{r.coverage_status || "—"}</td><td className="px-4 py-3 text-xs">{r.risk_level || "—"}</td></tr>)}</tbody></table></div>}</section>}
+      <div className="text-xs uppercase tracking-wider text-slate-400">
+        {title}
       </div>
-    </main>
+
+
+      <div className="mt-3 text-3xl font-semibold text-slate-900">
+        {value}
+      </div>
+
+
+    </div>
+
   );
+
 }
