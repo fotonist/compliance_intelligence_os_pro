@@ -18,6 +18,7 @@ from app.api.executive_summary import router as executive_summary_router
 from app.routes.matrix import router as matrix_router
 from app.routes.pam_matrix import router as pam_matrix_router
 from app.routes.pam_assessments import router as pam_assessments_router
+from app.routes.pam_assessment_workspace_v2 import router as pam_assessment_workspace_v2_router
 from app.routes.matrix_view import router as matrix_view_router
 from app.routes.risk import router as risk_router
 from app.routes.risk_create import router as risk_create_router
@@ -152,6 +153,7 @@ application.include_router(process_applicable_controls_router)
 application.include_router(matrix_router)
 application.include_router(pam_matrix_router)
 application.include_router(pam_assessments_router)
+application.include_router(pam_assessment_workspace_v2_router)
 application.include_router(matrix_view_router)
 application.include_router(assessments.router)
 application.include_router(kpi_router)
