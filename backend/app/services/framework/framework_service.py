@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -9,6 +10,10 @@ from app.models.requirements import Requirement
 from app.models.controls import Control
 from app.models.standard_process_area import StandardProcessArea
 from app.models.standard_practice import StandardPractice
+from app.models.framework_model import FrameworkModel
+from app.models.pam_process_category import PamProcessCategory
+from app.models.pam_definition import PamProcessGroup, PamProcess
+from app.models.pam_capability import PamCapabilityLevel, PamProcessAttribute
 
 from app.services.framework.framework_resolution_service import (
     FrameworkResolutionService,
@@ -40,6 +45,9 @@ class FrameworkService:
     Framework structure, standard.type değerine göre çözülür:
       - CONTROL_BASED
       - MATURITY_BASED
+
+    ISO/IEC 15504 canonical PAM yapısı için legacy
+    StandardProcessArea/StandardPractice projection'ı kullanılmaz.
     """
 
     def __init__(self, db: Session):
@@ -165,6 +173,222 @@ class FrameworkService:
         }
 
     def _build_maturity_structure(
+        self,
+        standard: Standard,
+        version: StandardVersion,
+    ) -> Dict[str, Any]:
+        """Build the canonical PAM projection for maturity-based standards.
+
+        The existing framework route still serializes the historical
+        process_areas/practices fields.  To avoid changing that public
+        contract in one step, canonical categories are projected into
+        process_areas, process groups into nested practices, and canonical
+        processes into the top-level practices collection.  The frontend can
+        therefore render Category -> Group -> Process without using the
+        legacy StandardProcessArea/StandardPractice tables.
+        """
+        pam = (
+            self.db.query(FrameworkModel)
+            .filter(
+                FrameworkModel.standard_version_id == version.id,
+                FrameworkModel.model_type == "PAM",
+                FrameworkModel.is_canonical.is_(True),
+            )
+            .order_by(FrameworkModel.id.asc())
+            .first()
+        )
+
+        if pam is None:
+            return self._build_legacy_maturity_structure(standard, version)
+
+        categories = (
+            self.db.query(PamProcessCategory)
+            .filter(PamProcessCategory.framework_model_id == pam.id)
+            .order_by(
+                PamProcessCategory.sort_order.asc(),
+                PamProcessCategory.id.asc(),
+            )
+            .all()
+        )
+
+        groups = (
+            self.db.query(PamProcessGroup)
+            .join(
+                PamProcessCategory,
+                PamProcessGroup.category_id == PamProcessCategory.id,
+            )
+            .filter(PamProcessCategory.framework_model_id == pam.id)
+            .order_by(
+                PamProcessGroup.category_id.asc(),
+                PamProcessGroup.sort_order.asc(),
+                PamProcessGroup.id.asc(),
+            )
+            .all()
+        )
+
+        processes = (
+            self.db.query(PamProcess)
+            .filter(PamProcess.framework_model_id == pam.id)
+            .order_by(
+                PamProcess.process_group_id.asc(),
+                PamProcess.sort_order.asc(),
+                PamProcess.id.asc(),
+            )
+            .all()
+        )
+
+        groups_by_category: Dict[int, List[Any]] = {}
+        for group in groups:
+            adapter = SimpleNamespace(
+                id=group.id,
+                code=group.code,
+                name=group.name,
+                description=group.description,
+                sort_order=group.sort_order,
+                process_area_id=group.category_id,
+                title=group.name,
+                text=group.description,
+                guidance=None,
+                level=None,
+                is_active=True,
+            )
+            groups_by_category.setdefault(group.category_id, []).append(adapter)
+
+        category_adapters = []
+        for category in categories:
+            category_adapters.append(
+                SimpleNamespace(
+                    id=category.id,
+                    code=category.code,
+                    name=category.name,
+                    description=category.description,
+                    sort_order=category.sort_order,
+                )
+            )
+
+        process_adapters = []
+        for process in processes:
+            process_adapters.append(
+                SimpleNamespace(
+                    id=process.id,
+                    code=process.code,
+                    title=process.name,
+                    text=process.description,
+                    guidance=process.purpose,
+                    level=None,
+                    process_area_id=process.process_group_id,
+                    is_active=True,
+                    sort_order=process.sort_order,
+                )
+            )
+
+        # Capability dimension is included in the service result for the
+        # canonical framework layer. The current route can be extended to
+        # expose this collection without changing the process projection.
+        capability_model = (
+            self.db.query(FrameworkModel)
+            .filter(
+                FrameworkModel.standard_version_id == version.id,
+                FrameworkModel.model_type == "CMF",
+                FrameworkModel.is_canonical.is_(True),
+            )
+            .order_by(FrameworkModel.id.asc())
+            .first()
+        )
+
+        capability_levels: List[Dict[str, Any]] = []
+        process_attributes: List[Dict[str, Any]] = []
+        if capability_model:
+            levels = (
+                self.db.query(PamCapabilityLevel)
+                .filter(PamCapabilityLevel.framework_model_id == capability_model.id)
+                .order_by(
+                    PamCapabilityLevel.level.asc(),
+                    PamCapabilityLevel.id.asc(),
+                )
+                .all()
+            )
+            capability_levels = [
+                {
+                    "id": level.id,
+                    "level": level.level,
+                    "code": level.code,
+                    "name": level.name,
+                    "description": level.description,
+                    "sort_order": level.sort_order,
+                }
+                for level in levels
+            ]
+
+            if levels:
+                level_ids = [level.id for level in levels]
+                attributes = (
+                    self.db.query(PamProcessAttribute)
+                    .filter(PamProcessAttribute.capability_level_id.in_(level_ids))
+                    .order_by(
+                        PamProcessAttribute.capability_level_id.asc(),
+                        PamProcessAttribute.sort_order.asc(),
+                        PamProcessAttribute.id.asc(),
+                    )
+                    .all()
+                )
+                process_attributes = [
+                    {
+                        "id": attribute.id,
+                        "capability_level_id": attribute.capability_level_id,
+                        "code": attribute.code,
+                        "name": attribute.name,
+                        "description": attribute.description,
+                        "sort_order": attribute.sort_order,
+                    }
+                    for attribute in attributes
+                ]
+
+        return {
+            "standard": standard,
+            "version": version,
+            "structure_type": "MATURITY_BASED",
+            "framework_model": {
+                "id": pam.id,
+                "model_type": pam.model_type,
+                "code": pam.code,
+                "name": pam.name,
+                "description": pam.description,
+            },
+            "clauses": [],
+            "requirements": [],
+            "controls": [],
+            "process_areas": [
+                SimpleNamespace(
+                    id=category.id,
+                    code=category.code,
+                    name=category.name,
+                    description=category.description,
+                    sort_order=category.sort_order,
+                    _nested_practices=groups_by_category.get(category.id, []),
+                )
+                for category in categories
+            ],
+            "practices": process_adapters,
+            "process_groups": [
+                {
+                    "id": group.id,
+                    "category_id": group.category_id,
+                    "code": group.code,
+                    "name": group.name,
+                    "description": group.description,
+                    "sort_order": group.sort_order,
+                }
+                for group in groups
+            ],
+            "process_count": len(processes),
+            "process_group_count": len(groups),
+            "process_category_count": len(categories),
+            "capability_levels": capability_levels,
+            "process_attributes": process_attributes,
+        }
+
+    def _build_legacy_maturity_structure(
         self,
         standard: Standard,
         version: StandardVersion,
