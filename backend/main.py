@@ -7,6 +7,9 @@ from sqlalchemy import text
 from app.core.database import engine, SessionLocal
 from app.db.base import Base
 from app.api.compliance_object import router as compliance_object_router
+# ==============================
+# ROUTER IMPORTS
+# ==============================
 from app.routes.user import router as user_router
 from app.routes.process_applicable_controls import router as process_applicable_controls_router
 from app.routes.integrations import router as integrations_router
@@ -84,6 +87,11 @@ from app.routes.governance_committee import router as governance_committee_route
 from app.routes.governance_approval import router as governance_approval_router
 from app.routes.benchmarking import router as benchmarking_router
 
+
+# ==============================
+# MODELS (metadata load safety)
+# ==============================
+
 import app.models.user
 import app.models.role
 import app.models.risks
@@ -108,12 +116,26 @@ import app.models.actions
 import app.models.requirements
 import app.models.pam_indicator_evaluation
 
+# ==============================
+# SEED
+# ==============================
+
 from app.seed.risk_assessment_seed import seed_risk_assessment_questions
 from app.seed.iso15504_2006 import seed_iso15504_2006
+
+# ==============================
+# APP INIT
+# ==============================
 
 application = FastAPI()
 app = application
 
+# ==============================
+# CORS
+# ==============================
+
+# Vercel preview URLs are generated dynamically. Allow only this application's
+# Vercel hostname family instead of maintaining a hard-coded preview list.
 application.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -145,8 +167,14 @@ def startup():
     finally:
         db.close()
 
+# ==============================
+# ROUTER INCLUDES
+# ==============================
+
 application.include_router(auth.router, tags=["auth"])
 application.include_router(process_applicable_controls_router)
+# Matrix generation/preview must win the shared GET /matrix route. The legacy
+# matrix_view router is registered after the canonical matrix router.
 application.include_router(matrix_router)
 application.include_router(matrix_view_router)
 application.include_router(assessments.router)
@@ -159,6 +187,9 @@ application.include_router(user_router)
 application.include_router(company_tasks_router)
 application.include_router(remediation_router)
 application.include_router(task_sync_router)
+# Register the version-aware create endpoint before the legacy evidence router.
+# This preserves all existing evidence routes while making POST /evidences and
+# POST /company/evidences resolve through the canonical standard-version contract.
 application.include_router(evidence_create_fix_router)
 application.include_router(evidence_create_fix_router, prefix="/company")
 application.include_router(evidence_router)
@@ -224,8 +255,40 @@ application.include_router(governance_committee_router)
 application.include_router(governance_approval_router)
 application.include_router(benchmarking_router)
 
+
 @application.get("/")
 def health():
     return {"status": "ok"}
 
 @application.get("/health/intelligence")
+def intelligence_health():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {"status": "active", "engine": "intelligence"}
+    except Exception:
+        return {"status": "offline", "engine": "intelligence"}
+
+
+
+
+
+import app.models.governance_procedure
+
+
+
+
+
+
+import app.models.governance_meeting
+import app.models.governance_meeting_participant
+import app.models.governance_meeting_agenda_item
+import app.models.governance_meeting_decision
+import app.models.governance_meeting_action
+import app.models.governance_meeting_history
+import app.models.governance_committee
+import app.models.governance_committee_history
+import app.models.governance_approval
+
+
+
