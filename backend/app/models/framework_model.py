@@ -21,7 +21,7 @@ class FrameworkModel(Base):
     description = Column(Text, nullable=True)
     status = Column(String(30), nullable=False, default="draft", index=True)
     is_canonical = Column(Boolean, nullable=False, default=True)
-    metadata = Column(JSON, nullable=True)
+    model_metadata = Column("metadata", JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime,
