@@ -50,6 +50,10 @@ from app.models.pam_capability import (
     PamGenericWorkProduct,
 )
 
+# --- Process ---
+from app.models.process import Process
+from app.models.process_pam_mapping import ProcessPamMapping
+
 # --- Maturity / Standard ---
 from app.models.standard_process_area import StandardProcessArea
 from app.models.standard_capability_level import StandardCapabilityLevel
