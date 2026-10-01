@@ -835,6 +835,9 @@ def evidences_paged(
     page_size: int = 10,
     control_id: int | None = None,
     task_id: int | None = None,
+    assessment_type: str | None = None,
+    standard_id: int | None = None,
+    standard_version_id: int | None = None,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
@@ -844,6 +847,21 @@ def evidences_paged(
         Evidence.tenant_id == user.tenant_id,
         Evidence.is_deleted == False,
     ]
+
+    if assessment_type is not None:
+        base_filter.append(
+            Evidence.assessment_type == assessment_type
+        )
+
+    if standard_id is not None:
+        base_filter.append(
+            Evidence.standard_id == standard_id
+        )
+
+    if standard_version_id is not None:
+        base_filter.append(
+            Evidence.standard_version_id == standard_version_id
+        )
 
     if control_id is not None:
         base_filter.append(
@@ -895,6 +913,7 @@ def evidences_paged(
             Evidence.control_id.label("control_id"),
             Evidence.requirement_id.label("requirement_id"),
             Evidence.standard_id.label("standard_id"),
+            Evidence.standard_version_id.label("standard_version_id"),
             file_count_sq.label("files_count"),
             risk_count_sq.label("related_risks_count"),
             Control.code.label("control_code"),
@@ -962,6 +981,7 @@ def evidences_paged(
                 "control_id": r.control_id,
                 "requirement_id": r.requirement_id,
                 "standard_id": r.standard_id,
+                "standard_version_id": r.standard_version_id,
                 "assessment_type": r.assessment_type,
                 "evidence_id": r.evidence_id,
                 "evidence_title": r.evidence_title,

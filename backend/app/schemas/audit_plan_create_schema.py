@@ -24,8 +24,11 @@ class AuditPlanSummary(BaseModel):
     name: str
     audit_type: str
     status: str
+    objective: Optional[str] = None
+    scope: Optional[str] = None
     process_id: Optional[int] = None
     standard_id: Optional[int] = None
+    standard_version_id: Optional[int] = None
     lead_auditor_id: Optional[int] = None
     planned_start: Optional[date] = None
     planned_end: Optional[date] = None

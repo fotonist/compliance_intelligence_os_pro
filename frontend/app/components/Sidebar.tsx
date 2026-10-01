@@ -1,22 +1,12 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import {
-  usePathname,
-  useRouter
-} from "next/navigation";
-import {
-  useEffect,
-  useState,
-  type ReactNode } from "react";
-import {
-  Plug,
-
-  BrainCircuit,
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import { BrainCircuit,
   Activity,
   AlertTriangle,
   BarChart3,
-  Bell,
   BookOpen,
   Building2,
   ClipboardCheck,
@@ -41,9 +31,8 @@ import {
   Workflow,
   ChevronDown,
   ChevronUp,
-  CheckCircle2,
-  UserCheck,
-  Wrench
+  Plug,
+  Bell,
 } from "lucide-react";
 import PremiumMenuItem from "./PremiumMenuItem";
 import { apiFetch } from "../lib/api";
@@ -107,6 +96,8 @@ export default function Sidebar() {
       setOpen("governance");
     } else if (pathname.startsWith("/intelligence")) {
       setOpen("intelligence");
+    } else if (pathname.startsWith("/maturity")) {
+      setOpen("maturity");
     } else if (
       pathname.startsWith("/risks") ||
       pathname.startsWith("/evidences") ||
@@ -300,23 +291,6 @@ export default function Sidebar() {
           {!collapsed && "Company Home"}
         </Link>
 
-        <Link
-          href="/notifications"
-          title="Notifications"
-          className={`mb-3 flex items-center rounded-lg py-2 text-sm font-semibold transition ${
-            collapsed
-              ? "justify-center px-2"
-              : "gap-2 px-3"
-          } ${
-            isActive("/notifications")
-              ? "bg-[#eaf1fb] text-[#0f2747]"
-              : "text-slate-700 hover:bg-slate-50"
-          }`}
-        >
-          <Bell size={17} />
-          {!collapsed && "Notifications"}
-        </Link>
-
         <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pr-1 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
           <Section
             title="FOUNDATION"
@@ -419,6 +393,7 @@ export default function Sidebar() {
           >
             <PremiumMenuItem label="Governance Dashboard" />
             <PremiumMenuItem label="Policies & Procedures" />
+            <PremiumMenuItem label="Roles & Responsibilities" />
             <PremiumMenuItem label="Compliance Obligations" />
             <PremiumMenuItem label="Decision Registers" />
             <PremiumMenuItem label="Governance Meetings" />
@@ -563,6 +538,80 @@ export default function Sidebar() {
 
             <PremiumMenuItem label="Data Explorer" />
           </Section>
+          <Section
+            title="MATURITY"
+            subtitle="Maturity Workspace"
+            icon={<Activity size={16} />}
+            id="maturity"
+            open={open}
+            toggle={sectionToggle}
+            collapsed={collapsed}
+          >
+            <Link
+              href="/maturity"
+              className={itemClass("/maturity")}
+            >
+              <LayoutDashboard size={14} />
+              Overview
+            </Link>
+
+            <Link
+              href="/maturity/workspace"
+              className={itemClass("/maturity/workspace")}
+            >
+              <ClipboardList size={14} />
+              Assessments
+            </Link>
+
+            <Link
+              href="/maturity/capability"
+              className={itemClass("/maturity/capability")}
+            >
+              <Gauge size={14} />
+              Capability
+            </Link>
+
+            <Link
+              href="/maturity/evidence"
+              className={itemClass("/maturity/evidence")}
+            >
+              <FolderIcon />
+              Evidence Coverage
+            </Link>
+
+            <Link
+              href="/maturity/internal-audit"
+              className={itemClass("/maturity/internal-audit")}
+            >
+              <ClipboardCheck size={14} />
+              Internal Audit
+            </Link>
+
+            <Link
+              href="/maturity/findings"
+              className={itemClass("/maturity/findings")}
+            >
+              <AlertTriangle size={14} />
+              Findings
+            </Link>
+
+            <Link
+              href="/maturity/follow-up-actions"
+              className={itemClass("/maturity/follow-up-actions")}
+            >
+              <Target size={14} />
+              Follow-up Actions
+            </Link>
+
+            <Link
+              href="/maturity/reports"
+              className={itemClass("/maturity/reports")}
+            >
+              <BarChart3 size={14} />
+              Reports
+            </Link>
+          </Section>
+
 
           <Section
             title="OPERATION"
@@ -616,10 +665,7 @@ export default function Sidebar() {
               Evidence Review
             </Link>
 
-            <PremiumMenuItem
-  label="Remediation Center"
-  icon={<Wrench size={14} />}
-/>
+            <PremiumMenuItem label="Remediation Center" />
             <PremiumMenuItem label="Action Management" />
 
             <Link
@@ -676,40 +722,19 @@ export default function Sidebar() {
               href="/audit/findings"
               className={itemClass("/audit/findings")}
             >
-
               <AlertTriangle size={14} />
               Findings / Nonconformity Management
             </Link>
- <Link
+
+            <Link
               href="/audit/report"
               className={itemClass("/audit/report")}
             >
-              <ClipboardList size={14} />
-              Audit Reports
+              <span>Audit Reports</span>
             </Link>
-
-           
-            <Link
-              href="/audit/corrective-actions"
-              className={itemClass("/audit/corrective-actions")}
-            >
-              <CheckCircle2 size={14} />
-              Follow-up Actions
-            </Link>
-            <Link
-              href="/audit/analytics"
-              className={itemClass("/audit/analytics")}
-            >
-              <BarChart3 size={14} />
-              Audit Analytics
-            </Link>
-            <Link
-              href="/audit/auditors"
-              className={itemClass("/audit/auditors")}
-            >
-              <UserCheck size={14} />
-              Auditor Management
-            </Link>
+            <PremiumMenuItem label="Follow-up Actions" />
+            <PremiumMenuItem label="Audit Analytics" />
+            <PremiumMenuItem label="Auditor Management" />
           </Section>
 
           <Section
@@ -738,38 +763,45 @@ export default function Sidebar() {
 
 
             <Link
-  href="/admin/roles"
-  className={itemClass("/admin/roles")}
->
-  <Users size={14} />
-  Roles & Permissions
-</Link>
+              href="/admin/roles"
+              className={itemClass("/admin/roles")}
+            >
+              <ShieldCheck size={14} />
+              Roles & Permissions
+            </Link>
+            <Link
+              href="/company/departments"
+              className={itemClass("/company/departments")}
+            >
+              <Building2 size={14} />
+              Departments
+            </Link>
 
             <Link
-  href="/admin/integrations"
-  className={itemClass("/admin/integrations")}
->
-  <Plug size={14} />
-  Integrations
-</Link>
+              href="/admin/integrations"
+              className={itemClass("/admin/integrations")}
+            >
+              <Plug size={14} />
+              Integrations
+            </Link>
             <Link
               href="/admin/notifications"
               className={itemClass("/admin/notifications")}
             >
               <Bell size={14} />
-              Notification Monitoring
+              Notifications
             </Link>
 
             <Link
-              href="/admin/logs"
-              className={itemClass("/admin/logs")}
+              href="/admin/audit-logs"
+              className={itemClass("/admin/audit-logs")}
             >
               <ClipboardCheck size={14} />
               Audit Logs
             </Link>
 
-            <PremiumMenuItem label="Data Management" />
-            <PremiumMenuItem label="Backup & Restore" />
+            
+            
 
             <Link
               href="/admin/licenses"
@@ -948,7 +980,6 @@ function FolderOpenIcon() {
     </svg>
   );
 }
-
 
 
 

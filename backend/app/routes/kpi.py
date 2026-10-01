@@ -25,7 +25,7 @@ def _get_uee_state(db: Session, tenant_id: int):
 
 
 # =====================================================
-# STRATEGIC KPI ??????????????????????????????????????? TENANT SAFE UEE
+# STRATEGIC KPI ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ TENANT SAFE UEE
 # =====================================================
 
 @router.get("/summary")
@@ -53,26 +53,17 @@ def kpi_summary(
 
     state = _get_uee_state(db, authenticated_tenant_id)
 
-    maturity_assessed = "maturity:no_active_assessment" not in state.warnings
-
     exposure_indices = {
         "risk": state.risk_index,
         "coverage": state.coverage_index,
-        "maturity": state.maturity_index if maturity_assessed else None,
+        "maturity": state.maturity_index,
         "evidence": state.evidence_index,
         "task_pressure": state.task_pressure_index,
     }
 
     health_indices = {
-        "risk": max(0.0, min(100.0, 100.0 - state.risk_index)),
-        "coverage": max(0.0, min(100.0, 100.0 - state.coverage_index)),
-        "maturity": (
-            max(0.0, min(100.0, 100.0 - state.maturity_index))
-            if maturity_assessed
-            else None
-        ),
-        "evidence": max(0.0, min(100.0, 100.0 - state.evidence_index)),
-        "task_pressure": max(0.0, min(100.0, 100.0 - state.task_pressure_index)),
+        name: max(0.0, min(100.0, 100.0 - value))
+        for name, value in exposure_indices.items()
     }
 
     return {
@@ -132,7 +123,7 @@ def kpi_summary_status(
 
 
 # =====================================================
-# COMPANY HOME TREND ??????????????????????????????????????? TENANT SAFE
+# COMPANY HOME TREND ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ TENANT SAFE
 # =====================================================
 
 @router.get("/trends")
@@ -193,7 +184,7 @@ def kpi_trends(
 
 
 # =====================================================
-# OPERATIONAL KPI ??????????????????????????????????????? MTTR
+# OPERATIONAL KPI ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ MTTR
 # =====================================================
 
 @router.get("/operations/mttr-trend")

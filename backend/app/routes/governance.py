@@ -268,221 +268,6 @@ def archive_policy(
     }
 
 # ==========================================================
-# ==========================================================
-# DOCUMENT CONTROL - MASTER DOCUMENT REGISTER
-# ==========================================================
-
-@router.get("/documents")
-def list_master_documents(
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    today = date.today()
-
-    procedures = db.execute(
-        select(GovernanceProcedure)
-        .where(
-            GovernanceProcedure.tenant_id == user.tenant_id,
-            GovernanceProcedure.is_deleted == False,
-        )
-        .order_by(
-            GovernanceProcedure.updated_at.desc()
-        )
-    ).scalars().all()
-
-    current_documents = db.execute(
-        select(GovernanceProcedureDocument)
-        .where(
-            GovernanceProcedureDocument.tenant_id == user.tenant_id,
-            GovernanceProcedureDocument.is_current == True,
-            GovernanceProcedureDocument.is_archived == False,
-        )
-        .order_by(
-            GovernanceProcedureDocument.uploaded_at.desc()
-        )
-    ).scalars().all()
-
-    document_by_procedure = {
-        document.procedure_id: document
-        for document in current_documents
-    }
-
-    control_counts = dict(
-        db.execute(
-            select(
-                GovernanceProcedureControl.procedure_id,
-                func.count(GovernanceProcedureControl.id),
-            )
-            .where(
-                GovernanceProcedureControl.tenant_id == user.tenant_id,
-            )
-            .group_by(
-                GovernanceProcedureControl.procedure_id,
-            )
-        ).all()
-    )
-
-    items = []
-
-    for procedure in procedures:
-        document = document_by_procedure.get(procedure.id)
-        next_review = procedure.review_date
-
-        if next_review is None:
-            review_status = "NOT_SCHEDULED"
-        else:
-            review_date = (
-                next_review.date()
-                if hasattr(next_review, "date")
-                else next_review
-            )
-
-            if review_date < today:
-                review_status = "OVERDUE"
-            elif review_date == today:
-                review_status = "DUE_TODAY"
-            else:
-                days_until_review = (review_date - today).days
-                review_status = (
-                    "DUE_SOON"
-                    if days_until_review <= 30
-                    else "CURRENT"
-                )
-
-        document_status = (
-            document.status
-            if document is not None
-            else None
-        )
-
-        if procedure.status == "expired":
-            register_status = "expired"
-        elif (
-            document_status == "approved"
-            and procedure.status == "approved"
-        ):
-            register_status = "effective"
-        elif document_status in {
-            "uploaded",
-            "under_review",
-            "submitted_for_review",
-        }:
-            register_status = "under_review"
-        elif procedure.status == "draft":
-            register_status = "draft"
-        elif procedure.status == "archived":
-            register_status = "archived"
-        else:
-            register_status = procedure.status
-
-        if document is not None:
-            last_updated = (
-                document.uploaded_at
-                or procedure.updated_at
-            )
-        else:
-            last_updated = procedure.updated_at
-
-        items.append(
-            {
-                "document_id": (
-                    document.id
-                    if document is not None
-                    else None
-                ),
-                "procedure_id": procedure.id,
-                "document_name": procedure.title,
-                "document_type": "Procedure",
-                "procedure_code": procedure.procedure_code,
-                "owner": {
-                    "id": (
-                        procedure.owner.id
-                        if procedure.owner
-                        else None
-                    ),
-                    "name": (
-                        procedure.owner.full_name
-                        if procedure.owner
-                        else None
-                    ),
-                },
-                "version": (
-                    document.version
-                    if document is not None
-                    else procedure.version
-                ),
-                "status": register_status,
-                "procedure_status": procedure.status,
-                "document_status": document_status,
-                "effective_date": procedure.effective_date,
-                "review_definition": procedure.review_definition,
-                "next_review": next_review,
-                "review_status": review_status,
-                "approver": {
-                    "id": (
-                        document.approver.id
-                        if document is not None
-                        and document.approver
-                        else None
-                    ),
-                    "name": (
-                        document.approver.full_name
-                        if document is not None
-                        and document.approver
-                        else None
-                    ),
-                },
-                "last_updated": last_updated,
-                "control_count": control_counts.get(
-                    procedure.id,
-                    0,
-                ),
-                "has_current_document": (
-                    document is not None
-                ),
-            }
-        )
-
-    summary = {
-        "master_documents": len(items),
-        "effective": sum(
-            1
-            for item in items
-            if item["status"] == "effective"
-        ),
-        "under_review": sum(
-            1
-            for item in items
-            if item["status"] == "under_review"
-        ),
-        "draft": sum(
-            1
-            for item in items
-            if item["status"] == "draft"
-        ),
-        "expired": sum(
-            1
-            for item in items
-            if item["status"] == "expired"
-        ),
-        "review_due_30d": sum(
-            1
-            for item in items
-            if item["review_status"]
-            in {
-                "DUE_TODAY",
-                "DUE_SOON",
-                "OVERDUE",
-            }
-        ),
-    }
-
-    return {
-        "items": items,
-        "total": len(items),
-        "summary": summary,
-    }
-
 # GOVERNANCE PROCEDURES
 # ==========================================================
 
@@ -1093,6 +878,210 @@ def upload_procedure_document(
         "status": document.status,
         "is_current": document.is_current,
         "is_archived": document.is_archived,
+    }
+
+
+# ==========================================================
+# DOCUMENT CONTROL MASTER REGISTER
+# ==========================================================
+
+@router.get("/documents")
+def list_master_documents(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    from datetime import datetime, timedelta, timezone
+
+    procedures = db.execute(
+        select(GovernanceProcedure)
+        .where(
+            GovernanceProcedure.tenant_id == user.tenant_id,
+            GovernanceProcedure.is_deleted == False,
+        )
+        .order_by(
+            GovernanceProcedure.procedure_code.asc(),
+            GovernanceProcedure.id.asc(),
+        )
+    ).scalars().all()
+
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    due_limit = today + timedelta(days=30)
+
+    items = []
+
+    summary = {
+        "master_documents": 0,
+        "effective": 0,
+        "under_review": 0,
+        "draft": 0,
+        "expired": 0,
+        "review_due_30d": 0,
+    }
+
+    for procedure in procedures:
+        documents = list(procedure.documents or [])
+
+        current_documents = [
+            document
+            for document in documents
+            if document.is_current and not document.is_archived
+        ]
+
+        current_document = max(
+            current_documents,
+            key=lambda document: (
+                document.uploaded_at or datetime.min,
+                document.id or 0,
+            ),
+            default=None,
+        )
+
+        procedure_status = (
+            (procedure.status or "draft").strip().lower()
+        )
+
+        document_status = None
+        if current_document is not None:
+            document_status = (
+                (current_document.status or "uploaded").strip().lower()
+            )
+
+        if document_status == "under_review":
+            status = "under_review"
+        elif document_status == "approved":
+            status = "effective"
+        elif document_status == "rejected":
+            status = "draft"
+        elif current_document is not None and current_document.is_archived:
+            status = "archived"
+        elif procedure_status in {"approved", "effective", "published"}:
+            status = "effective"
+        elif procedure_status in {"under_review", "review"}:
+            status = "under_review"
+        elif procedure_status in {"archived", "inactive"}:
+            status = "archived"
+        else:
+            status = "draft"
+
+        effective_date = procedure.effective_date
+        review_date = procedure.review_date
+
+        effective_day = (
+            effective_date.date()
+            if effective_date is not None
+            else None
+        )
+
+        review_day = (
+            review_date.date()
+            if review_date is not None
+            else None
+        )
+
+        if effective_day is not None and effective_day > today:
+            if status == "effective":
+                status = "draft"
+
+        if review_day is None:
+            review_status = "not_scheduled"
+        elif review_day < today:
+            review_status = "overdue"
+            if status == "effective":
+                status = "expired"
+        elif review_day == today:
+            review_status = "due_today"
+        elif review_day <= due_limit:
+            review_status = "due_soon"
+        else:
+            review_status = "current"
+
+        owner = None
+        if procedure.owner is not None:
+            owner_name = (
+                getattr(procedure.owner, "full_name", None)
+                or getattr(procedure.owner, "name", None)
+                or getattr(procedure.owner, "username", None)
+                or getattr(procedure.owner, "email", None)
+            )
+            owner = {
+                "id": procedure.owner.id,
+                "name": owner_name,
+            }
+
+        approver = None
+        if current_document is not None and current_document.approver is not None:
+            approver_user = current_document.approver
+            approver_name = (
+                getattr(approver_user, "full_name", None)
+                or getattr(approver_user, "name", None)
+                or getattr(approver_user, "username", None)
+                or getattr(approver_user, "email", None)
+            )
+            approver = {
+                "id": approver_user.id,
+                "name": approver_name,
+            }
+
+        control_count = len(procedure.controls or [])
+
+        item = {
+            "document_id": (
+                current_document.id
+                if current_document is not None
+                else None
+            ),
+            "procedure_id": procedure.id,
+            "document_name": procedure.title,
+            "document_type": "Procedure",
+            "procedure_code": procedure.procedure_code or "",
+            "owner": owner,
+            "version": (
+                current_document.version
+                if current_document is not None
+                else procedure.version
+            ),
+            "status": status,
+            "procedure_status": procedure_status,
+            "document_status": document_status,
+            "effective_date": effective_date,
+            "review_definition": (
+                "Scheduled"
+                if review_date is not None
+                else None
+            ),
+            "next_review": review_date,
+            "review_status": review_status,
+            "approver": approver,
+            "last_updated": (
+                current_document.uploaded_at
+                if current_document is not None
+                else procedure.updated_at
+            ),
+            "control_count": control_count,
+            "has_current_document": current_document is not None,
+        }
+
+        items.append(item)
+
+        summary["master_documents"] += 1
+
+        if status == "effective":
+            summary["effective"] += 1
+        elif status == "under_review":
+            summary["under_review"] += 1
+        elif status == "draft":
+            summary["draft"] += 1
+        elif status == "expired":
+            summary["expired"] += 1
+
+        if review_status in {"due_today", "due_soon"}:
+            summary["review_due_30d"] += 1
+
+    return {
+        "items": items,
+        "total": len(items),
+        "summary": summary,
     }
 
 

@@ -1,6 +1,7 @@
 from sqlalchemy import (
     Column,
     Integer,
+    String,
     DateTime,
     ForeignKey,
     func,
@@ -35,6 +36,12 @@ class ProcessRiskAppetite(Base):
     )
 
     threshold_override = Column(Integer)
+
+    criticality = Column(
+        String(20),
+        nullable=True,
+    )
+
 
     created_at = Column(
         DateTime,

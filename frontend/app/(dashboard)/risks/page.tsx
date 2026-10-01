@@ -89,12 +89,23 @@ export default function RisksPage() {
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Risk Management</h1>
             <p className="mt-1 text-sm text-slate-500">Risk register, assessment and treatment management</p>
           </div>
-          <button
-            onClick={() => router.push("/risks/create")}
-            className="rounded-lg bg-emerald-700 px-5 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-800"
-          >
-            + Create Risk
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push("/risks/configuration")}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Risk Configuration
+            </button>
+
+            <button
+              type="button"
+              onClick={() => router.push("/risks/create")}
+              className="inline-flex h-10 items-center justify-center rounded-lg bg-slate-950 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800"
+            >
+              + Create Risk
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-4">

@@ -1,15 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
-import type { ReactNode } from "react";
 import { apiFetch } from "../lib/api";
 import { isSuperAdmin as isSuperAdminFromToken } from "../lib/auth";
 
 type Props = {
   label: string;
-  icon?: ReactNode;
 };
 
 const PREMIUM_ROUTES: Record<string, string> = {
@@ -51,7 +49,7 @@ function hasSuperAdminRole(data: any): boolean {
   });
 }
 
-export default function PremiumMenuItem({ label, icon }: Props) {
+export default function PremiumMenuItem({ label }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -156,8 +154,6 @@ export default function PremiumMenuItem({ label, icon }: Props) {
             : "text-slate-600 hover:bg-slate-50 hover:text-[#0f2747]"
         } ${route ? "cursor-pointer" : "cursor-default"}`}
       >
-        {icon && <span className="shrink-0">{icon}</span>}
-
         <span>{label}</span>
       </button>
     );
@@ -166,8 +162,6 @@ export default function PremiumMenuItem({ label, icon }: Props) {
   if (checkingRole) {
     return (
       <div className="w-full flex items-center px-3 py-2 rounded text-sm text-slate-500">
-        {icon && <span className="shrink-0">{icon}</span>}
-
         <span>{label}</span>
       </div>
     );
@@ -182,8 +176,6 @@ export default function PremiumMenuItem({ label, icon }: Props) {
       >
         <div className="flex items-center gap-2">
           <Lock size={14} className="text-amber-300" />
-          {icon && <span className="shrink-0">{icon}</span>}
-
           <span>{label}</span>
         </div>
 

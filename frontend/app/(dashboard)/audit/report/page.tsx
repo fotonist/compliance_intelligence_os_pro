@@ -1,4 +1,4 @@
-﻿ "use client";
+ "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
@@ -280,7 +280,9 @@ function AuditReportContent() {
   }
 
   async function loadReport(planId?: number | null) {
-    const rows = await getJson<AuditPlan[]>("/audit/plans");
+    const rows = await getJson<AuditPlan[]>(
+      "/audit/plans?framework_type=CONTROL_BASED",
+    );
     const planRows = asArray<AuditPlan>(rows);
     setPlans(planRows);
 

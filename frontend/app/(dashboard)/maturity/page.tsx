@@ -1,252 +1,818 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import {
+  Activity,
+  ArrowRight,
+  Boxes,
+  ClipboardCheck,
+  Layers3,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-interface MaturitySession {
+type MaturityContext = {
+  tenant_id: number;
+  framework_adoption_id: number;
+  standard_id: number;
+  standard_version_id: number;
+  standard_code: string;
+  standard_type: string;
+  version_code: string;
+  pam_framework_model_id: number;
+  pam_framework_model_code: string;
+  capability_framework_model_id: number;
+  capability_framework_model_code: string;
+};
+
+type PamAssessment = {
   id: number;
+  tenant_id: number;
+  framework_adoption_id: number;
+  framework_model_id: number;
   name: string;
-  scope?: string;
+  scope?: string | null;
   status: string;
-  created_at?: string;
+  assessor_user_id?: number | null;
+  sponsor_user_id?: number | null;
+  audit_plan_id?: number | null;
+  created_at: string;
+  updated_at: string;
+  context?: MaturityContext | null;
+};
+
+type FrameworkPortfolioItem = {
+  adoptionId: number;
+  standardId: number;
+  standardVersionId: number;
+  standardCode: string;
+  standardTitle: string;
+  versionCode: string;
+  adoptionStatus: string;
+  pamModelId: number;
+  pamModelCode: string;
+  capabilityModelId: number;
+  capabilityModelCode: string;
+};
+
+function asArray(value: unknown): any[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as any).items)
+  ) {
+    return (value as any).items;
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    Array.isArray((value as any).data)
+  ) {
+    return (value as any).data;
+  }
+
+  return [];
 }
 
-interface MaturityStandard {
-  id: number;
-  code: string;
-  title?: string;
+function statusLabel(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export default function MaturityPage() {
+function formatDate(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function statusClass(value?: string | null) {
+  const normalized = String(value || "").toUpperCase();
+
+  if (
+    normalized === "ACTIVE" ||
+    normalized === "APPROVED" ||
+    normalized === "COMPLETED"
+  ) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (
+    normalized === "DRAFT" ||
+    normalized === "PLANNED" ||
+    normalized === "OPEN"
+  ) {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (
+    normalized === "SUSPENDED" ||
+    normalized === "ARCHIVED" ||
+    normalized === "CANCELLED"
+  ) {
+    return "border-slate-200 bg-slate-50 text-slate-600";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+export default function MaturityOverviewPage() {
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
 
-  const [sessions, setSessions] = useState<MaturitySession[]>([]);
-  const [standards, setStandards] = useState<MaturityStandard[]>([]);
-
+  const [token, setToken] = useState("");
+  const [frameworks, setFrameworks] = useState<FrameworkPortfolioItem[]>([]);
+  const [assessments, setAssessments] = useState<PamAssessment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingList, setLoadingList] = useState(true);
-  const [creating, setCreating] = useState(false);
-
-  const [standardId, setStandardId] = useState<number | "">("");
-  const [name, setName] = useState("");
-  const [scope, setScope] = useState("");
-
-  /* ---------------- AUTH ---------------- */
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    const t = localStorage.getItem("access_token");
-    if (!t) {
+    const storedToken =
+      window.localStorage.getItem("access_token") ||
+      window.localStorage.getItem("token") ||
+      "";
+
+    if (!storedToken) {
       router.replace("/login");
       return;
     }
-    setToken(t);
+
+    setToken(storedToken);
   }, [router]);
 
-  /* ---------------- LOAD STANDARDS ---------------- */
+  const loadOverview = useCallback(
+    async (silent = false) => {
+      if (!token) {
+        return;
+      }
 
-  useEffect(() => {
-    if (!token) return;
+      if (silent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
 
-    async function loadStandards() {
+      setError("");
+
       try {
-        const res = await fetch(
-          `${API_BASE}/standards?type=MATURITY_BASED`,
+        const adoptionResponse = await fetch(
+          `${API_BASE}/framework/adoptions`,
           {
-            headers: { Authorization: `Bearer ${token}` },
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           }
         );
-        if (!res.ok) throw new Error();
-        setStandards(await res.json());
-      } catch {
-        setStandards([]);
+
+        if (!adoptionResponse.ok) {
+          throw new Error(
+            `Framework adoption request failed with ${adoptionResponse.status}.`
+          );
+        }
+
+        const adoptionPayload = await adoptionResponse.json();
+        const rawAdoptions = asArray(adoptionPayload);
+
+        const adoptionIds = rawAdoptions
+          .map((item: any) =>
+            Number(
+              item?.id ??
+                item?.adoption_id ??
+                item?.framework_adoption_id
+            )
+          )
+          .filter(
+            (value: number) =>
+              Number.isInteger(value) && value > 0
+          );
+
+        const resolvedFrameworks = await Promise.all(
+          adoptionIds.map(async (adoptionId: number) => {
+            const response = await fetch(
+              `${API_BASE}/framework/adoptions/${adoptionId}/resolved`,
+              {
+                method: "GET",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+
+            if (!response.ok) {
+              return null;
+            }
+
+            const payload = await response.json();
+
+            const adoption =
+              payload?.adoption ??
+              payload?.framework_adoption ??
+              {};
+
+            const standard = payload?.standard ?? {};
+            const version =
+              payload?.standard_version ??
+              payload?.version ??
+              {};
+
+            const standardType = String(
+              standard?.type ??
+                standard?.standard_type ??
+                payload?.standard_type ??
+                ""
+            ).toUpperCase();
+
+            if (standardType !== "MATURITY_BASED") {
+              return null;
+            }
+
+            const context =
+              payload?.maturity_context ??
+              payload?.context ??
+              {};
+
+            const pamModel =
+              payload?.pam_framework_model ??
+              payload?.pam_model ??
+              {};
+
+            const capabilityModel =
+              payload?.capability_framework_model ??
+              payload?.capability_model ??
+              {};
+
+            return {
+              adoptionId,
+              standardId: Number(
+                standard?.id ??
+                  adoption?.standard_id ??
+                  context?.standard_id ??
+                  0
+              ),
+              standardVersionId: Number(
+                version?.id ??
+                  adoption?.standard_version_id ??
+                  context?.standard_version_id ??
+                  0
+              ),
+              standardCode: String(
+                standard?.code ??
+                  context?.standard_code ??
+                  "Maturity Framework"
+              ),
+              standardTitle: String(
+                standard?.title ??
+                  standard?.name ??
+                  standard?.code ??
+                  context?.standard_code ??
+                  "Maturity Framework"
+              ),
+              versionCode: String(
+                version?.version_code ??
+                  version?.code ??
+                  context?.version_code ??
+                  ""
+              ),
+              adoptionStatus: String(
+                adoption?.status ??
+                  payload?.status ??
+                  ""
+              ),
+              pamModelId: Number(
+                pamModel?.id ??
+                  context?.pam_framework_model_id ??
+                  0
+              ),
+              pamModelCode: String(
+                pamModel?.code ??
+                  context?.pam_framework_model_code ??
+                  ""
+              ),
+              capabilityModelId: Number(
+                capabilityModel?.id ??
+                  context?.capability_framework_model_id ??
+                  0
+              ),
+              capabilityModelCode: String(
+                capabilityModel?.code ??
+                  context?.capability_framework_model_code ??
+                  ""
+              ),
+            } satisfies FrameworkPortfolioItem;
+          })
+        );
+
+        const maturityFrameworks = resolvedFrameworks.filter(
+          (
+            item
+          ): item is FrameworkPortfolioItem =>
+            item !== null
+        );
+
+        const assessmentResponse = await fetch(
+          `${API_BASE}/pam/assessments`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!assessmentResponse.ok) {
+          throw new Error(
+            `Assessment request failed with ${assessmentResponse.status}.`
+          );
+        }
+
+        const assessmentPayload =
+          await assessmentResponse.json();
+
+        const rawAssessments =
+          asArray(assessmentPayload) as PamAssessment[];
+
+        const maturityAdoptionIds = new Set(
+          maturityFrameworks.map(
+            (item) => item.adoptionId
+          )
+        );
+
+        const scopedAssessments =
+          rawAssessments.filter((assessment) =>
+            maturityAdoptionIds.has(
+              Number(assessment.framework_adoption_id)
+            )
+          );
+
+        setFrameworks(maturityFrameworks);
+        setAssessments(scopedAssessments);
+      } catch (cause) {
+        setFrameworks([]);
+        setAssessments([]);
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Maturity overview could not be loaded."
+        );
       } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    }
-
-    loadStandards();
-  }, [token]);
-
-  /* ---------------- LOAD SESSIONS ---------------- */
-
-  async function loadSessions() {
-    if (!token) return;
-
-    setLoadingList(true);
-    try {
-      const res = await fetch(`${API_BASE}/maturity/sessions`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error();
-      setSessions(await res.json());
-    } catch {
-      setSessions([]);
-    } finally {
-      setLoadingList(false);
-    }
-  }
+    },
+    [token]
+  );
 
   useEffect(() => {
-    loadSessions();
-  }, [token]);
+    void loadOverview();
+  }, [loadOverview]);
 
-  /* ---------------- CREATE SESSION ---------------- */
+  const frameworkMap = useMemo(
+    () =>
+      new Map(
+        frameworks.map((item) => [
+          item.adoptionId,
+          item,
+        ])
+      ),
+    [frameworks]
+  );
 
-  async function createSession() {
-    if (!token || !name.trim() || !standardId) return;
+  const activeFrameworkCount = useMemo(
+    () =>
+      frameworks.filter(
+        (item) =>
+          item.adoptionStatus.toUpperCase() ===
+          "ACTIVE"
+      ).length,
+    [frameworks]
+  );
 
-    setCreating(true);
-    try {
-      const res = await fetch(`${API_BASE}/maturity/sessions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          standard_id: standardId,
-          name,
-          scope,
-        }),
-      });
+  const draftAssessmentCount = useMemo(
+    () =>
+      assessments.filter(
+        (item) =>
+          item.status.toUpperCase() === "DRAFT"
+      ).length,
+    [assessments]
+  );
 
-      if (!res.ok) return;
+  const assessmentCountByAdoption = useMemo(() => {
+    const result = new Map<number, number>();
 
-      setName("");
-      setScope("");
-      setStandardId("");
+    assessments.forEach((assessment) => {
+      const adoptionId = Number(
+        assessment.framework_adoption_id
+      );
 
-      await loadSessions();
-    } finally {
-      setCreating(false);
-    }
-  }
+      result.set(
+        adoptionId,
+        (result.get(adoptionId) || 0) + 1
+      );
+    });
+
+    return result;
+  }, [assessments]);
+
+  const metrics = [
+    {
+      label: "Maturity Frameworks",
+      value: frameworks.length,
+      description: "Tenant-scoped maturity adoptions",
+      icon: Layers3,
+    },
+    {
+      label: "Assessments",
+      value: assessments.length,
+      description: "Canonical PAM assessments",
+      icon: ClipboardCheck,
+    },
+    {
+      label: "Active Frameworks",
+      value: activeFrameworkCount,
+      description: "Active maturity adoptions",
+      icon: ShieldCheck,
+    },
+    {
+      label: "Draft Assessments",
+      value: draftAssessmentCount,
+      description: "Assessments in draft state",
+      icon: Activity,
+    },
+  ];
 
   if (loading) {
     return (
-      <div className="text-slate-400 text-sm">
-        Loading maturity standards…
+      <div className="min-h-full bg-[#f6f8fc] px-6 py-8 lg:px-10">
+        <div className="flex min-h-[320px] items-center justify-center">
+          <div className="flex items-center gap-3 text-sm font-medium text-slate-500">
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            Loading maturity portfolio...
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl space-y-8">
-      {/* HEADER */}
-      <div>
-        <h1 className="text-xl font-semibold text-slate-100">
-          Maturity Assessments
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Create and manage capability-based maturity assessments.
-        </p>
-      </div>
+    <div className="min-h-full bg-[#f6f8fc] px-6 py-8 lg:px-10">
+      <div className="mx-auto max-w-[1600px] space-y-7">
+        <header className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <ShieldCheck className="h-4 w-4" />
+              Maturity Management
+            </div>
 
-      {/* CREATE */}
-      <section className="bg-slate-900 border border-slate-800 rounded-xl">
-        <div className="px-6 py-4 border-b border-slate-800">
-          <h2 className="text-base font-semibold text-slate-100">
-            New Maturity Assessment
-          </h2>
-        </div>
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
+              Maturity Overview
+            </h1>
 
-        <div className="px-6 py-5 space-y-6">
-          <select
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm"
-            value={standardId}
-            onChange={(e) =>
-              setStandardId(e.target.value ? Number(e.target.value) : "")
-            }
-          >
-            <option value="">Select a maturity standard</option>
-            {standards.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.code}
-              </option>
-            ))}
-          </select>
-
-          <input
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm"
-            placeholder="Assessment name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-
-          <input
-            className="w-full rounded-lg border border-slate-700 bg-slate-950 text-slate-100 px-3 py-2 text-sm"
-            placeholder="Scope"
-            value={scope}
-            onChange={(e) => setScope(e.target.value)}
-          />
-        </div>
-
-        <div className="border-t border-slate-800 px-6 py-4 flex justify-end gap-3">
-          <button
-            className="text-sm text-slate-300"
-            onClick={() => {
-              setName("");
-              setScope("");
-              setStandardId("");
-            }}
-          >
-            Cancel
-          </button>
-
-          <button
-            onClick={createSession}
-            disabled={creating || !name.trim() || !standardId}
-            className="px-4 py-2 text-sm rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50"
-          >
-            {creating ? "Creating…" : "Create Assessment"}
-          </button>
-        </div>
-      </section>
-
-      {/* LIST */}
-      <section className="bg-slate-900 border border-slate-800 rounded-xl">
-        <div className="px-6 py-4 border-b border-slate-800">
-          <h2 className="text-base font-semibold text-slate-100">
-            Assessments
-          </h2>
-        </div>
-
-        {loadingList ? (
-          <div className="px-6 py-8 text-sm text-slate-400">
-            Loading assessments…
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              Tenant-scoped maturity frameworks and canonical PAM assessment portfolio.
+            </p>
           </div>
-        ) : sessions.length === 0 ? (
-          <div className="px-6 py-8 text-sm text-slate-400">
-            No maturity assessments have been created yet.
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                void loadOverview(true)
+              }
+              disabled={refreshing}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${
+                  refreshing
+                    ? "animate-spin"
+                    : ""
+                }`}
+              />
+              Refresh
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                router.push("/maturity/workspace")
+              }
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+            >
+              <Boxes className="h-4 w-4" />
+              Open Workspace
+            </button>
           </div>
-        ) : (
-          <ul className="divide-y divide-slate-800">
-            {sessions.map((s) => (
-              <li
-                key={s.id}
-                onClick={() => router.push(`/maturity/${s.id}`)}
-                className="px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/40 transition"
+        </header>
+
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {metrics.map((metric) => {
+            const Icon = metric.icon;
+
+            return (
+              <div
+                key={metric.label}
+                className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
               >
-                <div>
-                  <div className="text-sm font-medium text-slate-100">
-                    {s.name}
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                      {metric.label}
+                    </div>
+
+                    <div className="mt-3 text-3xl font-semibold tracking-tight text-slate-950">
+                      {metric.value}
+                    </div>
+
+                    <div className="mt-2 text-xs leading-5 text-slate-500">
+                      {metric.description}
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-400">
-                    {s.status}
+
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
+                    <Icon className="h-5 w-5" />
                   </div>
                 </div>
+              </div>
+            );
+          })}
+        </section>
 
-                <span className="text-xs text-slate-400">
-                  View →
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-slate-200 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-950">
+                Framework Portfolio
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Resolved maturity framework adoptions available to the current tenant.
+              </p>
+            </div>
+
+            <div className="text-xs font-medium text-slate-500">
+              {frameworks.length} framework
+              {frameworks.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          {frameworks.length === 0 ? (
+            <div className="px-6 py-10 text-sm text-slate-500">
+              No canonical maturity framework adoption is available for this tenant.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-slate-50">
+                  <tr className="border-b border-slate-200">
+                    {[
+                      "Framework",
+                      "Version",
+                      "Adoption",
+                      "PAM Model",
+                      "Capability Model",
+                      "Assessments",
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        className="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {frameworks.map((framework) => (
+                    <tr
+                      key={framework.adoptionId}
+                      className="transition hover:bg-slate-50/70"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-slate-900">
+                          {framework.standardCode}
+                        </div>
+
+                        <div className="mt-1 max-w-md text-xs text-slate-500">
+                          {framework.standardTitle}
+                        </div>
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-700">
+                        {framework.versionCode || "-"}
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
+                            framework.adoptionStatus
+                          )}`}
+                        >
+                          {statusLabel(
+                            framework.adoptionStatus
+                          )}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-700">
+                        {framework.pamModelCode || "-"}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm text-slate-700">
+                        {framework.capabilityModelCode ||
+                          "-"}
+                      </td>
+
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-900">
+                        {assessmentCountByAdoption.get(
+                          framework.adoptionId
+                        ) || 0}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-slate-200 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-slate-950">
+                Assessment Portfolio
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Canonical PAM assessments linked to the tenant maturity framework portfolio.
+              </p>
+            </div>
+
+            <div className="text-xs font-medium text-slate-500">
+              {assessments.length} assessment
+              {assessments.length === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          {assessments.length === 0 ? (
+            <div className="px-6 py-10">
+              <div className="text-sm font-medium text-slate-700">
+                No canonical PAM assessments found.
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  router.push("/maturity/workspace")
+                }
+                className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+              >
+                Open Maturity Workspace
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead className="bg-slate-50">
+                  <tr className="border-b border-slate-200">
+                    {[
+                      "Assessment",
+                      "Framework",
+                      "Version",
+                      "Scope",
+                      "Status",
+                      "Updated",
+                      "",
+                    ].map((label, index) => (
+                      <th
+                        key={`${label}-${index}`}
+                        className="px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {assessments.map((assessment) => {
+                    const framework =
+                      frameworkMap.get(
+                        Number(
+                          assessment.framework_adoption_id
+                        )
+                      );
+
+                    return (
+                      <tr
+                        key={assessment.id}
+                        className="transition hover:bg-slate-50/70"
+                      >
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-semibold text-slate-900">
+                            {assessment.name}
+                          </div>
+
+                          <div className="mt-1 text-xs text-slate-500">
+                            Assessment #{assessment.id}
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 text-sm text-slate-700">
+                          {framework?.standardCode ??
+                            assessment.context
+                              ?.standard_code ??
+                            "-"}
+                        </td>
+
+                        <td className="px-6 py-4 text-sm text-slate-700">
+                          {framework?.versionCode ??
+                            assessment.context
+                              ?.version_code ??
+                            "-"}
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="max-w-xs truncate text-sm text-slate-600">
+                            {assessment.scope || "-"}
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass(
+                              assessment.status
+                            )}`}
+                          >
+                            {statusLabel(
+                              assessment.status
+                            )}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4 text-sm text-slate-600">
+                          {formatDate(
+                            assessment.updated_at
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              router.push(
+                                `/maturity/workspace/${assessment.id}`
+                              )
+                            }
+                            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            Open
+                            <ArrowRight className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

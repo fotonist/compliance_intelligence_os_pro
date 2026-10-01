@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
+from app.services.risk_scoring_service import RiskScoringService
+from app.services.process_risk_link_service import ProcessRiskLinkService
 
 
 router = APIRouter(prefix="/risks", tags=["Risks"])
@@ -38,15 +40,7 @@ class RiskUpdateIn(BaseModel):
 
 
 def calculate_risk_level(score: int) -> str:
-    if score >= 20:
-        return "CRITICAL"
-    if score >= 15:
-        return "HIGH"
-    if score >= 10:
-        return "MEDIUM"
-    if score >= 5:
-        return "LOW"
-    return "VERY_LOW"
+    return RiskScoringService.resolve_level(score)
 
 
 def validate_source(
@@ -187,8 +181,12 @@ def create_risk(
         db, tenant_id, source_type, payload.source_id
     )
 
-    score = payload.likelihood * payload.impact
-    risk_level = calculate_risk_level(score)
+    scoring = RiskScoringService.calculate(
+        likelihood=payload.likelihood,
+        impact=payload.impact,
+    )
+    score = scoring.score
+    risk_level = scoring.risk_level
 
     try:
         result = db.execute(
@@ -238,6 +236,12 @@ def create_risk(
                 "process_id": payload.process_id,
                 "risk_id": new_risk_id,
             },
+        )
+
+        ProcessRiskLinkService.refresh_risk_appetite(
+            db=db,
+            tenant_id=tenant_id,
+            risk_id=new_risk_id,
         )
 
         db.execute(
@@ -308,8 +312,12 @@ def update_risk(
 
     likelihood = payload.likelihood if payload.likelihood is not None else current["likelihood"]
     impact = payload.impact if payload.impact is not None else current["impact"]
-    score = likelihood * impact
-    risk_level = calculate_risk_level(score)
+    scoring = RiskScoringService.calculate(
+        likelihood=likelihood,
+        impact=impact,
+    )
+    score = scoring.score
+    risk_level = scoring.risk_level
 
     score_changed = (
         likelihood != current["likelihood"]
@@ -401,6 +409,12 @@ def update_risk(
                 "treatment": treatment,
                 "action": action,
             },
+        )
+
+        ProcessRiskLinkService.refresh_risk_appetite(
+            db=db,
+            tenant_id=tenant_id,
+            risk_id=risk_id,
         )
 
         db.execute(

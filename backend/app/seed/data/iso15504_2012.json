@@ -1,0 +1,488 @@
+{
+  "standard_code": "ISO15504",
+  "version_code": "2012",
+  "pam_code": "ISO15504-5-2012-PAM",
+  "cmf_code": "ISO15504-2-2003-CMF",
+  "language": "en",
+  "source": {
+    "standard": "ISO/IEC 15504-5:2012",
+    "edition": "2",
+    "status": "canonical_source_in_progress"
+  },
+  "categories": [],
+  "work_products": [],
+  "capability_levels": [
+    {
+      "level": 0,
+      "name": "Incomplete process",
+      "description": null,
+      "process_attributes": [],
+      "code": "CL0",
+      "sort_order": 0
+    },
+    {
+      "level": 1,
+      "name": "Performed process",
+      "description": null,
+      "process_attributes": [
+        {
+          "code": "PA 1.1",
+          "name": "Process performance attribute",
+          "description": null,
+          "sort_order": 1,
+          "indicators": []
+        }
+      ],
+      "code": "CL1",
+      "sort_order": 1
+    },
+    {
+      "level": 2,
+      "name": "Managed process",
+      "description": null,
+      "process_attributes": [
+        {
+          "code": "PA 2.1",
+          "name": "Performance management attribute",
+          "description": null,
+          "sort_order": 1,
+          "indicators": []
+        },
+        {
+          "code": "PA 2.2",
+          "name": "Work product management attribute",
+          "description": null,
+          "sort_order": 2,
+          "indicators": []
+        }
+      ],
+      "code": "CL2",
+      "sort_order": 2
+    },
+    {
+      "level": 3,
+      "name": "Established process",
+      "description": null,
+      "process_attributes": [
+        {
+          "code": "PA 3.1",
+          "name": "Process definition attribute",
+          "description": null,
+          "sort_order": 1,
+          "indicators": []
+        },
+        {
+          "code": "PA 3.2",
+          "name": "Process deployment attribute",
+          "description": null,
+          "sort_order": 2,
+          "indicators": []
+        }
+      ],
+      "code": "CL3",
+      "sort_order": 3
+    },
+    {
+      "level": 4,
+      "name": "Predictable process",
+      "description": null,
+      "process_attributes": [
+        {
+          "code": "PA 4.1",
+          "name": "Process measurement attribute",
+          "description": null,
+          "sort_order": 1,
+          "indicators": []
+        },
+        {
+          "code": "PA 4.2",
+          "name": "Process control attribute",
+          "description": null,
+          "sort_order": 2,
+          "indicators": []
+        }
+      ],
+      "code": "CL4",
+      "sort_order": 4
+    },
+    {
+      "level": 5,
+      "name": "Optimizing process",
+      "description": null,
+      "process_attributes": [
+        {
+          "code": "PA 5.1",
+          "name": "Process innovation attribute",
+          "description": null,
+          "sort_order": 1,
+          "indicators": []
+        },
+        {
+          "code": "PA 5.2",
+          "name": "Process optimization attribute",
+          "description": null,
+          "sort_order": 2,
+          "indicators": []
+        }
+      ],
+      "code": "CL5",
+      "sort_order": 5
+    }
+  ],
+  "pending_process_taxonomy": {
+    "status": "awaiting_verified_category_mapping",
+    "source": "ISO/IEC 15504-5:2012 Clause 5",
+    "canonical": false,
+    "groups": [
+      {
+        "code": "AGR",
+        "name": "Agreement Processes",
+        "sort_order": 0,
+        "processes": [
+          {
+            "code": "AGR.1",
+            "name": "Acquisition Process",
+            "sort_order": 0
+          },
+          {
+            "code": "AGR.1A",
+            "name": "Acquisition preparation",
+            "sort_order": 1
+          },
+          {
+            "code": "AGR.1B",
+            "name": "Supplier selection",
+            "sort_order": 2
+          },
+          {
+            "code": "AGR.1C",
+            "name": "Agreement monitoring",
+            "sort_order": 3
+          },
+          {
+            "code": "AGR.1D",
+            "name": "Acquirer acceptance",
+            "sort_order": 4
+          },
+          {
+            "code": "AGR.2",
+            "name": "Supply",
+            "sort_order": 5
+          },
+          {
+            "code": "AGR.2A",
+            "name": "Supplier tendering",
+            "sort_order": 6
+          },
+          {
+            "code": "AGR.2B",
+            "name": "Contract agreement",
+            "sort_order": 7
+          },
+          {
+            "code": "AGR.2C",
+            "name": "Product/service delivery and support",
+            "sort_order": 8
+          },
+          {
+            "code": "AGR.3",
+            "name": "Contract change management",
+            "sort_order": 9
+          }
+        ]
+      },
+      {
+        "code": "ORG",
+        "name": "Organizational Project-Enabling Processes",
+        "sort_order": 1,
+        "processes": [
+          {
+            "code": "ORG.1",
+            "name": "Life cycle model management",
+            "sort_order": 0
+          },
+          {
+            "code": "ORG.1A",
+            "name": "Process establishment",
+            "sort_order": 1
+          },
+          {
+            "code": "ORG.1B",
+            "name": "Process assessment",
+            "sort_order": 2
+          },
+          {
+            "code": "ORG.1C",
+            "name": "Process improvement",
+            "sort_order": 3
+          },
+          {
+            "code": "ORG.2",
+            "name": "Infrastructure management",
+            "sort_order": 4
+          },
+          {
+            "code": "ORG.3",
+            "name": "Project portfolio management",
+            "sort_order": 5
+          },
+          {
+            "code": "ORG.4",
+            "name": "Human resource management",
+            "sort_order": 6
+          },
+          {
+            "code": "ORG.4A",
+            "name": "Skill development",
+            "sort_order": 7
+          },
+          {
+            "code": "ORG.4B",
+            "name": "Skill acquisition and provision",
+            "sort_order": 8
+          },
+          {
+            "code": "ORG.4C",
+            "name": "Knowledge management",
+            "sort_order": 9
+          },
+          {
+            "code": "ORG.5",
+            "name": "Quality management",
+            "sort_order": 10
+          },
+          {
+            "code": "ORG.6",
+            "name": "Organizational alignment",
+            "sort_order": 11
+          },
+          {
+            "code": "ORG.7",
+            "name": "Organization management",
+            "sort_order": 12
+          }
+        ]
+      },
+      {
+        "code": "PRO",
+        "name": "Project Processes",
+        "sort_order": 2,
+        "processes": [
+          {
+            "code": "PRO.1",
+            "name": "Project planning",
+            "sort_order": 0
+          },
+          {
+            "code": "PRO.2",
+            "name": "Project assessment and control",
+            "sort_order": 1
+          },
+          {
+            "code": "PRO.3",
+            "name": "Decision management",
+            "sort_order": 2
+          },
+          {
+            "code": "PRO.4",
+            "name": "Risk management",
+            "sort_order": 3
+          },
+          {
+            "code": "PRO.5",
+            "name": "Configuration management",
+            "sort_order": 4
+          },
+          {
+            "code": "PRO.6",
+            "name": "Information Management",
+            "sort_order": 5
+          },
+          {
+            "code": "PRO.7",
+            "name": "Measurement",
+            "sort_order": 6
+          }
+        ]
+      },
+      {
+        "code": "ENG",
+        "name": "Technical Processes",
+        "sort_order": 3,
+        "processes": [
+          {
+            "code": "ENG.1",
+            "name": "Stakeholder requirements definition",
+            "sort_order": 0
+          },
+          {
+            "code": "ENG.2",
+            "name": "System requirements analysis",
+            "sort_order": 1
+          },
+          {
+            "code": "ENG.3",
+            "name": "System architectural design",
+            "sort_order": 2
+          },
+          {
+            "code": "ENG.4",
+            "name": "Software implementation",
+            "sort_order": 3
+          },
+          {
+            "code": "ENG.5",
+            "name": "System integration",
+            "sort_order": 4
+          },
+          {
+            "code": "ENG.6",
+            "name": "System qualification testing",
+            "sort_order": 5
+          },
+          {
+            "code": "ENG.7",
+            "name": "Software installation",
+            "sort_order": 6
+          },
+          {
+            "code": "ENG.8",
+            "name": "Software acceptance support",
+            "sort_order": 7
+          },
+          {
+            "code": "ENG.9",
+            "name": "Software operation",
+            "sort_order": 8
+          },
+          {
+            "code": "ENG.9A",
+            "name": "Operational use",
+            "sort_order": 9
+          },
+          {
+            "code": "ENG.9B",
+            "name": "Customer support",
+            "sort_order": 10
+          },
+          {
+            "code": "ENG.10",
+            "name": "Software maintenance",
+            "sort_order": 11
+          },
+          {
+            "code": "ENG.11",
+            "name": "Software disposal",
+            "sort_order": 12
+          }
+        ]
+      },
+      {
+        "code": "DEV",
+        "name": "Software Implementation Processes",
+        "sort_order": 4,
+        "processes": [
+          {
+            "code": "DEV.1",
+            "name": "Software requirements analysis",
+            "sort_order": 0
+          },
+          {
+            "code": "DEV.2",
+            "name": "Software architectural design",
+            "sort_order": 1
+          },
+          {
+            "code": "DEV.3",
+            "name": "Software detailed design",
+            "sort_order": 2
+          },
+          {
+            "code": "DEV.4",
+            "name": "Software construction",
+            "sort_order": 3
+          },
+          {
+            "code": "DEV.5",
+            "name": "Software integration",
+            "sort_order": 4
+          },
+          {
+            "code": "DEV.6",
+            "name": "Software qualification testing",
+            "sort_order": 5
+          }
+        ]
+      },
+      {
+        "code": "SUP",
+        "name": "Software Support Processes",
+        "sort_order": 5,
+        "processes": [
+          {
+            "code": "SUP.1",
+            "name": "Software documentation management",
+            "sort_order": 0
+          },
+          {
+            "code": "SUP.2",
+            "name": "Software configuration management",
+            "sort_order": 1
+          },
+          {
+            "code": "SUP.3",
+            "name": "Software quality assurance",
+            "sort_order": 2
+          },
+          {
+            "code": "SUP.4",
+            "name": "Software verification",
+            "sort_order": 3
+          },
+          {
+            "code": "SUP.5",
+            "name": "Software validation",
+            "sort_order": 4
+          },
+          {
+            "code": "SUP.6",
+            "name": "Software review",
+            "sort_order": 5
+          },
+          {
+            "code": "SUP.7",
+            "name": "Software audit",
+            "sort_order": 6
+          },
+          {
+            "code": "SUP.8",
+            "name": "Software problem resolution",
+            "sort_order": 7
+          }
+        ]
+      },
+      {
+        "code": "REU",
+        "name": "Software Reuse Processes",
+        "sort_order": 6,
+        "processes": [
+          {
+            "code": "REU.1",
+            "name": "Domain engineering",
+            "sort_order": 0
+          },
+          {
+            "code": "REU.2",
+            "name": "Reuse asset management",
+            "sort_order": 1
+          },
+          {
+            "code": "REU.3",
+            "name": "Reuse program management",
+            "sort_order": 2
+          }
+        ]
+      }
+    ]
+  }
+}

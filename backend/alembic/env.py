@@ -33,29 +33,6 @@ from app.models.clauses import Clause
 from app.models.requirements import Requirement
 from app.models.controls import Control
 
-# --- Framework Model ---
-from app.models.framework_model import FrameworkModel
-from app.models.framework_relationship import FrameworkRelationship
-
-# --- Canonical PAM ---
-from app.models.pam_process_category import PamProcessCategory
-from app.models.pam_definition import (
-    PamProcessGroup,
-    PamProcess,
-    PamProcessOutcome,
-    PamBasePractice,
-    PamBasePracticeOutcome,
-    PamWorkProduct,
-    PamProcessWorkProduct,
-)
-from app.models.pam_capability import (
-    PamCapabilityLevel,
-    PamProcessAttribute,
-    PamGenericPractice,
-    PamGenericResource,
-    PamGenericWorkProduct,
-)
-
 # --- Risk ---
 from app.models.risks import Risk
 from app.models.risk_history import RiskHistory

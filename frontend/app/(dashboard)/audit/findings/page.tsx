@@ -1,4 +1,4 @@
-﻿
+
 "use client";
 
 import {
@@ -541,6 +541,31 @@ function AuditFindingsContent() {
     }
   }
 
+  const [lifecycleBusy, setLifecycleBusy] =
+    useState(false);
+  const [lifecycleError, setLifecycleError] =
+    useState("");
+  const [actionComment, setActionComment] =
+    useState("");
+  const [ownerId, setOwnerId] =
+    useState("");
+  const [managerId, setManagerId] =
+    useState("");
+  const [rootCause, setRootCause] =
+    useState("");
+  const [correction, setCorrection] =
+    useState("");
+  const [correctiveActionPlan, setCorrectiveActionPlan] =
+    useState("");
+  const [recommendation, setRecommendation] =
+    useState("");
+  const [targetDate, setTargetDate] =
+    useState("");
+  const [implementationEvidence, setImplementationEvidence] =
+    useState("");
+  const [verificationComment, setVerificationComment] =
+    useState("");
+
   async function loadFindings() {
     setLoading(true);
     setError("");
@@ -617,6 +642,7 @@ function AuditFindingsContent() {
           (await detailResponse.json()) as Finding;
 
         setSelectedFinding(detail);
+        syncLifecycleForm(detail);
 
         setFindings((current) =>
           current.map((item) =>
@@ -650,6 +676,254 @@ function AuditFindingsContent() {
     setSelectedFinding(null);
     router.replace(
       "/audit/findings",
+    );
+  }
+
+  function syncLifecycleForm(
+    finding: Finding,
+  ) {
+    setOwnerId(
+      finding.assigned_owner_id
+        ? String(finding.assigned_owner_id)
+        : "",
+    );
+
+    setManagerId(
+      finding.process_manager_id
+        ? String(finding.process_manager_id)
+        : "",
+    );
+
+    setRootCause(
+      finding.root_cause || "",
+    );
+
+    setCorrection(
+      finding.correction || "",
+    );
+
+    setCorrectiveActionPlan(
+      finding.corrective_action_plan || "",
+    );
+
+    setRecommendation(
+      finding.recommendation || "",
+    );
+
+    setTargetDate(
+      finding.due_date || "",
+    );
+
+    setImplementationEvidence(
+      finding.implementation_evidence || "",
+    );
+
+    setActionComment("");
+    setVerificationComment("");
+    setLifecycleError("");
+  }
+
+  async function refreshFindingLifecycle(
+    findingId: number,
+  ) {
+    const [
+      detailResponse,
+      workflowResponse,
+    ] = await Promise.all([
+      apiFetch(
+        `/audit/findings/${findingId}`,
+      ),
+      apiFetch(
+        `/audit/findings/${findingId}/workflow`,
+      ),
+    ]);
+
+    if (!detailResponse.ok) {
+      throw new Error(
+        await responseError(detailResponse),
+      );
+    }
+
+    const detail =
+      (await detailResponse.json()) as Finding;
+
+    setSelectedFinding(detail);
+    syncLifecycleForm(detail);
+
+    if (workflowResponse.ok) {
+      setWorkflow(
+        arrayValue(
+          await workflowResponse.json(),
+        ) as WorkflowEvent[],
+      );
+    } else {
+      setWorkflow([]);
+    }
+
+    await loadFindings();
+  }
+
+  async function runFindingAction(
+    endpoint: string,
+    payload: Record<string, unknown>,
+  ) {
+    if (!selectedFinding) {
+      return;
+    }
+
+    setLifecycleBusy(true);
+    setLifecycleError("");
+
+    try {
+      const response = await apiFetch(
+        `/audit/findings/${selectedFinding.id}/${endpoint}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await responseError(response),
+        );
+      }
+
+      await refreshFindingLifecycle(
+        selectedFinding.id,
+      );
+    } catch (actionError: any) {
+      setLifecycleError(
+        actionError?.message ||
+          "Finding action failed.",
+      );
+    } finally {
+      setLifecycleBusy(false);
+    }
+  }
+
+  async function assignFindingOwner() {
+    if (!ownerId) {
+      setLifecycleError(
+        "Assigned owner is required.",
+      );
+      return;
+    }
+
+    await runFindingAction(
+      "assign-owner",
+      {
+        assigned_owner_id:
+          Number(ownerId),
+        process_manager_id:
+          managerId
+            ? Number(managerId)
+            : null,
+        comment:
+          actionComment.trim() ||
+          null,
+      },
+    );
+  }
+
+  async function saveOwnerResponse() {
+    await runFindingAction(
+      "owner-response",
+      {
+        root_cause:
+          rootCause.trim() || null,
+        correction:
+          correction.trim() || null,
+        corrective_action_plan:
+          correctiveActionPlan.trim() ||
+          null,
+        recommendation:
+          recommendation.trim() || null,
+        due_date:
+          targetDate || null,
+        comment:
+          actionComment.trim() || null,
+      },
+    );
+  }
+
+  async function submitOwnerResponse() {
+    await runFindingAction(
+      "owner-submit",
+      {
+        comment:
+          actionComment.trim() || null,
+      },
+    );
+  }
+
+  async function approveFindingPlan() {
+    await runFindingAction(
+      "manager-approve",
+      {
+        comment:
+          actionComment.trim() || null,
+      },
+    );
+  }
+
+  async function requestFindingRevision() {
+    if (!actionComment.trim()) {
+      setLifecycleError(
+        "Revision comment is required.",
+      );
+      return;
+    }
+
+    await runFindingAction(
+      "manager-revision",
+      {
+        comment:
+          actionComment.trim(),
+      },
+    );
+  }
+
+  async function completeFindingImplementation() {
+    if (!implementationEvidence.trim()) {
+      setLifecycleError(
+        "Implementation evidence is required.",
+      );
+      return;
+    }
+
+    await runFindingAction(
+      "implementation-complete",
+      {
+        implementation_evidence:
+          implementationEvidence.trim(),
+        comment:
+          actionComment.trim() || null,
+      },
+    );
+  }
+
+  async function verifyFinding(
+    effective: boolean,
+  ) {
+    if (!verificationComment.trim()) {
+      setLifecycleError(
+        "Verification comment is required.",
+      );
+      return;
+    }
+
+    await runFindingAction(
+      "verify",
+      {
+        effective,
+        comment:
+          verificationComment.trim(),
+      },
     );
   }
 
@@ -1931,8 +2205,9 @@ function AuditFindingsContent() {
 
                         <div className="mt-2 text-xs font-semibold text-slate-800">
                           {selectedOwner?.full_name ||
-                            selectedFinding.owner ||
-                            "Unassigned"}
+                            (selectedFinding.assigned_owner_id
+                              ? `User #${selectedFinding.assigned_owner_id}`
+                              : "Unassigned")}
                         </div>
 
                         <div className="mt-1 text-[10px] text-slate-400">
@@ -2096,6 +2371,422 @@ function AuditFindingsContent() {
                           </div>
                         </div>
                       </div>
+                    </div>
+                  </section>
+
+                  <section className="border border-slate-200">
+                    <div className="border-b border-slate-200 px-5 py-4">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                        Lifecycle Action
+                      </div>
+
+                      <div className="mt-1 text-base font-semibold text-slate-950">
+                        Controlled Workflow
+                      </div>
+
+                      <div className="mt-1 text-xs text-slate-500">
+                        Available operations are constrained by the backend finding state machine.
+                      </div>
+                    </div>
+
+                    <div className="space-y-5 p-5">
+                      {lifecycleError ? (
+                        <div className="border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                          {lifecycleError}
+                        </div>
+                      ) : null}
+
+                      {selectedFinding.status !==
+                      "CLOSED" ? (
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label>
+                            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Assigned Owner
+                            </div>
+
+                            <select
+                              value={ownerId}
+                              onChange={(event) =>
+                                setOwnerId(
+                                  event.target.value,
+                                )
+                              }
+                              className="h-10 w-full border border-slate-300 bg-white px-3 text-xs outline-none"
+                            >
+                              <option value="">
+                                Select owner
+                              </option>
+
+                              {users.map((user) => (
+                                <option
+                                  key={user.id}
+                                  value={user.id}
+                                >
+                                  {user.full_name ||
+                                    user.email ||
+                                    `User #${user.id}`}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Process Manager
+                            </div>
+
+                            <select
+                              value={managerId}
+                              onChange={(event) =>
+                                setManagerId(
+                                  event.target.value,
+                                )
+                              }
+                              className="h-10 w-full border border-slate-300 bg-white px-3 text-xs outline-none"
+                            >
+                              <option value="">
+                                Select manager
+                              </option>
+
+                              {users.map((user) => (
+                                <option
+                                  key={user.id}
+                                  value={user.id}
+                                >
+                                  {user.full_name ||
+                                    user.email ||
+                                    `User #${user.id}`}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      ) : null}
+
+                      {selectedFinding.status !==
+                      "CLOSED" ? (
+                        <button
+                          type="button"
+                          disabled={
+                            lifecycleBusy ||
+                            !ownerId
+                          }
+                          onClick={
+                            assignFindingOwner
+                          }
+                          className="border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Assign Ownership
+                        </button>
+                      ) : null}
+
+                      {[
+                        "ASSIGNED",
+                        "OWNER_RESPONSE",
+                        "REVISION_REQUIRED",
+                        "VERIFICATION_FAILED",
+                      ].includes(
+                        selectedFinding.status,
+                      ) ? (
+                        <div className="space-y-4 border-t border-slate-200 pt-5">
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label>
+                              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                Root Cause
+                              </div>
+
+                              <textarea
+                                value={rootCause}
+                                onChange={(event) =>
+                                  setRootCause(
+                                    event.target.value,
+                                  )
+                                }
+                                rows={4}
+                                className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                              />
+                            </label>
+
+                            <label>
+                              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                Correction
+                              </div>
+
+                              <textarea
+                                value={correction}
+                                onChange={(event) =>
+                                  setCorrection(
+                                    event.target.value,
+                                  )
+                                }
+                                rows={4}
+                                className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                              />
+                            </label>
+                          </div>
+
+                          <label className="block">
+                            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Corrective Action Plan
+                            </div>
+
+                            <textarea
+                              value={
+                                correctiveActionPlan
+                              }
+                              onChange={(event) =>
+                                setCorrectiveActionPlan(
+                                  event.target.value,
+                                )
+                              }
+                              rows={4}
+                              className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                            />
+                          </label>
+
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label>
+                              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                Recommendation
+                              </div>
+
+                              <textarea
+                                value={recommendation}
+                                onChange={(event) =>
+                                  setRecommendation(
+                                    event.target.value,
+                                  )
+                                }
+                                rows={3}
+                                className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                              />
+                            </label>
+
+                            <label>
+                              <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                                Target Date
+                              </div>
+
+                              <input
+                                type="date"
+                                value={targetDate}
+                                onChange={(event) =>
+                                  setTargetDate(
+                                    event.target.value,
+                                  )
+                                }
+                                className="h-10 w-full border border-slate-300 bg-white px-3 text-xs outline-none"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={lifecycleBusy}
+                              onClick={
+                                saveOwnerResponse
+                              }
+                              className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                            >
+                              Save Owner Response
+                            </button>
+
+                            {[
+                              "OWNER_RESPONSE",
+                              "REVISION_REQUIRED",
+                              "VERIFICATION_FAILED",
+                            ].includes(
+                              selectedFinding.status,
+                            ) ? (
+                              <button
+                                type="button"
+                                disabled={
+                                  lifecycleBusy
+                                }
+                                onClick={
+                                  submitOwnerResponse
+                                }
+                                className="border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                              >
+                                Submit for Review
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {selectedFinding.status ===
+                      "SUBMITTED_FOR_REVIEW" ? (
+                        <div className="space-y-4 border-t border-slate-200 pt-5">
+                          <label className="block">
+                            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Manager Comment
+                            </div>
+
+                            <textarea
+                              value={actionComment}
+                              onChange={(event) =>
+                                setActionComment(
+                                  event.target.value,
+                                )
+                              }
+                              rows={3}
+                              className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                            />
+                          </label>
+
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={lifecycleBusy}
+                              onClick={
+                                approveFindingPlan
+                              }
+                              className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                            >
+                              Approve Plan
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={
+                                lifecycleBusy ||
+                                !actionComment.trim()
+                              }
+                              onClick={
+                                requestFindingRevision
+                              }
+                              className="border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                            >
+                              Request Revision
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {selectedFinding.status ===
+                      "PLAN_APPROVED" ? (
+                        <div className="space-y-4 border-t border-slate-200 pt-5">
+                          <label className="block">
+                            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Implementation Evidence
+                            </div>
+
+                            <textarea
+                              value={
+                                implementationEvidence
+                              }
+                              onChange={(event) =>
+                                setImplementationEvidence(
+                                  event.target.value,
+                                )
+                              }
+                              rows={4}
+                              className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                            />
+                          </label>
+
+                          <button
+                            type="button"
+                            disabled={
+                              lifecycleBusy ||
+                              !implementationEvidence.trim()
+                            }
+                            onClick={
+                              completeFindingImplementation
+                            }
+                            className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                          >
+                            Mark Implementation Complete
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {selectedFinding.status ===
+                      "READY_FOR_VERIFICATION" ? (
+                        <div className="space-y-4 border-t border-slate-200 pt-5">
+                          <label className="block">
+                            <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                              Verification Comment
+                            </div>
+
+                            <textarea
+                              value={
+                                verificationComment
+                              }
+                              onChange={(event) =>
+                                setVerificationComment(
+                                  event.target.value,
+                                )
+                              }
+                              rows={4}
+                              className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                            />
+                          </label>
+
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              disabled={
+                                lifecycleBusy ||
+                                !verificationComment.trim()
+                              }
+                              onClick={() =>
+                                verifyFinding(true)
+                              }
+                              className="bg-slate-950 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+                            >
+                              Verify Effective
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={
+                                lifecycleBusy ||
+                                !verificationComment.trim()
+                              }
+                              onClick={() =>
+                                verifyFinding(false)
+                              }
+                              className="border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                            >
+                              Verify Ineffective
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {![
+                        "SUBMITTED_FOR_REVIEW",
+                        "READY_FOR_VERIFICATION",
+                        "CLOSED",
+                      ].includes(
+                        selectedFinding.status,
+                      ) ? (
+                        <label className="block">
+                          <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                            Workflow Comment
+                          </div>
+
+                          <textarea
+                            value={actionComment}
+                            onChange={(event) =>
+                              setActionComment(
+                                event.target.value,
+                              )
+                            }
+                            rows={3}
+                            className="w-full border border-slate-300 bg-white p-3 text-xs outline-none"
+                          />
+                        </label>
+                      ) : null}
+
+                      {lifecycleBusy ? (
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                          Processing...
+                        </div>
+                      ) : null}
                     </div>
                   </section>
 

@@ -12,8 +12,6 @@ from app.api.compliance_object import router as compliance_object_router
 # ==============================
 from app.routes.user import router as user_router
 from app.routes.process_applicable_controls import router as process_applicable_controls_router
-from app.routes.integrations import router as integrations_router
-from app.routes.notifications import router as notifications_router
 from app.routes.roles import router as roles_router
 from app.routes.compliance_obligations import router as compliance_obligations_router
 from app.api import auth, assessments
@@ -27,6 +25,7 @@ from app.routes.evidence_create_fix import router as evidence_create_fix_router
 from app.routes.evidence_files import router as evidence_files_router
 from app.routes.standards import router as standards_router
 from app.routes.framework import router as framework_router
+from app.routes.pam import router as pam_router
 from app.routes.controls import router as controls_router
 from app.routes.risk_assessment import router as risk_assessment_router
 from app.routes.ai import router as ai_router
@@ -34,7 +33,6 @@ from app.routes.ai_dashboard import router as ai_dashboard_router
 from app.routes.kpi import router as kpi_router
 from app.routes.data_explorer import router as data_explorer_router
 from app.routes.maturity import router as maturity_router
-from app.routes.pam_workspace import router as pam_workspace_router
 from app.routes.standard_maturity_structure import router as standard_maturity_structure_router
 from app.routes.control_assessments import router as control_assessments_router
 from app.routes.requirements import router as requirements_router
@@ -60,16 +58,13 @@ from app.routes.process_readiness import router as process_readiness_router
 from app.routes.license import router as license_router
 from app.routes.analytics_control import router as analytics_control_router
 from app.routes.company_tasks import router as company_tasks_router
-from app.routes.remediation import router as remediation_router
-from app.routes.task_sync import router as task_sync_router
 from app.routes.intelligence import api_router as intelligence_api_router
 from app.models.maturity_workspace_sessions import MaturityWorkspaceSession
 from app.api.risk_appetite import router as risk_appetite_router
 from app.routes.audit_plans import router as audit_plans_router
-from app.routes.audit_plan_auditors import router as audit_plan_auditors_router
 from app.routes.audit import router as audit_router
+from app.api.admin_audit import router as admin_audit_router
 from app.routes.audit_findings import router as audit_findings_router
-from app.routes.audit_finding_workflow import router as audit_finding_workflow_router
 from app.routes.actions import router as actions_router
 from app.routes.company_home import router as company_home_router
 from app.routes.organization import router as organization_router
@@ -77,13 +72,15 @@ from app.routes.location import router as location_router
 from app.routes.stakeholder import router as stakeholder_router
 from app.routes.department import router as department_router
 from app.routes.governance import router as governance_router
+from app.routes.governance_committee import router as governance_committee_router
+from app.routes.governance_approval import router as governance_approval_router
 from app.routes.decision_register import router as decision_register_router
 from app.routes.admin_tenants import router as admin_tenants_router
 from app.routes.admin_users import router as admin_users_router
+from app.routes.integrations import router as integrations_router
+from app.routes.notifications import router as notifications_router
 from app.routes.identity_verification import router as identity_verification_router
 from app.routes.governance_meeting import router as governance_meeting_router
-from app.routes.governance_committee import router as governance_committee_router
-from app.routes.governance_approval import router as governance_approval_router
 from app.routes.benchmarking import router as benchmarking_router
 
 
@@ -183,8 +180,6 @@ application.include_router(control_assessments_router)
 application.include_router(evidence_files_router)
 application.include_router(user_router)
 application.include_router(company_tasks_router)
-application.include_router(remediation_router)
-application.include_router(task_sync_router)
 # Register the version-aware create endpoint before the legacy evidence router.
 # This preserves all existing evidence routes while making POST /evidences and
 # POST /company/evidences resolve through the canonical standard-version contract.
@@ -196,6 +191,7 @@ application.include_router(risk_create_router)
 application.include_router(risk_router)
 application.include_router(standards_router)
 application.include_router(framework_router)
+application.include_router(pam_router)
 application.include_router(standard_structure.router)
 application.include_router(controls_router)
 application.include_router(ai_router)
@@ -212,9 +208,13 @@ application.include_router(location_router)
 application.include_router(stakeholder_router)
 application.include_router(department_router)
 application.include_router(governance_router)
+application.include_router(governance_committee_router)
+application.include_router(governance_approval_router)
 application.include_router(decision_register_router)
 application.include_router(admin_tenants_router)
 application.include_router(admin_users_router)
+application.include_router(integrations_router)
+application.include_router(notifications_router)
 application.include_router(identity_verification_router)
 application.include_router(process_risk_router)
 application.include_router(coverage_router)
@@ -231,25 +231,19 @@ application.include_router(uee_router)
 application.include_router(process_readiness_router)
 application.include_router(analytics_router)
 application.include_router(analytics_control_router)
-application.include_router(integrations_router)
-application.include_router(notifications_router)
 application.include_router(roles_router)
 application.include_router(compliance_obligations_router)
-application.include_router(pam_workspace_router)
 application.include_router(maturity_router)
 application.include_router(clause_router)
 application.include_router(risk_appetite_router)
 application.include_router(compliance_object_router)
 application.include_router(license_router)
 application.include_router(audit_plans_router)
-application.include_router(audit_plan_auditors_router)
-application.include_router(audit_finding_workflow_router)
 application.include_router(audit_findings_router)
 application.include_router(audit_router)
+application.include_router(admin_audit_router)
 application.include_router(actions_router)
 application.include_router(governance_meeting_router)
-application.include_router(governance_committee_router)
-application.include_router(governance_approval_router)
 application.include_router(benchmarking_router)
 
 
@@ -270,22 +264,19 @@ def intelligence_health():
 
 
 
-import app.models.governance_procedure
+import app.models.governance_procedure as _model_governance_procedure
 
 
 
 
 
 
-import app.models.governance_meeting
-import app.models.governance_meeting_participant
-import app.models.governance_meeting_agenda_item
-import app.models.governance_meeting_decision
-import app.models.governance_meeting_action
-import app.models.governance_meeting_history
-import app.models.governance_committee
-import app.models.governance_committee_history
-import app.models.governance_approval
+import app.models.governance_meeting as _model_governance_meeting
+import app.models.governance_meeting_participant as _model_governance_meeting_participant
+import app.models.governance_meeting_agenda_item as _model_governance_meeting_agenda_item
+import app.models.governance_meeting_decision as _model_governance_meeting_decision
+import app.models.governance_meeting_action as _model_governance_meeting_action
+import app.models.governance_meeting_history as _model_governance_meeting_history
 
 
 

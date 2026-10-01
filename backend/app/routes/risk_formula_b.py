@@ -6,19 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.risks import Risk
+from app.services.risk_scoring_service import RiskScoringService
 
 router = APIRouter(prefix="/risks", tags=["Risks"])
 
 
 def _risk_level_from_score(score: int) -> str:
-    # Senin evaluate mantığınla uyumlu eşikler
-    if score <= 4:
-        return "LOW"
-    if score <= 9:
-        return "MEDIUM"
-    if score <= 16:
-        return "HIGH"
-    return "CRITICAL"
+    return RiskScoringService.resolve_level(score)
 
 
 @router.put("/{risk_id}/update-formula-b")
@@ -41,8 +35,12 @@ def update_risk_formula_b(
     impact = int(risk.impact or 1)
     likelihood = int(risk.likelihood or 1)
 
-    score = impact * likelihood
-    level = _risk_level_from_score(score)
+    scoring = RiskScoringService.calculate(
+        likelihood=likelihood,
+        impact=impact,
+    )
+    score = scoring.score
+    level = scoring.risk_level
 
     # History snapshot alanların varsa doldur
     # (Modelinde varsa çalışır; yoksa attribute error vermesin diye getattr/setattr ile ilerliyoruz)

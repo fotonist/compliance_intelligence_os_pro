@@ -8,6 +8,7 @@ from app.core.security import get_current_user
 from app.models.process import Process
 from app.models.risks import Risk
 from app.models.process_risk_link import ProcessRiskLink
+from app.services.process_risk_link_service import ProcessRiskLinkService
 
 router = APIRouter(prefix="", tags=["Process-Risk Links"])
 
@@ -53,39 +54,27 @@ def link_risk_to_process(
 ):
     tenant_id = _require_tenant(user)
 
-    process = _load_process(db, process_id, tenant_id)
-    risk = _load_risk(db, risk_id, tenant_id)
-
-    # Tenant consistency (zaten tenant filtreledik ama future-proof)
-    if process.tenant_id != risk.tenant_id:
-        raise HTTPException(status_code=400, detail="Cross-tenant link is not allowed")
-
-    exists = (
-        db.query(ProcessRiskLink)
-        .filter(ProcessRiskLink.tenant_id == tenant_id)
-        .filter(ProcessRiskLink.process_id == process_id)
-        .filter(ProcessRiskLink.risk_id == risk_id)
-        .first()
-    )
-    if exists:
-        return {"ok": True, "id": exists.id, "message": "Already linked"}
-
-    link = ProcessRiskLink(
-        tenant_id=tenant_id,
-        process_id=process_id,
-        risk_id=risk_id,
-    )
-    db.add(link)
     try:
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        # Unique constraint fallback (race condition)
-        raise HTTPException(status_code=409, detail="Link already exists") from e
+        link, created = ProcessRiskLinkService.link(
+            db=db,
+            tenant_id=tenant_id,
+            user_id=user.id,
+            process_id=process_id,
+            risk_id=risk_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
 
-    db.refresh(link)
-    return {"ok": True, "id": link.id}
-
+    return {
+        "ok": True,
+        "created": created,
+        "id": link.id,
+        "process_id": process_id,
+        "risk_id": risk_id,
+    }
 
 @router.delete("/processes/{process_id}/risks/{risk_id}")
 def unlink_risk_from_process(
@@ -96,20 +85,26 @@ def unlink_risk_from_process(
 ):
     tenant_id = _require_tenant(user)
 
-    link = (
-        db.query(ProcessRiskLink)
-        .filter(ProcessRiskLink.tenant_id == tenant_id)
-        .filter(ProcessRiskLink.process_id == process_id)
-        .filter(ProcessRiskLink.risk_id == risk_id)
-        .first()
-    )
-    if not link:
-        return {"ok": True, "message": "Not linked"}
+    try:
+        deleted = ProcessRiskLinkService.unlink(
+            db=db,
+            tenant_id=tenant_id,
+            user_id=user.id,
+            process_id=process_id,
+            risk_id=risk_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
 
-    db.delete(link)
-    db.commit()
-    return {"ok": True}
-
+    return {
+        "ok": True,
+        "deleted": deleted,
+        "process_id": process_id,
+        "risk_id": risk_id,
+    }
 
 @router.get("/processes/{process_id}/risks")
 def list_risks_of_process(

@@ -1,4 +1,4 @@
-from sqlalchemy.orm import DeclarativeBase
+﻿from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
@@ -22,48 +22,9 @@ from app.models.permission import Permission
 
 # --- Standards Hierarchy ---
 from app.models.standards import Standard
-from app.models.standard_versions import StandardVersion
 from app.models.clauses import Clause
 from app.models.requirements import Requirement
 from app.models.controls import Control
-
-# --- Framework Model ---
-from app.models.framework_model import FrameworkModel
-from app.models.framework_relationship import FrameworkRelationship
-
-# --- Canonical PAM ---
-from app.models.pam_process_category import PamProcessCategory
-from app.models.pam_definition import (
-    PamProcessGroup,
-    PamProcess,
-    PamProcessOutcome,
-    PamBasePractice,
-    PamBasePracticeOutcome,
-    PamWorkProduct,
-    PamProcessWorkProduct,
-)
-from app.models.pam_capability import (
-    PamCapabilityLevel,
-    PamProcessAttribute,
-    PamGenericPractice,
-    PamGenericResource,
-    PamGenericWorkProduct,
-)
-
-# --- Process ---
-from app.models.process import Process
-from app.models.process_pam_mapping import ProcessPamMapping
-
-# --- Canonical PAM Assessment ---
-from app.models.pam_assessment import (
-    PamAssessment,
-    PamAssessmentProcess,
-    PamProcessAttributeEvaluation,
-)
-from app.models.pam_indicator_evaluation import (
-    PamIndicatorEvaluation,
-    PamIndicatorEvidenceLink,
-)
 
 # --- Maturity / Standard ---
 from app.models.standard_process_area import StandardProcessArea
@@ -81,7 +42,7 @@ from app.models.risks import Risk
 from app.models.risk_history import RiskHistory
 from app.models.risk_evidence_link import RiskEvidenceLink
 
-# --- Legacy Maturity Assessment ---
+# --- Maturity Assessment ---
 from app.models.maturity_assessment_session import MaturityAssessmentSession
 from app.models.maturity_practice_evaluation import MaturityPracticeEvaluation
 
@@ -94,20 +55,4 @@ from app.models.intelligence_model_config import IntelligenceModelConfig
 from app.models.governance_policy import GovernancePolicy
 from app.models.governance_procedure import GovernanceProcedure
 
-# --- Governance Meetings ---
-from app.models.governance_meeting import GovernanceMeeting
-from app.models.governance_meeting_participant import GovernanceMeetingParticipant
-from app.models.governance_meeting_agenda_item import GovernanceMeetingAgendaItem
-from app.models.governance_meeting_decision import GovernanceMeetingDecision
-from app.models.governance_meeting_action import GovernanceMeetingAction
-from app.models.governance_meeting_history import GovernanceMeetingHistory
 
-# --- Governance Committees ---
-from app.models.governance_committee import GovernanceCommittee, GovernanceCommitteeMember
-from app.models.governance_committee_history import GovernanceCommitteeHistory
-
-# --- Governance Approvals & Delegations ---
-from app.models.governance_approval import GovernanceApprovalAuthority, GovernanceDelegation, GovernanceApprovalHistory
-
-# --- Notifications ---
-from app.models.notifications import Notification, NotificationDelivery, NotificationPreference

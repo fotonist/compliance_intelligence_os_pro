@@ -26,16 +26,6 @@ class GovernanceMeeting(Base):
     )
 
     meeting_code = Column(String(100), nullable=False, index=True)
-
-    committee_id = Column(
-        Integer,
-        ForeignKey(
-            "governance_committees.id",
-            ondelete="SET NULL",
-        ),
-        nullable=True,
-        index=True,
-    )
     title = Column(String(500), nullable=False)
     meeting_type = Column(String(100), nullable=False, index=True)
 
@@ -55,6 +45,13 @@ class GovernanceMeeting(Base):
     chairperson_id = Column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    committee_id = Column(
+        Integer,
+        ForeignKey("governance_committees.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -97,15 +94,16 @@ class GovernanceMeeting(Base):
         lazy="joined",
     )
 
-    committee = relationship(
-        "GovernanceCommittee",
-        back_populates="meetings",
-    )
-
     chairperson = relationship(
         "User",
         foreign_keys=[chairperson_id],
         lazy="joined",
+    )
+
+    committee = relationship(
+        "GovernanceCommittee",
+        back_populates="meetings",
+        foreign_keys=[committee_id],
     )
 
     creator = relationship(

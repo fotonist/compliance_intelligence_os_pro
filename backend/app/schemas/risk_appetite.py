@@ -22,9 +22,13 @@ class ProcessRiskAppetiteResponse(BaseModel):
     process_id: int
     process_name: str
     threshold: int
+    threshold_override: Optional[int] = None
+    criticality: Optional[str] = None
+    inherited: bool = True
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class ProcessRiskAppetiteUpdate(BaseModel):
     threshold_override: Optional[int] = None
+    criticality: Optional[str] = None

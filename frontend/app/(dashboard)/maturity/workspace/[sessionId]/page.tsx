@@ -1,149 +1,1163 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
-import SelectEvidenceMaturityModal from "@/app/(dashboard)/evidences/SelectEvidenceMaturityModal";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Boxes,
+  ClipboardCheck,
+  FileCheck2,
+  Layers3,
+  Plus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Target,
+  X,
+} from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import {
+  useParams,
+  useRouter,
+} from "next/navigation";
 
-const API_BASE = "https://compliance-intelligence-os-pro-2.onrender.com";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:8000";
 
-type Evaluation = { id: number; rating: string | null; observation?: string | null; justification: string | null; status: string; evidence_count?: number; evaluated_by: number | null; evaluated_at: string | null };
-type Indicator = { id: number; code: string; text: string; guidance: string | null; sort_order: number; evaluation: Evaluation | null };
-type WorkProduct = { id: number; code: string; name: string; description: string | null; characteristics: unknown; direction: string; sort_order: number; evaluation: Evaluation | null };
-type Attribute = { id: number; code: string; name: string; description: string | null; capability_level: { id: number; level: number; code: string; name: string; description: string | null }; evaluation: Evaluation | null; generic_practices: Indicator[]; generic_resources: Indicator[]; generic_work_products: Indicator[] };
-type Process = { assessment_process_id: number; tenant_process_id: number | null; tenant_process: { id: number; code: string | null; name: string; type: string | null; owner: string | null; status: string | null } | null; pam_process_id: number; code: string; name: string; purpose: string | null; description: string | null; process_group: { id: number; code: string; name: string }; outcomes: { id: number; code: string; text: string; sort_order: number }[]; base_practices: Indicator[]; work_products: WorkProduct[]; target_capability_level: number | null; status: string; attributes: Attribute[] };
-type Workspace = { assessment: { id: number; name: string; scope: string | null; status: string; framework_adoption_id: number; framework_model_id: number; assessor_user_id: number | null; sponsor_user_id: number | null; created_at: string; updated_at: string }; summary: { processes_in_scope: number; assessed_processes: number; attributes_evaluated: number; attributes_total: number; average_capability: number | null; target_capability: number | null; capability_gap: number | null }; processes: Process[] };
-type IndicatorType = "BASE_PRACTICE" | "WORK_PRODUCT" | "GENERIC_PRACTICE" | "GENERIC_RESOURCE" | "GENERIC_WORK_PRODUCT";
+type PamAssessment = {
+  id: number;
+  tenant_id: number;
+  framework_adoption_id: number;
+  framework_model_id: number;
+  name: string;
+  scope?: string | null;
+  status: string;
+  assessor_user_id?: number | null;
+  sponsor_user_id?: number | null;
+  audit_plan_id?: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type PamProcessIdentity = {
+  id: number;
+  code: string;
+  name: string;
+  purpose?: string | null;
+  description?: string | null;
+};
+
+type PamProcessGroup = {
+  id: number;
+  code: string;
+  name: string;
+};
+
+type PamProcessCategory = {
+  id: number;
+  code: string;
+  name: string;
+};
+
+type TenantProcess = {
+  id: number;
+  code: string;
+  name: string;
+};
+
+type PamAssessmentProcess = {
+  id: number;
+  assessment_id: number;
+  tenant_process_id?: number | null;
+  pam_process_id: number;
+  in_scope: boolean;
+  target_capability_level?: number | null;
+  status: string;
+  created_at: string;
+  pam_process: PamProcessIdentity;
+  process_group: PamProcessGroup;
+  process_category: PamProcessCategory;
+  tenant_process?: TenantProcess | null;
+};
+
+type PamProcessMapping = {
+  mapping_id: number;
+  mapping_type: string;
+  confidence?: number | null;
+  rationale?: string | null;
+  tenant_process: TenantProcess;
+};
+
+type PamAvailableProcess = {
+  pam_process: PamProcessIdentity;
+  process_group: PamProcessGroup;
+  process_category: PamProcessCategory;
+  is_added: boolean;
+  tenant_mappings: PamProcessMapping[];
+};
+
+type PamCapabilityLevel = {
+  id: number;
+  framework_model_id: number;
+  level: number;
+  code: string;
+  name: string;
+  description?: string | null;
+  sort_order: number;
+};
+
+type PamContext = {
+  tenant_id: number;
+  framework_adoption_id: number;
+  standard_id: number;
+  standard_version_id: number;
+  pam_framework_model_id: number;
+  capability_framework_model_id: number;
+  standard_code: string;
+  standard_type: string;
+  version_code: string;
+  pam_framework_model_code: string;
+  capability_framework_model_code: string;
+};
 
 function getToken() {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
-}
-
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div><div className="mt-3 text-3xl font-semibold text-white">{value}</div></div>;
-}
-
-function IndicatorEditor({ item, type, sessionId, processId, token, onSaved, onLink }: { item: Indicator | WorkProduct; type: IndicatorType; sessionId: number; processId: number; token: string; onSaved: () => Promise<void>; onLink: (evaluationId: number) => void }) {
-  const [rating, setRating] = useState(item.evaluation?.rating ?? "");
-  const [observation, setObservation] = useState(item.evaluation?.observation ?? "");
-  const [justification, setJustification] = useState(item.evaluation?.justification ?? "");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setRating(item.evaluation?.rating ?? "");
-    setObservation(item.evaluation?.observation ?? "");
-    setJustification(item.evaluation?.justification ?? "");
-  }, [item.evaluation?.id, item.evaluation?.rating, item.evaluation?.observation, item.evaluation?.justification]);
-
-  async function save() {
-    setSaving(true);
-    try {
-      const response = await fetch(`${API_BASE}/maturity/workspace/${sessionId}/processes/${processId}/indicators`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ indicator_type: type, indicator_id: item.id, rating: rating.trim() || null, observation: observation.trim() || null, justification: justification.trim() || null, status: "DRAFT" }),
-      });
-      if (!response.ok) throw new Error((await response.text()) || "Failed to save indicator evaluation");
-      await onSaved();
-    } finally {
-      setSaving(false);
-    }
+  if (typeof window === "undefined") {
+    return "";
   }
 
-  const guidance = "guidance" in item ? item.guidance : null;
-  const label = "text" in item ? item.text : item.name;
-
-  return <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
-    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-mono text-xs text-cyan-300">{item.code}</div><div className="mt-1 text-sm text-slate-300">{label}</div>{guidance && <div className="mt-2 text-xs text-slate-500">{guidance}</div>}</div><span className="shrink-0 rounded-full border border-slate-700 px-2 py-1 text-[10px] uppercase text-slate-500">{item.evaluation?.status ?? "Not evaluated"}</span></div>
-    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[120px_1fr]"><input value={rating} onChange={(e) => setRating(e.target.value)} placeholder="Rating" className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-white outline-none focus:border-indigo-500" /><input value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="Observation" className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500" /></div>
-    <textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={2} placeholder="Assessment justification" className="mt-2 w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-300 outline-none focus:border-indigo-500" />
-    <div className="mt-2 flex items-center justify-between"><span className="text-[11px] text-slate-500">Evidence: {item.evaluation?.evidence_count ?? 0}</span><div className="flex gap-2"><button type="button" disabled={saving} onClick={save} className="rounded-lg bg-indigo-600 px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-50">{saving ? "Saving..." : "Save Evaluation"}</button>{item.evaluation?.id && <button type="button" onClick={() => onLink(item.evaluation!.id)} className="rounded-lg border border-emerald-700 px-3 py-2 text-[11px] font-semibold text-emerald-300">Link Evidence</button>}</div></div>
-  </div>;
+  return (
+    window.localStorage.getItem("access_token") ||
+    window.sessionStorage.getItem("access_token") ||
+    window.localStorage.getItem("token") ||
+    window.sessionStorage.getItem("token") ||
+    ""
+  );
 }
 
-function IndicatorSection({ title, items, type, sessionId, processId, token, onSaved, onLink }: { title: string; items: (Indicator | WorkProduct)[]; type: IndicatorType; sessionId: number; processId: number; token: string; onSaved: () => Promise<void>; onLink: (evaluationId: number) => void }) {
-  return <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5"><div className="mb-3 flex items-center justify-between"><h4 className="font-medium text-slate-200">{title}</h4><span className="rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-400">{items.length}</span></div><div className="space-y-2">{items.length === 0 ? <div className="text-sm text-slate-600">No indicators loaded.</div> : items.map((item) => <IndicatorEditor key={item.id} item={item} type={type} sessionId={sessionId} processId={processId} token={token} onSaved={onSaved} onLink={onLink} />)}</div></div>;
-}
-
-function AttributeCard({ attribute, sessionId, processId, token, onSaved, onLink }: { attribute: Attribute; sessionId: number; processId: number; token: string; onSaved: () => Promise<void>; onLink: (evaluationId: number) => void }) {
-  const [rating, setRating] = useState(attribute.evaluation?.rating ?? "");
-  const [justification, setJustification] = useState(attribute.evaluation?.justification ?? "");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setRating(attribute.evaluation?.rating ?? "");
-    setJustification(attribute.evaluation?.justification ?? "");
-  }, [attribute.evaluation?.id, attribute.evaluation?.rating, attribute.evaluation?.justification]);
-
-  async function save() {
-    setSaving(true);
-    try {
-      const response = await fetch(`${API_BASE}/maturity/workspace/${sessionId}/processes/${processId}/attributes/${attribute.id}`, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ rating: rating.trim() || null, justification: justification.trim() || null, status: "DRAFT" }),
-      });
-      if (!response.ok) throw new Error((await response.text()) || "Failed to save evaluation");
-      await onSaved();
-    } finally {
-      setSaving(false);
-    }
+function normalizeStatus(value?: string | null) {
+  if (!value) {
+    return "Unknown";
   }
 
-  return <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-6">
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div className="max-w-3xl"><div className="flex flex-wrap items-center gap-2"><span className="font-mono text-sm text-cyan-300">{attribute.code}</span><span className="rounded-full border border-slate-700 px-2.5 py-1 text-xs text-slate-500">Level {attribute.capability_level.level}</span></div><h4 className="mt-2 text-lg font-medium text-slate-200">{attribute.name}</h4>{attribute.description && <p className="mt-2 text-sm leading-6 text-slate-400">{attribute.description}</p>}</div><div className="w-full lg:w-48"><label className="text-xs uppercase tracking-[0.18em] text-slate-500">Rating</label><input value={rating} onChange={(e) => setRating(e.target.value)} placeholder="Enter rating" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none focus:border-indigo-500" /></div></div>
-    <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-3"><IndicatorSection title="Generic Practices" items={attribute.generic_practices} type="GENERIC_PRACTICE" sessionId={sessionId} processId={processId} token={token} onSaved={onSaved} onLink={onLink} /><IndicatorSection title="Generic Resources" items={attribute.generic_resources} type="GENERIC_RESOURCE" sessionId={sessionId} processId={processId} token={token} onSaved={onSaved} onLink={onLink} /><IndicatorSection title="Generic Work Products" items={attribute.generic_work_products} type="GENERIC_WORK_PRODUCT" sessionId={sessionId} processId={processId} token={token} onSaved={onSaved} onLink={onLink} /></div>
-    <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-900/40 p-5"><label className="text-xs uppercase tracking-[0.18em] text-slate-500">Justification / Assessment Notes</label><textarea value={justification} onChange={(e) => setJustification(e.target.value)} rows={4} placeholder="Record the assessment rationale, observations and supporting context." className="mt-2 w-full resize-y rounded-xl border border-slate-700 bg-slate-900 px-3 py-3 text-sm text-slate-200 outline-none focus:border-indigo-500" /><div className="mt-3 flex justify-end"><button type="button" disabled={saving} onClick={save} className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-50">{saving ? "Saving..." : "Save Evaluation"}</button></div></div>
-  </div>;
+  return value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-export default function MaturityPracticeWorkspacePage() {
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const numericSessionId = Number(sessionId);
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [selectedProcessId, setSelectedProcessId] = useState<number | null>(null);
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  detail,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-sm font-medium text-slate-500">
+            {label}
+          </div>
+
+          <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+            {value}
+          </div>
+        </div>
+
+        <div className="rounded-xl bg-slate-100 p-2.5 text-slate-600">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+        <BadgeCheck className="h-3.5 w-3.5" />
+        {detail}
+      </div>
+    </div>
+  );
+}
+
+export default function MaturityAssessmentWorkspacePage() {
+  const params = useParams<{ sessionId: string }>();
+  const router = useRouter();
+
+  const assessmentId = useMemo(() => {
+    const value = Number(params?.sessionId);
+
+    return Number.isInteger(value) && value > 0
+      ? value
+      : null;
+  }, [params?.sessionId]);
+
+  const [assessment, setAssessment] =
+    useState<PamAssessment | null>(null);
+
+  const [context, setContext] =
+    useState<PamContext | null>(null);
+
+  const [processes, setProcesses] =
+    useState<PamAssessmentProcess[]>([]);
+
+  const [availableProcesses, setAvailableProcesses] =
+    useState<PamAvailableProcess[]>([]);
+
+  const [capabilityLevels, setCapabilityLevels] =
+    useState<PamCapabilityLevel[]>([]);
+
+  const [selectedCapabilityLevel, setSelectedCapabilityLevel] =
+    useState<number | null>(null);
+
+  const [addProcessOpen, setAddProcessOpen] =
+    useState(false);
+
+  const [processSearch, setProcessSearch] =
+    useState("");
+
+  const [selectedPamProcessId, setSelectedPamProcessId] =
+    useState<number | null>(null);
+
+  const [addingProcess, setAddingProcess] =
+    useState(false);
+
+  const [addProcessError, setAddProcessError] =
+    useState("");
+
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [linkEvaluationId, setLinkEvaluationId] = useState<number | null>(null);
-  const token = getToken();
+  const [error, setError] = useState("");
 
   const loadWorkspace = useCallback(async () => {
-    if (!token || !sessionId) return;
+    if (!assessmentId) {
+      setError("Invalid assessment identifier.");
+      setLoading(false);
+      return;
+    }
+
+    const token = getToken();
+
+    if (!token) {
+      setError("Authentication token is not available.");
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    setError(null);
+    setError("");
+
     try {
-      const response = await fetch(`${API_BASE}/maturity/workspace/${sessionId}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) throw new Error((await response.text()) || "Failed to load PAM assessment workspace");
-      const data: Workspace = await response.json();
-      setWorkspace(data);
-      setSelectedProcessId((current) => current ?? data.processes[0]?.assessment_process_id ?? null);
+      const headers = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      const [
+        assessmentResponse,
+        contextResponse,
+        processesResponse,
+        availableProcessesResponse,
+        capabilityLevelsResponse,
+      ] = await Promise.all([
+        fetch(
+          `${API_BASE}/pam/assessments/${assessmentId}`,
+          {
+            method: "GET",
+            headers,
+            cache: "no-store",
+          }
+        ),
+        fetch(
+          `${API_BASE}/pam/assessments/${assessmentId}/context`,
+          {
+            method: "GET",
+            headers,
+            cache: "no-store",
+          }
+        ),
+        fetch(
+          `${API_BASE}/pam/assessments/${assessmentId}/processes`,
+          {
+            method: "GET",
+            headers,
+            cache: "no-store",
+          }
+        ),
+        fetch(
+          `${API_BASE}/pam/assessments/${assessmentId}/available-processes`,
+          {
+            method: "GET",
+            headers,
+            cache: "no-store",
+          }
+        ),
+        fetch(
+          `${API_BASE}/pam/assessments/${assessmentId}/capability-levels`,
+          {
+            method: "GET",
+            headers,
+            cache: "no-store",
+          }
+        ),
+      ]);
+
+      if (!assessmentResponse.ok) {
+        const body = await assessmentResponse.text();
+
+        throw new Error(
+          body ||
+            `Assessment request failed: ${assessmentResponse.status}`
+        );
+      }
+
+      if (!contextResponse.ok) {
+        const body = await contextResponse.text();
+
+        throw new Error(
+          body ||
+            `Context request failed: ${contextResponse.status}`
+        );
+      }
+
+      if (!processesResponse.ok) {
+        const body = await processesResponse.text();
+
+        throw new Error(
+          body ||
+            `Processes request failed: ${processesResponse.status}`
+        );
+      }
+
+      if (!availableProcessesResponse.ok) {
+        const body = await availableProcessesResponse.text();
+
+        throw new Error(
+          body ||
+            `Available processes request failed: ${availableProcessesResponse.status}`
+        );
+      }
+
+      if (!capabilityLevelsResponse.ok) {
+        const body = await capabilityLevelsResponse.text();
+
+        throw new Error(
+          body ||
+            `Capability levels request failed: ${capabilityLevelsResponse.status}`
+        );
+      }
+
+      const assessmentData =
+        (await assessmentResponse.json()) as PamAssessment;
+
+      const contextData =
+        (await contextResponse.json()) as PamContext;
+
+      const processData =
+        (await processesResponse.json()) as PamAssessmentProcess[];
+
+      const availableProcessData =
+        (await availableProcessesResponse.json()) as PamAvailableProcess[];
+
+      const capabilityLevelData =
+        (await capabilityLevelsResponse.json()) as PamCapabilityLevel[];
+
+      setAssessment(assessmentData);
+      setContext(contextData);
+      setProcesses(processData);
+      setAvailableProcesses(availableProcessData);
+      setCapabilityLevels(capabilityLevelData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load PAM assessment workspace");
+      setAssessment(null);
+      setContext(null);
+      setProcesses([]);
+      setAvailableProcesses([]);
+      setCapabilityLevels([]);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Assessment workspace could not be loaded."
+      );
     } finally {
       setLoading(false);
     }
-  }, [sessionId, token]);
+  }, [assessmentId]);
 
-  useEffect(() => { loadWorkspace(); }, [loadWorkspace]);
+  useEffect(() => {
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
-  const selectedProcess = useMemo(() => workspace?.processes.find((item) => item.assessment_process_id === selectedProcessId) ?? null, [workspace, selectedProcessId]);
+  const selectableProcesses = useMemo(() => {
+    const query = processSearch
+      .trim()
+      .toLowerCase();
 
-  if (loading) return <div className="min-h-screen bg-[#020817] p-8 text-slate-300">Loading assessment workspace...</div>;
-  if (error && !workspace) return <div className="min-h-screen bg-[#020817] p-8 text-red-300">{error}</div>;
-  if (!workspace || !token) return <div className="min-h-screen bg-[#020817] p-8 text-slate-400">Assessment workspace is empty.</div>;
+    return availableProcesses.filter((item) => {
+      if (item.is_added) {
+        return false;
+      }
 
-  return <div className="min-h-screen bg-[#020817] px-5 py-8 text-white md:px-8">
-    <div className="mx-auto max-w-[1600px]">
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="mb-2 text-xs uppercase tracking-[0.25em] text-slate-500">Governance & Intelligence Engine</div><h1 className="text-3xl font-semibold tracking-tight">ISO/IEC 15504 Process Assessment</h1><p className="mt-2 max-w-3xl text-sm text-slate-400">Process-profile assessment workspace for the canonical Process Assessment Model.</p></div><div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-sm"><div className="text-slate-500">Assessment</div><div className="mt-1 font-medium text-slate-200">#{workspace.assessment.id} · {workspace.assessment.status}</div></div></div>
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5"><Metric label="Processes in Scope" value={workspace.summary.processes_in_scope} /><Metric label="Assessed Processes" value={workspace.summary.assessed_processes} /><Metric label="Attributes Evaluated" value={`${workspace.summary.attributes_evaluated}/${workspace.summary.attributes_total}`} /><Metric label="Average Capability" value={workspace.summary.average_capability ?? "—"} /><Metric label="Capability Gap" value={workspace.summary.capability_gap ?? "—"} /></div>
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <aside className="rounded-3xl border border-slate-800 bg-slate-950/80 p-4"><div className="mb-4 px-2"><div className="text-xs uppercase tracking-[0.2em] text-slate-500">Process Profile</div><div className="mt-1 text-sm text-slate-400">Select a process to assess.</div></div><div className="space-y-2">{workspace.processes.map((process) => <button key={process.assessment_process_id} type="button" onClick={() => setSelectedProcessId(process.assessment_process_id)} className={`w-full rounded-2xl border p-4 text-left transition ${selectedProcessId === process.assessment_process_id ? "border-indigo-500/60 bg-indigo-500/10" : "border-slate-800 bg-slate-900/50 hover:border-slate-700"}`}><div className="flex items-center justify-between gap-3"><span className="font-mono text-sm text-cyan-300">{process.code}</span><span className="text-[10px] uppercase tracking-wider text-slate-500">{process.status}</span></div><div className="mt-2 font-medium text-slate-200">{process.name}</div><div className="mt-1 text-xs text-slate-500">{process.process_group.code} · {process.process_group.name}</div><div className="mt-3 text-xs text-slate-500">Target: {process.target_capability_level ?? "Not set"}</div></button>)}</div></aside>
-        <main className="min-w-0">{selectedProcess ? <div className="space-y-6">
-          <section className="rounded-3xl border border-slate-800 bg-slate-950/80 p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="font-mono text-sm text-cyan-300">{selectedProcess.code}</div><h2 className="mt-2 text-2xl font-semibold">{selectedProcess.name}</h2><div className="mt-2 text-sm text-slate-500">{selectedProcess.process_group.code} · {selectedProcess.process_group.name}</div></div><div className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-right text-sm"><div className="text-slate-500">Target Capability</div><div className="mt-1 text-lg font-semibold text-slate-200">{selectedProcess.target_capability_level ?? "Not set"}</div></div></div>{selectedProcess.purpose && <div className="mt-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-5"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Purpose</div><div className="mt-2 text-sm leading-6 text-slate-300">{selectedProcess.purpose}</div></div>}<div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2"><div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-medium">Process Outcomes</h3><span className="text-xs text-slate-500">{selectedProcess.outcomes.length}</span></div><div className="space-y-2">{selectedProcess.outcomes.map((outcome) => <div key={outcome.id} className="rounded-xl border border-slate-800 p-3"><span className="font-mono text-xs text-cyan-300">{outcome.code}</span><div className="mt-1 text-sm text-slate-300">{outcome.text}</div></div>)}</div></div><IndicatorSection title="Base Practices" items={selectedProcess.base_practices} type="BASE_PRACTICE" sessionId={numericSessionId} processId={selectedProcess.assessment_process_id} token={token} onSaved={loadWorkspace} onLink={setLinkEvaluationId} /></div><div className="mt-4"><IndicatorSection title="Work Products" items={selectedProcess.work_products} type="WORK_PRODUCT" sessionId={numericSessionId} processId={selectedProcess.assessment_process_id} token={token} onSaved={loadWorkspace} onLink={setLinkEvaluationId} /></div></section>
-          <section><div className="mb-4 flex items-end justify-between"><div><div className="text-xs uppercase tracking-[0.2em] text-slate-500">Capability Measurement</div><h3 className="mt-1 text-xl font-semibold">Process Attributes</h3></div>{error && <div className="text-sm text-red-300">{error}</div>}</div><div className="space-y-4">{selectedProcess.attributes.map((attribute) => <AttributeCard key={attribute.id} attribute={attribute} sessionId={numericSessionId} processId={selectedProcess.assessment_process_id} token={token} onSaved={loadWorkspace} onLink={setLinkEvaluationId} />)}</div></section>
-        </div> : <div className="rounded-3xl border border-slate-800 bg-slate-950/80 p-10 text-center text-slate-500">Select a process.</div>}</main>
+      if (!query) {
+        return true;
+      }
+
+      const searchable = [
+        item.process_category.code,
+        item.process_category.name,
+        item.process_group.code,
+        item.process_group.name,
+        item.pam_process.code,
+        item.pam_process.name,
+        item.pam_process.purpose || "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(query);
+    });
+  }, [availableProcesses, processSearch]);
+
+  const selectedAvailableProcess = useMemo(
+    () =>
+      availableProcesses.find(
+        (item) =>
+          item.pam_process.id ===
+          selectedPamProcessId
+      ) || null,
+    [
+      availableProcesses,
+      selectedPamProcessId,
+    ]
+  );
+
+  const addSelectedProcess = useCallback(async () => {
+    if (!assessmentId || !selectedPamProcessId) {
+      return;
+    }
+
+    const token = getToken();
+
+    if (!token) {
+      setAddProcessError(
+        "Authentication token is not available."
+      );
+      return;
+    }
+
+    setAddingProcess(true);
+    setAddProcessError("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/pam/assessments/${assessmentId}/processes`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            pam_process_id: selectedPamProcessId,
+            tenant_process_id: null,
+            target_capability_level: selectedCapabilityLevel,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+
+        throw new Error(
+          body ||
+            `Add process request failed: ${response.status}`
+        );
+      }
+
+      setAddProcessOpen(false);
+      setSelectedPamProcessId(null);
+      setSelectedCapabilityLevel(null);
+      setProcessSearch("");
+
+      await loadWorkspace();
+    } catch (err) {
+      setAddProcessError(
+        err instanceof Error
+          ? err.message
+          : "Process could not be added."
+      );
+    } finally {
+      setAddingProcess(false);
+    }
+  }, [
+    assessmentId,
+    selectedPamProcessId,
+    selectedCapabilityLevel,
+    loadWorkspace,
+  ]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-8">
+        <div className="flex items-center gap-3 text-sm text-slate-600">
+          <RefreshCw className="h-4 w-4 animate-spin" />
+          Loading assessment workspace...
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !assessment || !context) {
+    return (
+      <div className="min-h-screen bg-slate-50 p-8">
+        <div className="mx-auto max-w-5xl">
+          <button
+            type="button"
+            onClick={() =>
+              router.push("/maturity/workspace")
+            }
+            className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Maturity Workspace
+          </button>
+
+          <div className="rounded-2xl border border-red-200 bg-white p-6 shadow-sm">
+            <div className="text-lg font-semibold text-slate-950">
+              Assessment workspace could not be loaded
+            </div>
+
+            <div className="mt-2 text-sm text-red-700">
+              {error || "Assessment context is unavailable."}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void loadWorkspace()}
+              className="mt-5 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-[1600px] p-6 lg:p-8">
+        <button
+          type="button"
+          onClick={() =>
+            router.push("/maturity/workspace")
+          }
+          className="mb-5 inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-slate-950"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Maturity Workspace
+        </button>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:p-7">
+          <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+                  MATURITY BASED
+                </span>
+
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                  PAM Assessment
+                </span>
+
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                  {normalizeStatus(assessment.status)}
+                </span>
+              </div>
+
+              <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-950">
+                {assessment.name}
+              </h1>
+
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
+                {assessment.scope ||
+                  "No assessment scope has been defined."}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Framework
+              </div>
+
+              <div className="mt-1 text-lg font-semibold text-slate-950">
+                {context.standard_code}
+              </div>
+
+              <div className="mt-1 text-sm text-slate-500">
+                Version {context.version_code}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            icon={ClipboardCheck}
+            label="Assessment Status"
+            value={normalizeStatus(assessment.status)}
+            detail="Canonical PAM lifecycle"
+          />
+
+          <MetricCard
+            icon={Layers3}
+            label="Assessment Model"
+            value="PAM"
+            detail={context.pam_framework_model_code}
+          />
+
+          <MetricCard
+            icon={Target}
+            label="Capability Model"
+            value="CMF"
+            detail={context.capability_framework_model_code}
+          />
+
+          <MetricCard
+            icon={FileCheck2}
+            label="Evidence"
+            value="-"
+            detail="Evidence integration pending"
+          />
+        </div>
+
+        <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-950">
+                    Assessment Processes
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Processes selected for capability assessment.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddProcessError("");
+                      setSelectedPamProcessId(null);
+                      setSelectedCapabilityLevel(null);
+                      setProcessSearch("");
+                      setAddProcessOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Process
+                  </button>
+
+                  <div className="rounded-xl bg-slate-100 p-2.5 text-slate-500">
+                    <Boxes className="h-5 w-5" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {processes.length === 0 ? (
+              <div className="flex min-h-[360px] items-center justify-center p-8">
+                <div className="max-w-md text-center">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
+                    <ClipboardCheck className="h-5 w-5" />
+                  </div>
+
+                  <div className="mt-4 text-base font-semibold text-slate-950">
+                    0 Processes
+                  </div>
+
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    No processes have been added to this assessment.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {processes.map((process) => (
+                  <button
+                    key={process.id}
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/maturity/workspace/${assessment.id}/process/${process.id}`
+                      )
+                    }
+                    className="block w-full px-6 py-5 text-left transition hover:bg-slate-50"
+                  >
+                    <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                            {process.pam_process.code}
+                          </span>
+
+                          <span className="text-xs font-medium text-slate-400">
+                            {process.process_category.code}
+                            {" / "}
+                            {process.process_group.code}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 text-base font-semibold text-slate-950">
+                          {process.pam_process.name}
+                        </div>
+
+                        <div className="mt-1 text-sm text-slate-500">
+                          {process.tenant_process
+                            ? `${process.tenant_process.code} - ${process.tenant_process.name}`
+                            : "No tenant process mapping"}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                          {normalizeStatus(process.status)}
+                        </span>
+
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                          Target{" "}
+                          {process.target_capability_level ?? "-"}
+                        </span>
+
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                          {process.in_scope
+                            ? "In Scope"
+                            : "Out of Scope"}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-950">
+                  Canonical Context
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Resolved tenant framework context.
+                </p>
+              </div>
+
+              <ShieldCheck className="h-5 w-5 text-slate-400" />
+            </div>
+
+            <div className="mt-6 space-y-4">
+              <ContextRow
+                label="Standard"
+                value={context.standard_code}
+              />
+
+              <ContextRow
+                label="Version"
+                value={context.version_code}
+              />
+
+              <ContextRow
+                label="Framework Type"
+                value={context.standard_type}
+              />
+
+              <ContextRow
+                label="PAM Model"
+                value={context.pam_framework_model_code}
+              />
+
+              <ContextRow
+                label="Capability Model"
+                value={context.capability_framework_model_code}
+              />
+            </div>
+          </section>
+        </div>
+      </div>
+
+      {addProcessOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4 backdrop-blur-sm">
+          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-indigo-600">
+                  PAM Process Catalog
+                </div>
+
+                <h2 className="mt-1 text-xl font-semibold text-slate-950">
+                  Add Assessment Process
+                </h2>
+
+                <p className="mt-1 text-sm text-slate-500">
+                  Select a process from the resolved assessment model.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAddProcessOpen(false)}
+                className="rounded-xl border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 hover:text-slate-950"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="border-b border-slate-200 p-5">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+
+                <input
+                  value={processSearch}
+                  onChange={(event) =>
+                    setProcessSearch(event.target.value)
+                  }
+                  placeholder="Search category, group, process code or name..."
+                  className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500"
+                />
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span>
+                  {selectableProcesses.length} available
+                </span>
+
+                <span>?</span>
+
+                <span>
+                  {processes.length} already added
+                </span>
+              </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1.05fr_0.95fr]">
+              <div className="overflow-y-auto border-r border-slate-200">
+                {selectableProcesses.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-slate-500">
+                    No matching PAM processes are available.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {selectableProcesses.map((item) => {
+                      const selected =
+                        selectedPamProcessId ===
+                        item.pam_process.id;
+
+                      return (
+                        <button
+                          key={item.pam_process.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedPamProcessId(
+                              item.pam_process.id
+                            )
+                          }
+                          className={`w-full px-5 py-4 text-left transition ${
+                            selected
+                              ? "bg-indigo-50"
+                              : "bg-white hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                                  {item.pam_process.code}
+                                </span>
+
+                                <span className="text-xs text-slate-400">
+                                  {item.process_category.code}
+                                  {" / "}
+                                  {item.process_group.code}
+                                </span>
+                              </div>
+
+                              <div className="mt-2 text-sm font-semibold text-slate-950">
+                                {item.pam_process.name}
+                              </div>
+                            </div>
+
+                            <span
+                              className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${
+                                item.tenant_mappings.length > 0
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-amber-200 bg-amber-50 text-amber-700"
+                              }`}
+                            >
+                              {item.tenant_mappings.length > 0
+                                ? "Mapped"
+                                : "Unmapped"}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="overflow-y-auto bg-slate-50 p-6">
+                {selectedAvailableProcess ? (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      Selected Process
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                        {
+                          selectedAvailableProcess
+                            .pam_process.code
+                        }
+                      </span>
+
+                      <span className="text-xs text-slate-500">
+                        {
+                          selectedAvailableProcess
+                            .process_category.name
+                        }
+                        {" / "}
+                        {
+                          selectedAvailableProcess
+                            .process_group.name
+                        }
+                      </span>
+                    </div>
+
+                    <h3 className="mt-4 text-xl font-semibold text-slate-950">
+                      {
+                        selectedAvailableProcess
+                          .pam_process.name
+                      }
+                    </h3>
+
+                    <p className="mt-3 text-sm leading-6 text-slate-600">
+                      {
+                        selectedAvailableProcess
+                          .pam_process.purpose ||
+                        selectedAvailableProcess
+                          .pam_process.description ||
+                        "No process purpose is available."
+                      }
+                    </p>
+
+                    <div className="mt-6">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Target Capability
+                      </label>
+
+                      <select
+                        value={
+                          selectedCapabilityLevel === null
+                            ? ""
+                            : String(selectedCapabilityLevel)
+                        }
+                        onChange={(event) => {
+                          const value = event.target.value;
+
+                          setSelectedCapabilityLevel(
+                            value === ""
+                              ? null
+                              : Number(value)
+                          );
+                        }}
+                        className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-medium text-slate-800 outline-none transition focus:border-slate-500"
+                      >
+                        <option value="">
+                          No target selected
+                        </option>
+
+                        {capabilityLevels.map((level) => (
+                          <option
+                            key={level.id}
+                            value={level.level}
+                          >
+                            {level.code} - Level {level.level} - {level.name}
+                          </option>
+                        ))}
+                      </select>
+
+                      {selectedCapabilityLevel !== null ? (
+                        <div className="mt-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+                          {(() => {
+                            const selected =
+                              capabilityLevels.find(
+                                (item) =>
+                                  item.level ===
+                                  selectedCapabilityLevel
+                              );
+
+                            if (!selected) {
+                              return null;
+                            }
+
+                            return (
+                              <>
+                                <div className="text-sm font-semibold text-indigo-950">
+                                  {selected.name}
+                                </div>
+
+                                {selected.description ? (
+                                  <p className="mt-1 text-xs leading-5 text-indigo-700">
+                                    {selected.description}
+                                  </p>
+                                ) : null}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                        Tenant Process Mapping
+                      </div>
+
+                      {selectedAvailableProcess
+                        .tenant_mappings.length === 0 ? (
+                        <div className="mt-2">
+                          <div className="text-sm font-semibold text-amber-700">
+                            Unmapped
+                          </div>
+
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            No tenant process mapping exists for this PAM process in the current framework adoption.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {selectedAvailableProcess
+                            .tenant_mappings.map(
+                              (mapping) => (
+                                <div
+                                  key={mapping.mapping_id}
+                                  className="rounded-xl bg-slate-50 p-3"
+                                >
+                                  <div className="text-sm font-semibold text-slate-800">
+                                    {
+                                      mapping
+                                        .tenant_process
+                                        .code
+                                    }
+                                    {" - "}
+                                    {
+                                      mapping
+                                        .tenant_process
+                                        .name
+                                    }
+                                  </div>
+
+                                  <div className="mt-1 text-xs text-slate-500">
+                                    {mapping.mapping_type}
+                                  </div>
+                                </div>
+                              )
+                            )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex h-full min-h-[320px] items-center justify-center">
+                    <div className="max-w-xs text-center">
+                      <Boxes className="mx-auto h-8 w-8 text-slate-300" />
+
+                      <div className="mt-3 text-sm font-semibold text-slate-700">
+                        Select a PAM process
+                      </div>
+
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        Process details and tenant mapping status will appear here.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {addProcessError ? (
+              <div className="border-t border-red-100 bg-red-50 px-6 py-3 text-sm text-red-700">
+                {addProcessError}
+              </div>
+            ) : null}
+
+            <div className="flex items-center justify-between gap-4 border-t border-slate-200 bg-white px-6 py-4">
+              <div className="text-xs text-slate-500">
+                Target capability is resolved from the canonical CMF model.
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAddProcessOpen(false)}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  disabled={
+                    !selectedPamProcessId ||
+                    addingProcess
+                  }
+                  onClick={() =>
+                    void addSelectedProcess()
+                  }
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {addingProcess ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+
+                  Add Process
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ContextRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+      <div className="text-xs font-medium uppercase tracking-wider text-slate-400">
+        {label}
+      </div>
+
+      <div className="mt-1 break-words text-sm font-semibold text-slate-800">
+        {value || "-"}
       </div>
     </div>
-    {linkEvaluationId && <SelectEvidenceMaturityModal open={true} token={token} evaluationId={linkEvaluationId} onClose={() => setLinkEvaluationId(null)} onLinked={loadWorkspace} />}
-  </div>;
+  );
 }

@@ -278,35 +278,6 @@ def list_process_risks(
 # UNLINK RISKS
 # ----------------------------------------------------------
 
-@router.delete("/processes/{process_id}/risks/{risk_id}")
-def unlink_risk_from_process(
-    process_id: int,
-    risk_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    link = db.execute(
-        select(ProcessRiskLink).where(
-            ProcessRiskLink.process_id == process_id,
-            ProcessRiskLink.risk_id == risk_id,
-            ProcessRiskLink.tenant_id == user.tenant_id,
-        )
-    ).scalar_one_or_none()
-
-    if not link:
-        raise HTTPException(status_code=404, detail="Link not found")
-
-    db.delete(link)
-    db.commit()
-
-    return {"unlinked": True}
-
-
-
-# ===================================================
-# COMPANY USERS (Department Managers)
-# ===================================================
-
 @router.get("/users")
 def get_company_users(
     db: Session = Depends(get_db),

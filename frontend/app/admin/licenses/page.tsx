@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -13,11 +13,11 @@ const STATUS_OPTIONS = ["ALL", "PENDING", "APPROVED", "REJECTED"];
 function statusClass(status: string) {
   switch (status) {
     case "APPROVED":
-      return "bg-emerald-500/15 text-emerald-300 border-emerald-500/30";
+      return "bg-emerald-500/15 text-emerald-700 border-emerald-500/30";
     case "REJECTED":
-      return "bg-red-500/15 text-red-300 border-red-500/30";
+      return "bg-red-500/15 text-red-700 border-red-500/30";
     default:
-      return "bg-amber-500/15 text-amber-300 border-amber-500/30";
+      return "bg-amber-500/15 text-amber-700 border-amber-500/30";
   }
 }
 
@@ -134,7 +134,7 @@ export default function AdminLicensesPage() {
   }
 
   return (
-    <div className="min-h-full bg-[#020817] text-slate-100 p-8">
+    <div className="min-h-full bg-[#f6f8fc] p-8 text-[#102a43]">
       <div className="mx-auto max-w-[1500px]">
         <div className="flex items-start justify-between gap-6">
           <div>
@@ -152,7 +152,7 @@ export default function AdminLicensesPage() {
             type="button"
             onClick={load}
             disabled={loading}
-            className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             {loading ? "Refreshing..." : "Refresh"}
           </button>
@@ -165,8 +165,8 @@ export default function AdminLicensesPage() {
           <Stat label="Rejected" value={rejectedCount} emphasis="red" />
         </div>
 
-        <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/70">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 p-5">
+        <div className="mt-8 rounded-2xl border border-slate-300 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 p-5">
             <div>
               <h2 className="text-lg font-semibold">Activation Requests</h2>
               <p className="mt-1 text-xs text-slate-500">
@@ -179,13 +179,13 @@ export default function AdminLicensesPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search module, tenant, requester..."
-                className="w-72 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-sky-500"
+                className="w-72 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
 
               <select
                 value={status}
                 onChange={(event) => setStatus(event.target.value)}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               >
                 {STATUS_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -202,7 +202,7 @@ export default function AdminLicensesPage() {
             </div>
           ) : filteredRequests.length === 0 ? (
             <div className="p-14 text-center">
-              <div className="text-lg font-medium text-slate-300">
+              <div className="text-lg font-medium text-slate-600">
                 No activation requests found
               </div>
               <div className="mt-2 text-sm text-slate-500">
@@ -213,7 +213,7 @@ export default function AdminLicensesPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1050px] text-sm">
                 <thead>
-                  <tr className="border-b border-slate-800 bg-slate-950/60 text-left text-xs uppercase tracking-wider text-slate-500">
+                  <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                     <th className="px-5 py-4">Request</th>
                     <th className="px-5 py-4">Module</th>
                     <th className="px-5 py-4">Tenant</th>
@@ -227,26 +227,26 @@ export default function AdminLicensesPage() {
                   {filteredRequests.map((item) => (
                     <tr
                       key={item.id}
-                      className="border-b border-slate-800/80 last:border-0 hover:bg-slate-800/30"
+                      className="border-b border-slate-200/80 last:border-0 hover:bg-slate-50/30"
                     >
                       <td className="px-5 py-5 align-top">
-                        <div className="font-medium text-slate-200">REQ-{item.id}</div>
+                        <div className="font-medium text-slate-700">REQ-{item.id}</div>
                         <div className="mt-1 text-xs text-slate-600">ID {item.id}</div>
                       </td>
 
                       <td className="px-5 py-5 align-top">
-                        <div className="font-medium text-white">{item.module_name}</div>
+                        <div className="font-semibold text-slate-900">{item.module_name}</div>
                         <div className="mt-1 text-xs font-mono text-slate-500">
                           {item.module_code}
                         </div>
                       </td>
 
                       <td className="px-5 py-5 align-top">
-                        <div className="text-slate-300">Tenant #{item.tenant_id}</div>
+                        <div className="text-slate-600">Tenant #{item.tenant_id}</div>
                       </td>
 
                       <td className="px-5 py-5 align-top">
-                        <div className="text-slate-300">User #{item.requested_by}</div>
+                        <div className="text-slate-600">User #{item.requested_by}</div>
                       </td>
 
                       <td className="px-5 py-5 align-top text-slate-400">
@@ -275,7 +275,7 @@ export default function AdminLicensesPage() {
                               type="button"
                               onClick={() => handleApprove(item)}
                               disabled={busyId === item.id}
-                              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               {busyId === item.id ? "Processing..." : "Approve"}
                             </button>
@@ -286,7 +286,7 @@ export default function AdminLicensesPage() {
                                 setReviewNote("");
                               }}
                               disabled={busyId === item.id}
-                              className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
                             >
                               Reject
                             </button>
@@ -305,12 +305,12 @@ export default function AdminLicensesPage() {
       </div>
 
       {rejecting && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6">
-          <div className="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
-            <div className="border-b border-slate-800 p-6">
-              <div className="text-lg font-semibold text-white">Reject Activation Request</div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-[1px]">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl">
+            <div className="border-b border-slate-200 p-6">
+              <div className="text-lg font-semibold text-slate-900">Reject Activation Request</div>
               <div className="mt-2 text-sm text-slate-400">
-                {rejecting.module_name} · Tenant #{rejecting.tenant_id}
+                {rejecting.module_name} - Tenant #{rejecting.tenant_id}
               </div>
             </div>
 
@@ -323,14 +323,14 @@ export default function AdminLicensesPage() {
                 onChange={(event) => setReviewNote(event.target.value)}
                 rows={5}
                 placeholder="Explain why this activation request was rejected..."
-                className="mt-2 w-full resize-none rounded-lg border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-red-500"
+                className="mt-2 w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
               />
 
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setRejecting(null)}
-                  className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800"
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 >
                   Cancel
                 </button>
@@ -338,7 +338,7 @@ export default function AdminLicensesPage() {
                   type="button"
                   onClick={handleReject}
                   disabled={busyId === rejecting.id}
-                  className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                  className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50"
                 >
                   {busyId === rejecting.id ? "Rejecting..." : "Reject Request"}
                 </button>
@@ -349,8 +349,8 @@ export default function AdminLicensesPage() {
       )}
 
       {message && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-6">
-          <div className="w-full max-w-md overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-[1px]">
+          <div className="w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
             <div
               className={`px-6 py-4 text-lg font-semibold ${
                 message.type === "success"
@@ -360,12 +360,12 @@ export default function AdminLicensesPage() {
             >
               {message.type === "success" ? "Operation Successful" : "Operation Failed"}
             </div>
-            <div className="px-6 py-6 text-sm text-slate-200">{message.text}</div>
-            <div className="flex justify-end border-t border-slate-800 p-4">
+            <div className="px-6 py-6 text-sm text-slate-700">{message.text}</div>
+            <div className="flex justify-end border-t border-slate-200 p-4">
               <button
                 type="button"
                 onClick={() => setMessage(null)}
-                className="rounded-lg bg-sky-600 px-5 py-2 text-sm font-medium text-white hover:bg-sky-500"
+                className="rounded-lg bg-slate-900 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
               >
                 OK
               </button>
@@ -388,17 +388,22 @@ function Stat({
 }) {
   const valueClass =
     emphasis === "amber"
-      ? "text-amber-300"
+      ? "text-amber-700"
       : emphasis === "emerald"
-        ? "text-emerald-300"
+        ? "text-emerald-700"
         : emphasis === "red"
-          ? "text-red-300"
+          ? "text-red-700"
           : "text-white";
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+    <div className="rounded-2xl border border-slate-300 bg-white shadow-sm p-5">
       <div className="text-xs uppercase tracking-wider text-slate-500">{label}</div>
       <div className={`mt-2 text-3xl font-semibold ${valueClass}`}>{value}</div>
     </div>
   );
 }
+
+
+
+
+

@@ -9,6 +9,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.dependencies.auth import get_current_user
 from app.db.session import get_db
+from app.services.risk_scoring_service import RiskScoringService
+from app.services.process_risk_link_service import ProcessRiskLinkService
 
 router = APIRouter(prefix="/risks", tags=["Risks"])
 
@@ -54,15 +56,7 @@ def row_to_dict(row) -> Dict[str, Any]:
 def calculate_risk_level(score: Optional[int]) -> Optional[str]:
     if score is None:
         return None
-    if score >= 20:
-        return "CRITICAL"
-    if score >= 15:
-        return "HIGH"
-    if score >= 10:
-        return "MEDIUM"
-    if score >= 5:
-        return "LOW"
-    return "VERY_LOW"
+    return RiskScoringService.resolve_level(score)
 
 
 # -------------------------------------------------
@@ -133,14 +127,12 @@ def assess_risk(
             detail="impact must be between 1 and 5",
         )
 
-    new_score = new_likelihood * new_impact
-
-    if new_score >= 15:
-        new_risk_level = "HIGH"
-    elif new_score >= 8:
-        new_risk_level = "MEDIUM"
-    else:
-        new_risk_level = "LOW"
+    scoring = RiskScoringService.calculate(
+        likelihood=new_likelihood,
+        impact=new_impact,
+    )
+    new_score = scoring.score
+    new_risk_level = scoring.risk_level
 
     # -------------------------------------------------
     # HISTORY
@@ -243,6 +235,12 @@ def assess_risk(
             status_code=404,
             detail="Risk not found",
         )
+
+    ProcessRiskLinkService.refresh_risk_appetite(
+        db=db,
+        tenant_id=tenant_id,
+        risk_id=risk_id,
+    )
 
     db.commit()
 
