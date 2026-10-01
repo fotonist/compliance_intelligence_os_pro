@@ -89,6 +89,12 @@ type AuditPlan = {
   scope?: string | null;
 };
 
+type EligibleAuditor = {
+  id: number;
+  email: string;
+  full_name?: string | null;
+};
+
 type NewAuditPlan = {
   reference: string;
   name: string;
@@ -298,6 +304,9 @@ export default function AuditPlanningPage() {
   const [createdPlan, setCreatedPlan] = useState<AuditPlan | null>(null);
 
   const [form, setForm] = useState<NewAuditPlan>(emptyForm);
+  const [eligibleAuditors, setEligibleAuditors] =
+    useState<EligibleAuditor[]>([]);
+  const [auditorsLoading, setAuditorsLoading] = useState(false);
 
   const selectedPlan = useMemo(
     () => auditPlans.find((item) => item.id === selectedPlanId) ?? null,
@@ -570,6 +579,7 @@ export default function AuditPlanningPage() {
     });
 
     setShowCreate(true);
+    void loadEligibleAuditors();
   }
 
   function closeCreatePlan() {
@@ -588,6 +598,33 @@ export default function AuditPlanningPage() {
     }));
   }
 
+  async function loadEligibleAuditors() {
+    setAuditorsLoading(true);
+
+    try {
+      const res = await apiFetch("/pam/eligible-auditors", {
+        method: "GET",
+      });
+
+      if (!res.ok) {
+        throw new Error(await readResponseText(res));
+      }
+
+      const json = await res.json();
+
+      setEligibleAuditors(
+        Array.isArray(json) ? (json as EligibleAuditor[]) : [],
+      );
+    } catch (e: any) {
+      setEligibleAuditors([]);
+      setCreateError(
+        e?.message || "Eligible auditors could not be loaded.",
+      );
+    } finally {
+      setAuditorsLoading(false);
+    }
+  }
+
   async function createAuditPlan(event: React.FormEvent) {
     event.preventDefault();
 
@@ -598,6 +635,10 @@ export default function AuditPlanningPage() {
     try {
       if (!form.reference.trim() || !form.name.trim()) {
         throw new Error("Reference and audit name are required.");
+      }
+
+      if (!form.lead_auditor_id) {
+        throw new Error("Lead auditor is required.");
       }
 
       if (
@@ -632,9 +673,7 @@ export default function AuditPlanningPage() {
         payload.standard_version_id = Number(form.standard_version_id);
       }
 
-      if (form.lead_auditor_id) {
-        payload.lead_auditor_id = Number(form.lead_auditor_id);
-      }
+      payload.lead_auditor_id = Number(form.lead_auditor_id);
 
       const res = await apiFetch("/audit/plans", {
         method: "POST",
@@ -1693,19 +1732,39 @@ export default function AuditPlanningPage() {
                         />
                       </Field>
 
-                      <Field label="Lead Auditor User ID">
-                        <input
-                          inputMode="numeric"
+                      <Field label="Lead Auditor">
+                        <select
                           value={form.lead_auditor_id}
                           onChange={(e) =>
-                            updateForm(
-                              "lead_auditor_id",
-                              e.target.value.replace(/[^0-9]/g, ""),
-                            )
+                            updateForm("lead_auditor_id", e.target.value)
                           }
-                          placeholder="Optional"
+                          disabled={auditorsLoading}
+                          required
                           className={inputClass}
-                        />
+                        >
+                          <option value="">
+                            {auditorsLoading
+                              ? "Loading eligible auditors..."
+                              : eligibleAuditors.length === 0
+                                ? "No eligible Internal Auditors"
+                                : "Select lead auditor"}
+                          </option>
+
+                          {eligibleAuditors.map((auditor) => (
+                            <option
+                              key={auditor.id}
+                              value={String(auditor.id)}
+                            >
+                              {auditor.full_name?.trim()
+                                ? `${auditor.full_name} - ${auditor.email}`
+                                : auditor.email}
+                            </option>
+                          ))}
+                        </select>
+
+                        <div className="mt-1.5 text-[11px] text-slate-500">
+                          Only active Internal Auditor users are eligible.
+                        </div>
                       </Field>
                     </div>
 
@@ -1748,7 +1807,11 @@ export default function AuditPlanningPage() {
 
                     <button
                       type="submit"
-                      disabled={creating}
+                      disabled={
+                        creating ||
+                        auditorsLoading ||
+                        !form.lead_auditor_id
+                      }
                       className="h-9 bg-slate-950 px-5 text-xs font-semibold text-white disabled:opacity-50"
                     >
                       {creating ? "Creating..." : "Create Audit Plan"}

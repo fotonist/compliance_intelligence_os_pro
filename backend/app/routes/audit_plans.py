@@ -229,11 +229,7 @@ def _validate_lead_auditor(
             detail="Lead auditor not found",
         )
 
-    status = str(
-        getattr(auditor, "status", "") or ""
-    ).strip().upper()
-
-    if status != "ACTIVE":
+    if not bool(getattr(auditor, "is_active", False)):
         raise HTTPException(
             status_code=400,
             detail="Lead auditor must be active",
