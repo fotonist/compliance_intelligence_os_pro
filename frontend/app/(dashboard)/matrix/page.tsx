@@ -33,10 +33,15 @@ type MatrixKpi = {
   standard_id?: number;
   standard_version_id?: number;
 
-  compliance_percentage?: number;
+  compliance_percentage?: number | null;
+  target_achievement_percentage?: number | null;
+  assessment_coverage_percentage?: number | null;
 
   maturity?: {
     total?: number;
+    measured?: number;
+    calculated?: number;
+    unassessed?: number;
     achieved?: number;
     partial?: number;
     not_achieved?: number;
@@ -679,37 +684,55 @@ useEffect(() => {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
 
-  <KpiCard
-    title={mode === "maturity" ? "Maturity Health" : "Compliance Health"}
-    value={`${kpi?.compliance_percentage ?? 0}%`}
-  />
+  {mode === "maturity" ? (
+    <>
+      <KpiCard
+        title="Target Achievement"
+        value={
+          kpi?.target_achievement_percentage == null
+            ? "N/A"
+            : `${kpi.target_achievement_percentage}%`
+        }
+      />
 
-  <KpiCard
-    title={mode === "maturity" ? "Achieved Practices" : "Evidence Assurance"}
-    value={
-      mode === "maturity"
-        ? getMaturityStatus(kpi).achieved
-        : `${getEvidenceAssurance(kpi)}%`
-    }
-  />
+      <KpiCard
+        title="Assessment Coverage"
+        value={`${kpi?.assessment_coverage_percentage ?? 0}%`}
+      />
 
-  <KpiCard
-    title={mode === "maturity" ? "Partial Practices" : "Risk Exposure"}
-    value={
-      mode === "maturity"
-        ? getMaturityStatus(kpi).partial
-        : getRiskExposure(kpi)
-    }
-  />
+      <KpiCard
+        title="Calculated Processes"
+        value={`${kpi?.maturity?.calculated ?? 0} / ${kpi?.maturity?.total ?? 0}`}
+      />
 
-  <KpiCard
-    title={mode === "maturity" ? "Not Achieved" : "Control Coverage"}
-    value={
-      mode === "maturity"
-        ? getMaturityStatus(kpi).notAchieved
-        : `${getControlCoverage(kpi)}%`
-    }
-  />
+      <KpiCard
+        title="Unassessed Processes"
+        value={kpi?.maturity?.unassessed ?? 0}
+      />
+    </>
+  ) : (
+    <>
+      <KpiCard
+        title="Compliance Health"
+        value={`${kpi?.compliance_percentage ?? 0}%`}
+      />
+
+      <KpiCard
+        title="Evidence Assurance"
+        value={`${getEvidenceAssurance(kpi)}%`}
+      />
+
+      <KpiCard
+        title="Risk Exposure"
+        value={getRiskExposure(kpi)}
+      />
+
+      <KpiCard
+        title="Control Coverage"
+        value={`${getControlCoverage(kpi)}%`}
+      />
+    </>
+  )}
 
 </div>
 

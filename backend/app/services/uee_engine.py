@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.services.maturity_capability_service import MaturityCapabilityService
+
 
 @dataclass(frozen=True)
 class UEEWeights:
@@ -66,6 +68,209 @@ class UEEEngine:
         self._weights_provider = weights_provider
         self._snapshot_persister = snapshot_persister
 
+    def _get_framework_context(
+        self,
+        db: Session,
+        tenant_id: int,
+    ) -> Dict[str, Any]:
+        rows = db.execute(
+            text("""
+                SELECT
+                    fa.id AS adoption_id,
+                    fa.standard_id,
+                    fa.standard_version_id,
+                    fa.status AS adoption_status,
+                    fa.applicability,
+                    s.code AS standard_code,
+                    s.type AS standard_type
+                FROM public.framework_adoptions fa
+                JOIN public.standards s
+                  ON s.id = fa.standard_id
+                WHERE fa.tenant_id = :tenant_id
+                  AND UPPER(fa.status) = 'ACTIVE'
+                  AND UPPER(COALESCE(fa.applicability, 'APPLICABLE')) = 'APPLICABLE'
+                ORDER BY fa.id
+            """),
+            {"tenant_id": tenant_id},
+        ).mappings().all()
+
+        adoptions = [dict(row) for row in rows]
+
+        control_adoptions = [
+            item
+            for item in adoptions
+            if str(item.get("standard_type") or "").upper() == "CONTROL_BASED"
+        ]
+
+        maturity_adoptions = [
+            item
+            for item in adoptions
+            if str(item.get("standard_type") or "").upper() == "MATURITY_BASED"
+        ]
+
+        return {
+            "active_framework_count": len(adoptions),
+            "control_based_count": len(control_adoptions),
+            "maturity_based_count": len(maturity_adoptions),
+            "has_control_based": bool(control_adoptions),
+            "has_maturity_based": bool(maturity_adoptions),
+            "control_adoptions": control_adoptions,
+            "maturity_adoptions": maturity_adoptions,
+            "adoptions": adoptions,
+        }
+
+    def _get_maturity_framework_state(
+        self,
+        db: Session,
+        tenant_id: int,
+        framework_context: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        frameworks = []
+
+        total_processes = 0
+        measured_processes = 0
+        calculated_processes = 0
+        achieved_processes = 0
+
+        for adoption in framework_context.get("maturity_adoptions", []):
+            standard_version_id = adoption.get("standard_version_id")
+
+            if standard_version_id is None:
+                continue
+
+            state = MaturityCapabilityService.get_standard_version_state(
+                db,
+                tenant_id=tenant_id,
+                standard_version_id=int(standard_version_id),
+            )
+
+            if state is None:
+                frameworks.append({
+                    "adoption_id": adoption.get("adoption_id"),
+                    "standard_id": adoption.get("standard_id"),
+                    "standard_code": adoption.get("standard_code"),
+                    "standard_version_id": standard_version_id,
+                    "assessment_id": None,
+                    "assessment_status": None,
+                    "total_processes": 0,
+                    "measured_processes": 0,
+                    "calculated_processes": 0,
+                    "unassessed_processes": 0,
+                    "achieved_processes": 0,
+                    "partial_processes": 0,
+                    "not_achieved_processes": 0,
+                    "target_achievement_percentage": None,
+                    "assessment_coverage_percentage": 0.0,
+                })
+                continue
+
+            processes = state.get("processes") or []
+            adoption_scope = state.get("adoption_scope") or {}
+
+            total = int(
+                adoption_scope.get("total_processes") or 0
+            )
+            measured = int(
+                adoption_scope.get("measured_processes") or 0
+            )
+            calculated = int(
+                adoption_scope.get("calculated_processes") or 0
+            )
+
+            achieved = 0
+            partial = 0
+            not_achieved = 0
+
+            for process in processes:
+                if process.get("capability_status") != "CALCULATED":
+                    continue
+
+                target = process.get("target_capability_level")
+                achieved_level = process.get("achieved_capability_level")
+
+                if target is None or achieved_level is None:
+                    continue
+
+                target_value = int(target)
+                achieved_value = int(achieved_level)
+
+                if achieved_value >= target_value:
+                    achieved += 1
+                elif achieved_value > 0:
+                    partial += 1
+                else:
+                    not_achieved += 1
+
+            target_achievement = (
+                round((achieved / calculated) * 100.0, 1)
+                if calculated > 0
+                else None
+            )
+
+            assessment_coverage = (
+                round((measured / total) * 100.0, 1)
+                if total > 0
+                else 0.0
+            )
+
+            unassessed = max(total - measured, 0)
+
+            total_processes += total
+            measured_processes += measured
+            calculated_processes += calculated
+            achieved_processes += achieved
+
+            frameworks.append({
+                "adoption_id": adoption.get("adoption_id"),
+                "standard_id": adoption.get("standard_id"),
+                "standard_code": adoption.get("standard_code"),
+                "standard_version_id": standard_version_id,
+                "assessment_id": state.get("assessment_id"),
+                "assessment_status": state.get("assessment_status"),
+                "total_processes": total,
+                "measured_processes": measured,
+                "calculated_processes": calculated,
+                "unassessed_processes": unassessed,
+                "achieved_processes": achieved,
+                "partial_processes": partial,
+                "not_achieved_processes": not_achieved,
+                "target_achievement_percentage": target_achievement,
+                "assessment_coverage_percentage": assessment_coverage,
+            })
+
+        aggregate_target_achievement = (
+            round(
+                (achieved_processes / calculated_processes) * 100.0,
+                1,
+            )
+            if calculated_processes > 0
+            else None
+        )
+
+        aggregate_assessment_coverage = (
+            round(
+                (measured_processes / total_processes) * 100.0,
+                1,
+            )
+            if total_processes > 0
+            else 0.0
+        )
+
+        return {
+            "framework_count": len(frameworks),
+            "total_processes": total_processes,
+            "measured_processes": measured_processes,
+            "calculated_processes": calculated_processes,
+            "unassessed_processes": max(
+                total_processes - measured_processes,
+                0,
+            ),
+            "achieved_processes": achieved_processes,
+            "target_achievement_percentage": aggregate_target_achievement,
+            "assessment_coverage_percentage": aggregate_assessment_coverage,
+            "frameworks": frameworks,
+        }
+
     def compute_summary(self, db: Session, tenant_id: int) -> UEEState:
         computed_at = datetime.now(timezone.utc)
         warnings: list[str] = []
@@ -93,21 +298,22 @@ class UEEEngine:
         # -------------------------------------------------------------
         # EFFECTIVE WEIGHTS
         # -------------------------------------------------------------
-        # An unassessed maturity dimension must NOT contribute zero
-        # exposure to the composite. Zero exposure means "measured and
-        # currently healthy"; "not assessed" means "no measurement".
-        #
-        # Therefore, when no active maturity assessment exists, remove
-        # the maturity weight and normalize the remaining dimensions.
-        maturity_assessed = not any(
-            warning == "maturity:no_active_assessment"
+        # Maturity exposure is not yet defined by the UEE model.
+        # Canonical maturity assessment state is exposed separately and
+        # must not be converted into an invented exposure score.
+        maturity_exposure_available = not any(
+            warning == "maturity:exposure_not_available"
             for warning in warnings
         )
 
         effective_weight_values = {
             "risk": float(weights.risk),
             "coverage": float(weights.coverage),
-            "maturity": float(weights.maturity) if maturity_assessed else 0.0,
+            "maturity": (
+                float(weights.maturity)
+                if maturity_exposure_available
+                else 0.0
+            ),
             "evidence": float(weights.evidence),
             "task_pressure": float(weights.task_pressure),
         }
@@ -355,9 +561,18 @@ class UEEEngine:
             return 100.0, stats, warnings
 
     def _compute_maturity_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
-        # No active maturity assessment session means there is no measured maturity
-        # exposure to inject into the composite. Do not manufacture a 50 score.
-        return 0.0, {"row_count": 0, "source": "no_active_maturity_assessment"}, ["maturity:no_active_assessment"]
+        # Canonical maturity assessment state exists independently from UEE
+        # exposure. No approved maturity-to-exposure transformation is defined
+        # yet, so maturity must remain excluded from the composite rather than
+        # manufacturing an exposure value.
+        return (
+            0.0,
+            {
+                "row_count": 0,
+                "source": "maturity_exposure_not_defined",
+            },
+            ["maturity:exposure_not_available"],
+        )
 
     def _compute_coverage_index(self, db: Session, tenant_id: int) -> Tuple[float, Dict[str, Any], list[str]]:
         stats: Dict[str, Any] = {}

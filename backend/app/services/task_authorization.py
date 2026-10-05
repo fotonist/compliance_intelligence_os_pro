@@ -222,13 +222,14 @@ def require_task_access(
     if int(task.tenant_id) != int(user.tenant_id):
         _deny("Task is outside the current tenant")
 
-    if not user_has_process_scope(
-        db,
-        user,
-        int(task.process_id),
-        int(task.tenant_id),
-    ):
-        _deny("User has no scope for this task's process")
+    if task.process_id is not None:
+        if not user_has_process_scope(
+            db,
+            user,
+            int(task.process_id),
+            int(task.tenant_id),
+        ):
+            _deny("User has no scope for this task's process")
 
 
 def require_task_permission_and_access(
@@ -251,7 +252,7 @@ def require_assignee_access(
     db: Session,
     actor: User,
     assignee: User,
-    process_id: int,
+    process_id: int | None,
 ) -> None:
     """
     Validates that an assignee belongs to the same tenant and has
@@ -261,13 +262,28 @@ def require_assignee_access(
     if int(assignee.tenant_id) != int(actor.tenant_id):
         _deny("Assignee is outside the current tenant")
 
-    if not user_has_process_scope(
-        db,
-        assignee,
-        process_id,
-        int(actor.tenant_id),
-    ):
-        _deny("Assignee has no scope for this process")
+    if process_id is not None:
+        if not user_has_process_scope(
+            db,
+            assignee,
+            process_id,
+            int(actor.tenant_id),
+        ):
+            _deny("Assignee has no scope for this process")
+
+
+def require_task_create_permission(
+    permission_code: str,
+    db: Session,
+    user: User,
+) -> None:
+    """
+    Permission-only check for task creation paths that do not
+    necessarily have an organizational process.
+    """
+
+    if not _has_task_permission(db, user, permission_code):
+        _deny(f"Missing permission: {permission_code}")
 
 
 def require_task_permission_for_create(

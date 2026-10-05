@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -80,6 +81,9 @@ from app.services.pam_assessment_service import (
     PamAssessmentService,
 )
 
+from app.services.risk_creation_service import RiskCreationService
+from app.services.maturity_base_practice_identity_resolver import MaturityBasePracticeIdentityResolver
+
 
 class PamProcessAttributeEvaluationUpdate(BaseModel):
     rating: str | None = None
@@ -110,6 +114,14 @@ def _audit_target_payload(target):
         created_at=target.created_at,
         updated_at=target.updated_at,
     )
+
+class PamBasePracticeRiskCreate(BaseModel):
+    title: str
+    description: str | None = None
+    likelihood: int
+    impact: int
+    action: str | None = "assessment"
+
 
 router = APIRouter(
     prefix="/pam",
@@ -810,6 +822,302 @@ def update_base_practice_evaluation(
             detail=str(exc),
         )
 
+
+
+
+def _resolve_workspace_base_practice(
+    db: Session,
+    *,
+    tenant_id: int,
+    assessment_id: int,
+    assessment_process_id: int,
+    base_practice_id: int,
+):
+    workspace = PamAssessmentService.get_process_workspace(
+        db,
+        tenant_id=tenant_id,
+        assessment_id=assessment_id,
+        assessment_process_id=assessment_process_id,
+    )
+
+    practice = next(
+        (
+            item
+            for item in workspace["base_practices"]
+            if int(item["id"]) == int(base_practice_id)
+        ),
+        None,
+    )
+
+    if practice is None:
+        raise PamAssessmentConflictError(
+            "Base practice does not belong to the "
+            "assessment process."
+        )
+
+    identity = MaturityBasePracticeIdentityResolver.resolve(
+        db,
+        tenant_id=tenant_id,
+        assessment_id=assessment_id,
+        assessment_process_id=assessment_process_id,
+        pam_base_practice_id=base_practice_id,
+    )
+
+    return {
+        "standard_id": identity.standard_id,
+        "standard_code": identity.standard_code,
+        "standard_title": identity.standard_title,
+
+        "standard_version_id":
+            identity.standard_version_id,
+        "standard_version_code":
+            identity.standard_version_code,
+
+        "adoption_id": identity.adoption_id,
+        "framework_type": identity.framework_type,
+
+        "pam_process_id": identity.pam_process_id,
+        "pam_process_code": identity.pam_process_code,
+        "pam_process_name": identity.pam_process_name,
+
+        "pam_base_practice_id":
+            identity.pam_base_practice_id,
+
+        "base_practice_id":
+            identity.standard_base_practice_id,
+        "base_practice_code":
+            identity.base_practice_code,
+        "base_practice_title":
+            identity.standard_base_practice_title,
+
+        "reference_process_id":
+            identity.reference_process_id,
+        "reference_process_code":
+            identity.reference_process_code,
+        "reference_process_name":
+            identity.reference_process_name,
+    }
+
+
+@router.get(
+    "/assessments/{assessment_id}"
+    "/processes/{assessment_process_id}"
+    "/base-practices/{base_practice_id}/risks",
+)
+def list_base_practice_risks(
+    assessment_id: int,
+    assessment_process_id: int,
+    base_practice_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    tenant_id = _tenant_id(user)
+
+    context = _resolve_workspace_base_practice(
+        db,
+        tenant_id=tenant_id,
+        assessment_id=assessment_id,
+        assessment_process_id=assessment_process_id,
+        base_practice_id=base_practice_id,
+    )
+
+    rows = db.execute(
+        text(
+            """
+            WITH latest_versions AS (
+                SELECT DISTINCT ON (rv.risk_id)
+                    rv.id AS risk_version_id,
+                    rv.risk_id,
+                    rv.version_number
+                FROM risk_versions rv
+                WHERE rv.tenant_id = :tenant_id
+                ORDER BY
+                    rv.risk_id,
+                    rv.version_number DESC,
+                    rv.id DESC
+            )
+            SELECT
+                r.id,
+                lv.risk_version_id,
+                lv.version_number,
+                r.title,
+                r.description,
+                r.likelihood,
+                r.impact,
+                r.score,
+                r.risk_level,
+                r.status,
+                r.action,
+                r.treatment,
+                r.created_at,
+                r.updated_at
+            FROM latest_versions lv
+            JOIN risks r
+              ON r.id = lv.risk_id
+             AND r.tenant_id = :tenant_id
+            JOIN pam_base_practice_risk_links link
+              ON link.risk_version_id = lv.risk_version_id
+             AND link.tenant_id = :tenant_id
+             AND link.base_practice_id = :base_practice_id
+            ORDER BY
+                r.updated_at DESC NULLS LAST,
+                r.id DESC
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "base_practice_id": int(
+                context["base_practice_id"]
+            ),
+        },
+    ).mappings().all()
+
+    return {
+        "framework": {
+            "standard_id": int(context["standard_id"]),
+            "standard_code": context["standard_code"],
+            "standard_version_id": int(
+                context["standard_version_id"]
+            ),
+            "standard_version_code":
+                context["standard_version_code"],
+            "adoption_id": int(context["adoption_id"]),
+            "framework_type": context["framework_type"],
+        },
+        "target": {
+            "type": "BASE_PRACTICE",
+            "base_practice_id": int(
+                context["base_practice_id"]
+            ),
+            "base_practice_code":
+                context["base_practice_code"],
+            "base_practice_title":
+                context["base_practice_title"],
+            "reference_process_id": int(
+                context["reference_process_id"]
+            ),
+            "reference_process_code":
+                context["reference_process_code"],
+            "reference_process_name":
+                context["reference_process_name"],
+        },
+        "count": len(rows),
+        "items": [dict(row) for row in rows],
+    }
+
+
+@router.post(
+    "/assessments/{assessment_id}"
+    "/processes/{assessment_process_id}"
+    "/base-practices/{base_practice_id}/risks",
+    status_code=201,
+)
+def create_assessment_base_practice_risk(
+    assessment_id: int,
+    assessment_process_id: int,
+    base_practice_id: int,
+    payload: PamBasePracticeRiskCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    tenant_id = _tenant_id(user)
+
+    try:
+        context = _resolve_workspace_base_practice(
+            db,
+            tenant_id=tenant_id,
+            assessment_id=assessment_id,
+            assessment_process_id=assessment_process_id,
+            base_practice_id=base_practice_id,
+        )
+
+        result = RiskCreationService.create(
+            db,
+            tenant_id=tenant_id,
+            title=payload.title,
+            description=payload.description,
+            likelihood=payload.likelihood,
+            impact=payload.impact,
+            action=payload.action,
+            source_type="STANDARD",
+            source_id=int(context["standard_id"]),
+            process_id=None,
+            base_practice_id=int(
+                context["base_practice_id"]
+            ),
+        )
+
+        db.commit()
+
+        return {
+            "id": result.risk_id,
+            "risk_version_id": result.risk_version_id,
+            "score": result.score,
+            "risk_level": result.risk_level,
+            "status": result.status,
+            "framework": {
+                "standard_id": int(
+                    context["standard_id"]
+                ),
+                "standard_code":
+                    context["standard_code"],
+                "standard_version_id": int(
+                    context["standard_version_id"]
+                ),
+                "standard_version_code":
+                    context["standard_version_code"],
+                "adoption_id": int(
+                    context["adoption_id"]
+                ),
+                "framework_type":
+                    context["framework_type"],
+            },
+            "target": {
+                "type": "BASE_PRACTICE",
+                "base_practice_id": int(
+                    context["base_practice_id"]
+                ),
+                "base_practice_code":
+                    context["base_practice_code"],
+                "base_practice_title":
+                    context["base_practice_title"],
+                "reference_process_id": int(
+                    context["reference_process_id"]
+                ),
+                "reference_process_code":
+                    context["reference_process_code"],
+                "reference_process_name":
+                    context["reference_process_name"],
+            },
+        }
+
+    except PamAssessmentNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        )
+
+    except PamAssessmentConflictError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=str(exc),
+        )
+
+    except PamAssessmentError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Base Practice risk creation failed",
+        ) from exc
 
 
 @router.get(

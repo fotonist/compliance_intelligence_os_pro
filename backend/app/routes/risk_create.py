@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.services.risk_scoring_service import RiskScoringService
 from app.services.process_risk_link_service import ProcessRiskLinkService
+from app.services.risk_creation_service import RiskCreationService
 
 
 router = APIRouter(prefix="/risks", tags=["Risks"])
@@ -161,127 +162,40 @@ def create_risk(
 ):
     tenant_id = current_user.tenant_id
 
-    process_exists = db.execute(
-        text(
-            """
-            SELECT id
-            FROM processes
-            WHERE id = :process_id
-              AND tenant_id = :tenant_id
-            """
-        ),
-        {"process_id": payload.process_id, "tenant_id": tenant_id},
-    ).scalar()
-
-    if process_exists is None:
-        raise HTTPException(status_code=404, detail="Process not found")
-
-    source_type = (payload.source_type or "STANDARD").upper()
-    standard_id, requirement_id, control_id = validate_source(
-        db, tenant_id, source_type, payload.source_id
-    )
-
-    scoring = RiskScoringService.calculate(
-        likelihood=payload.likelihood,
-        impact=payload.impact,
-    )
-    score = scoring.score
-    risk_level = scoring.risk_level
-
     try:
-        result = db.execute(
-            text(
-                """
-                INSERT INTO risks (
-                    tenant_id, title, description, impact, likelihood, score,
-                    risk_level, standard_id, requirement_id, control_id, status,
-                    treatment, action, created_at, updated_at
-                )
-                VALUES (
-                    :tenant_id, :title, :description, :impact, :likelihood, :score,
-                    :risk_level, :standard_id, :requirement_id, :control_id, 'OPEN',
-                    NULL, :action, NOW(), NOW()
-                )
-                RETURNING id
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "title": payload.title,
-                "description": payload.description,
-                "impact": payload.impact,
-                "likelihood": payload.likelihood,
-                "score": score,
-                "risk_level": risk_level,
-                "standard_id": standard_id,
-                "requirement_id": requirement_id,
-                "control_id": control_id,
-                "action": payload.action,
-            },
-        )
-        new_risk_id = result.scalar_one()
-
-        db.execute(
-            text(
-                """
-                INSERT INTO process_risk_links (
-                    tenant_id, process_id, risk_id, created_at
-                )
-                VALUES (:tenant_id, :process_id, :risk_id, NOW())
-                ON CONFLICT (process_id, risk_id) DO NOTHING
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "process_id": payload.process_id,
-                "risk_id": new_risk_id,
-            },
-        )
-
-        ProcessRiskLinkService.refresh_risk_appetite(
-            db=db,
+        result = RiskCreationService.create(
+            db,
             tenant_id=tenant_id,
-            risk_id=new_risk_id,
-        )
-
-        db.execute(
-            text(
-                """
-                INSERT INTO risk_versions (
-                    tenant_id, risk_id, version_number, impact, likelihood,
-                    score, risk_level, status, treatment, action, created_at
-                )
-                VALUES (
-                    :tenant_id, :risk_id, 1, :impact, :likelihood,
-                    :score, :risk_level, 'OPEN', NULL, :action, NOW()
-                )
-                """
-            ),
-            {
-                "tenant_id": tenant_id,
-                "risk_id": new_risk_id,
-                "impact": payload.impact,
-                "likelihood": payload.likelihood,
-                "score": score,
-                "risk_level": risk_level,
-                "action": payload.action,
-            },
+            title=payload.title,
+            description=payload.description,
+            likelihood=payload.likelihood,
+            impact=payload.impact,
+            action=payload.action,
+            source_type=payload.source_type or "STANDARD",
+            source_id=payload.source_id,
+            process_id=payload.process_id,
+            base_practice_id=None,
         )
 
         db.commit()
+
     except HTTPException:
         db.rollback()
         raise
+
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Risk creation failed") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Risk creation failed",
+        ) from exc
 
     return {
-        "id": new_risk_id,
-        "score": score,
-        "risk_level": risk_level,
-        "status": "OPEN",
-        "process_id": payload.process_id,
+        "id": result.risk_id,
+        "score": result.score,
+        "risk_level": result.risk_level,
+        "status": result.status,
+        "process_id": result.process_id,
     }
 
 
@@ -417,10 +331,11 @@ def update_risk(
             risk_id=risk_id,
         )
 
-        db.execute(
-            text(
-                """
-                INSERT INTO risk_versions (
+        new_risk_version_id = int(
+            db.execute(
+                text(
+                    """
+                    INSERT INTO risk_versions (
                     tenant_id,
                     risk_id,
                     version_number,
@@ -446,6 +361,7 @@ def update_risk(
                     :action,
                     NOW()
                 )
+                RETURNING id
                 """
             ),
             {
@@ -459,8 +375,61 @@ def update_risk(
                 "status": status,
                 "treatment": treatment,
                 "action": action,
-            },
+                },
+            ).scalar_one()
         )
+
+        previous_risk_version_id = db.execute(
+            text(
+                """
+                SELECT id
+                FROM risk_versions
+                WHERE tenant_id = :tenant_id
+                  AND risk_id = :risk_id
+                  AND version_number = :version_number
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "tenant_id": tenant_id,
+                "risk_id": risk_id,
+                "version_number": int(previous_version),
+            },
+        ).scalar_one_or_none()
+
+        if previous_risk_version_id is not None:
+            db.execute(
+                text(
+                    """
+                    INSERT INTO pam_base_practice_risk_links (
+                        tenant_id,
+                        base_practice_id,
+                        risk_version_id,
+                        created_at
+                    )
+                    SELECT
+                        tenant_id,
+                        base_practice_id,
+                        :new_risk_version_id,
+                        NOW()
+                    FROM pam_base_practice_risk_links
+                    WHERE tenant_id = :tenant_id
+                      AND risk_version_id = :previous_risk_version_id
+                    ON CONFLICT (
+                        base_practice_id,
+                        risk_version_id
+                    ) DO NOTHING
+                    """
+                ),
+                {
+                    "tenant_id": tenant_id,
+                    "previous_risk_version_id":
+                        int(previous_risk_version_id),
+                    "new_risk_version_id":
+                        new_risk_version_id,
+                },
+            )
 
         db.execute(
             text(

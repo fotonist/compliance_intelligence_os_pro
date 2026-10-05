@@ -1,4 +1,4 @@
-﻿from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase
 
 
 class Base(DeclarativeBase):
@@ -45,6 +45,9 @@ from app.models.risk_evidence_link import RiskEvidenceLink
 # --- Maturity Assessment ---
 from app.models.maturity_assessment_session import MaturityAssessmentSession
 from app.models.maturity_practice_evaluation import MaturityPracticeEvaluation
+
+# PAM runtime model metadata registration
+import app.models.pam_runtime  # noqa: F401
 
 # --- Governance Control Links ---
 from app.models.governance_procedure_control import GovernanceProcedureControl

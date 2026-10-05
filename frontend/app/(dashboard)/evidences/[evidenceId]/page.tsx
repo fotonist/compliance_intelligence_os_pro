@@ -145,14 +145,24 @@ export default function EvidenceDetailPage() {
         ? json.items
         : [];
 
-      setAllRisks(
-        raw.map((r: any) => ({
-          id: Number(r.id / r.risk_id),
-          title: r.title ?? r.risk_title ?? `Risk #${r.id ?? r.risk_id}`,
-          score: r.score ?? undefined,
-          risk_level: r.risk_level ?? undefined,
-        }))
-      );
+      const normalizedRisks: Risk[] = raw
+        .map((r: any) => {
+          const id = Number(r.id ?? r.risk_id);
+
+          if (!Number.isFinite(id)) {
+            return null;
+          }
+
+          return {
+            id,
+            title: r.title ?? r.risk_title ?? `Risk #${id}`,
+            score: r.score ?? undefined,
+            risk_level: r.risk_level ?? undefined,
+          };
+        })
+        .filter((r: Risk | null): r is Risk => r !== null);
+
+      setAllRisks(normalizedRisks);
     } catch (err: any) {
       setAllRisks([]);
       setRiskError(err.message || "Failed to load available risks");

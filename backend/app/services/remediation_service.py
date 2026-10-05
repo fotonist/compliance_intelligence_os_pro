@@ -421,6 +421,14 @@ class RemediationService:
                     if item["status"] == normalized_status
                 ]
 
+        # Canonical due-state invariant:
+        # completed remediation items cannot remain operationally overdue
+        # or due soon, regardless of their historical due date.
+        for item in items:
+            if item["normalized_status"] == "COMPLETED":
+                item["overdue"] = False
+                item["due_soon"] = False
+
         items.sort(
             key=lambda item: (
                 not item["overdue"],

@@ -300,11 +300,14 @@ class TaskService:
             return [
                 task
                 for task in tasks
-                if user_has_process_scope(
-                    db,
-                    user,
-                    int(task.process_id),
-                    int(user.tenant_id),
+                if (
+                    task.process_id is None
+                    or user_has_process_scope(
+                        db,
+                        user,
+                        int(task.process_id),
+                        int(user.tenant_id),
+                    )
                 )
             ]
 

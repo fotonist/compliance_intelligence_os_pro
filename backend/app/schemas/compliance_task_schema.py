@@ -90,7 +90,7 @@ class TaskTransitionRequest(BaseModel):
 
 class ComplianceTaskResponse(BaseModel):
     id: int
-    process_id: int
+    process_id: Optional[int] = None
     control_id: Optional[int] = None
     task_type: str
     title: str

@@ -58,6 +58,7 @@ from app.routes.process_readiness import router as process_readiness_router
 from app.routes.license import router as license_router
 from app.routes.analytics_control import router as analytics_control_router
 from app.routes.company_tasks import router as company_tasks_router
+from app.routes.remediation import router as remediation_router
 from app.routes.intelligence import api_router as intelligence_api_router
 from app.models.maturity_workspace_sessions import MaturityWorkspaceSession
 from app.api.risk_appetite import router as risk_appetite_router
@@ -180,6 +181,7 @@ application.include_router(control_assessments_router)
 application.include_router(evidence_files_router)
 application.include_router(user_router)
 application.include_router(company_tasks_router)
+application.include_router(remediation_router)
 # Register the version-aware create endpoint before the legacy evidence router.
 # This preserves all existing evidence routes while making POST /evidences and
 # POST /company/evidences resolve through the canonical standard-version contract.

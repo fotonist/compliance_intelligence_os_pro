@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
@@ -20,6 +20,7 @@ from app.models.process_risk_link import ProcessRiskLink
 from app.models.process import Process
 from app.models.intelligence_model_config import IntelligenceModelConfig
 from app.services.exposure_engine import ExposureEngine
+from app.services.risk_framework_context_service import RiskFrameworkContextService
 from app.services.control_health_engine import ControlHealthEngine
 from app.services.control_health_config_provider import (
     get_active_control_health_weights,
@@ -31,6 +32,7 @@ from app.schemas.intelligence_schema import (
     IntelligenceSummary,
     IntelligenceTopControl,
     IntelligenceTopRisk,
+    IntelligenceMaturityRisk,
 )
 
 from app.schemas.intelligence_configuration_schema import (
@@ -180,26 +182,85 @@ def get_intelligence_overview(
         )
 
     # -----------------------------------------------------
-    # 1. Risk universe
+    # 1. Canonical risk universe
     # -----------------------------------------------------
 
-    total_risks = int(
-        db.execute(
-            select(func.count(Risk.id)).where(
-                Risk.tenant_id == tenant_id
+    tenant_risks = db.execute(
+        select(Risk)
+        .where(Risk.tenant_id == tenant_id)
+        .order_by(Risk.id)
+    ).scalars().all()
+
+    framework_context_by_risk: Dict[int, Any] = {}
+
+    for risk in tenant_risks:
+        risk_id = int(risk.id)
+
+        framework_context_by_risk[risk_id] = (
+            RiskFrameworkContextService.resolve(
+                db,
+                tenant_id=tenant_id,
+                risk_id=risk_id,
             )
-        ).scalar_one()
-        or 0
+        )
+
+    resolved_risk_ids = {
+        risk_id
+        for risk_id, ctx in framework_context_by_risk.items()
+        if ctx.resolved
+    }
+
+    unresolved_risk_ids = {
+        risk_id
+        for risk_id, ctx in framework_context_by_risk.items()
+        if not ctx.resolved
+    }
+
+    control_based_risk_ids = {
+        risk_id
+        for risk_id, ctx in framework_context_by_risk.items()
+        if (
+            ctx.resolved
+            and ctx.framework_type == "CONTROL_BASED"
+        )
+    }
+
+    maturity_based_risk_ids = {
+        risk_id
+        for risk_id, ctx in framework_context_by_risk.items()
+        if (
+            ctx.resolved
+            and ctx.framework_type == "MATURITY_BASED"
+        )
+    }
+
+    # Current predictive/exposure analytics are validated
+    # only for CONTROL_BASED risks. MATURITY_BASED risks
+    # remain in the canonical universe but are not assigned
+    # zero-valued predictive analytics.
+    analytics_eligible_risk_ids = set(
+        control_based_risk_ids
     )
 
-    open_risks = int(
-        db.execute(
-            select(func.count(Risk.id)).where(
-                Risk.tenant_id == tenant_id,
-                func.lower(func.trim(Risk.status)) == "open",
-            )
-        ).scalar_one()
-        or 0
+    analytics_unavailable_risk_ids = (
+        resolved_risk_ids
+        - analytics_eligible_risk_ids
+    )
+
+    canonical_risks = [
+        risk
+        for risk in tenant_risks
+        if int(risk.id) in resolved_risk_ids
+    ]
+
+    total_risks = len(canonical_risks)
+
+    open_risks = sum(
+        1
+        for risk in canonical_risks
+        if str(
+            getattr(risk, "status", "") or ""
+        ).strip().lower() == "open"
     )
 
     # -----------------------------------------------------
@@ -214,7 +275,8 @@ def get_intelligence_overview(
             ),
         )
         .where(
-            RiskForecast.tenant_id == tenant_id
+            RiskForecast.tenant_id == tenant_id,
+            RiskForecast.risk_id.in_(analytics_eligible_risk_ids),
         )
         .group_by(
             RiskForecast.risk_id
@@ -249,7 +311,8 @@ def get_intelligence_overview(
             Control.id == Risk.control_id,
         )
         .where(
-            RiskForecast.tenant_id == tenant_id
+            RiskForecast.tenant_id == tenant_id,
+            Risk.id.in_(analytics_eligible_risk_ids),
         )
     )
 
@@ -263,7 +326,7 @@ def get_intelligence_overview(
     # 3. Process map
     # -----------------------------------------------------
 
-    risk_ids = [
+    forecast_risk_ids = [
         int(risk.id)
         for (_forecast, risk, _control)
         in latest_rows
@@ -276,7 +339,7 @@ def get_intelligence_overview(
         }
     )
 
-    if risk_ids:
+    if forecast_risk_ids:
         process_stmt = (
             select(
                 ProcessRiskLink.risk_id,
@@ -291,7 +354,7 @@ def get_intelligence_overview(
             )
             .where(
                 ProcessRiskLink.tenant_id == tenant_id,
-                ProcessRiskLink.risk_id.in_(risk_ids),
+                ProcessRiskLink.risk_id.in_(forecast_risk_ids),
                 Process.tenant_id == tenant_id,
             )
         )
@@ -322,7 +385,7 @@ def get_intelligence_overview(
 
     history_map: Dict[int, Dict[str, Any]] = {}
 
-    if risk_ids:
+    if forecast_risk_ids:
         history_stmt = (
             select(
                 RiskHistory.risk_id.label("risk_id"),
@@ -375,7 +438,7 @@ def get_intelligence_overview(
             )
             .where(
                 RiskHistory.tenant_id == tenant_id,
-                RiskHistory.risk_id.in_(risk_ids),
+                RiskHistory.risk_id.in_(forecast_risk_ids),
             )
             .group_by(
                 RiskHistory.risk_id
@@ -409,6 +472,7 @@ def get_intelligence_overview(
     ).compute_risk_exposure(
         tenant_id=tenant_id,
         limit=1000000,
+        risk_ids=analytics_eligible_risk_ids,
     )
 
     exposure_by_risk_id: Dict[int, Any] = {
@@ -517,12 +581,26 @@ def get_intelligence_overview(
             / total_inherent_exposure
         ) * 100.0
 
+    evidence_eligible_risks = len(
+        analytics_eligible_risk_ids
+    )
+
+    evidence_unavailable_risks = max(
+        total_risks - evidence_eligible_risks,
+        0,
+    )
+
+    uncovered_risks = max(
+        evidence_eligible_risks - covered_risks,
+        0,
+    )
+
     coverage_percent = 0.0
 
-    if total_risks > 0:
+    if evidence_eligible_risks > 0:
         coverage_percent = (
             float(covered_risks)
-            / float(total_risks)
+            / float(evidence_eligible_risks)
         ) * 100.0
 
     forecast_coverage_percent = 0.0
@@ -531,6 +609,32 @@ def get_intelligence_overview(
         forecast_coverage_percent = (
             float(forecasted_risks)
             / float(total_risks)
+        ) * 100.0
+
+    analytics_eligible_risks = len(
+        analytics_eligible_risk_ids
+    )
+
+    analytics_unavailable_risks = len(
+        analytics_unavailable_risk_ids
+    )
+
+    analytics_coverage_percent = 0.0
+
+    if total_risks > 0:
+        analytics_coverage_percent = (
+            float(analytics_eligible_risks)
+            / float(total_risks)
+        ) * 100.0
+
+    forecast_eligible_risks = analytics_eligible_risks
+
+    forecast_model_coverage_percent = 0.0
+
+    if forecast_eligible_risks > 0:
+        forecast_model_coverage_percent = (
+            float(forecasted_risks)
+            / float(forecast_eligible_risks)
         ) * 100.0
 
     avg_probability = (
@@ -635,13 +739,43 @@ def get_intelligence_overview(
             covered_risks
         ),
         uncovered_risks=int(
-            max(
-                total_risks - covered_risks,
-                0,
-            )
+            uncovered_risks
         ),
         coverage_percent=float(
             coverage_percent
+        ),
+        evidence_eligible_risks=int(
+            evidence_eligible_risks
+        ),
+        evidence_unavailable_risks=int(
+            evidence_unavailable_risks
+        ),
+        resolved_risks=len(
+            resolved_risk_ids
+        ),
+        unresolved_risks=len(
+            unresolved_risk_ids
+        ),
+        control_based_risks=len(
+            control_based_risk_ids
+        ),
+        maturity_based_risks=len(
+            maturity_based_risk_ids
+        ),
+        analytics_eligible_risks=int(
+            analytics_eligible_risks
+        ),
+        analytics_unavailable_risks=int(
+            analytics_unavailable_risks
+        ),
+        analytics_coverage_percent=float(
+            analytics_coverage_percent
+        ),
+        forecast_eligible_risks=int(
+            forecast_eligible_risks
+        ),
+        forecast_model_coverage_percent=float(
+            forecast_model_coverage_percent
         ),
     )
 
@@ -703,6 +837,11 @@ def get_intelligence_overview(
                 "control": control,
                 "history": history,
                 "exposure": exposure,
+                "framework_context": (
+                    framework_context_by_risk.get(
+                        risk_id
+                    )
+                ),
             }
         )
 
@@ -730,8 +869,17 @@ def get_intelligence_overview(
         control = row["control"]
         exposure = row["exposure"]
         history = row["history"]
+        framework_context = row[
+            "framework_context"
+        ]
 
         risk_id = int(risk.id)
+
+        if (
+            framework_context is None
+            or not framework_context.resolved
+        ):
+            continue
 
         process_meta = process_map.get(
             risk_id,
@@ -884,6 +1032,55 @@ def get_intelligence_overview(
                 process_names=list(
                     process_meta["names"]
                 ),
+                framework_resolved=True,
+                framework_consistency_status=(
+                    framework_context.consistency_status
+                ),
+                framework_reason=(
+                    framework_context.reason
+                ),
+                standard_id=(
+                    framework_context.standard_id
+                ),
+                standard_code=(
+                    framework_context.standard_code
+                ),
+                standard_title=(
+                    framework_context.standard_title
+                ),
+                standard_version_id=(
+                    framework_context.standard_version_id
+                ),
+                standard_version_code=(
+                    framework_context.version_code
+                ),
+                adoption_id=(
+                    framework_context.adoption_id
+                ),
+                framework_type=(
+                    framework_context.framework_type
+                ),
+                target_type=(
+                    framework_context.target_type
+                ),
+                base_practice_id=(
+                    framework_context.base_practice_id
+                ),
+                base_practice_code=(
+                    framework_context.base_practice_code
+                ),
+                base_practice_title=(
+                    framework_context.base_practice_title
+                ),
+                reference_process_id=(
+                    framework_context.reference_process_id
+                ),
+                reference_process_code=(
+                    framework_context.reference_process_code
+                ),
+                reference_process_name=(
+                    framework_context.reference_process_name
+                ),
             )
         )
 
@@ -897,6 +1094,20 @@ def get_intelligence_overview(
         risk = row["risk"]
         control = row["control"]
         exposure = row["exposure"]
+        framework_context = row[
+            "framework_context"
+        ]
+
+        # Top Controls is strictly a CONTROL_BASED projection.
+        if (
+            framework_context is None
+            or not framework_context.resolved
+            or framework_context.framework_type
+            != "CONTROL_BASED"
+            or framework_context.target_type
+            != "CONTROL"
+        ):
+            continue
 
         control_id = getattr(
             risk,
@@ -1066,6 +1277,15 @@ def get_intelligence_overview(
         risk = row["risk"]
         control = row["control"]
         exposure = row["exposure"]
+        framework_context = row[
+            "framework_context"
+        ]
+
+        if (
+            framework_context is None
+            or not framework_context.resolved
+        ):
+            continue
 
         probability = float(
             forecast.escalation_probability_30d
@@ -1176,6 +1396,55 @@ def get_intelligence_overview(
                 process_names=list(
                     process_meta["names"]
                 ),
+                framework_resolved=True,
+                framework_consistency_status=(
+                    framework_context.consistency_status
+                ),
+                framework_reason=(
+                    framework_context.reason
+                ),
+                standard_id=(
+                    framework_context.standard_id
+                ),
+                standard_code=(
+                    framework_context.standard_code
+                ),
+                standard_title=(
+                    framework_context.standard_title
+                ),
+                standard_version_id=(
+                    framework_context.standard_version_id
+                ),
+                standard_version_code=(
+                    framework_context.version_code
+                ),
+                adoption_id=(
+                    framework_context.adoption_id
+                ),
+                framework_type=(
+                    framework_context.framework_type
+                ),
+                target_type=(
+                    framework_context.target_type
+                ),
+                base_practice_id=(
+                    framework_context.base_practice_id
+                ),
+                base_practice_code=(
+                    framework_context.base_practice_code
+                ),
+                base_practice_title=(
+                    framework_context.base_practice_title
+                ),
+                reference_process_id=(
+                    framework_context.reference_process_id
+                ),
+                reference_process_code=(
+                    framework_context.reference_process_code
+                ),
+                reference_process_name=(
+                    framework_context.reference_process_name
+                ),
             )
         )
 
@@ -1188,9 +1457,143 @@ def get_intelligence_overview(
         reverse=True,
     )[:10]
 
+    maturity_risks: List[
+        IntelligenceMaturityRisk
+    ] = []
+
+    for risk in canonical_risks:
+        risk_id = int(risk.id)
+
+        if risk_id not in maturity_based_risk_ids:
+            continue
+
+        framework_context = framework_context_by_risk.get(
+            risk_id
+        )
+
+        if (
+            framework_context is None
+            or not framework_context.resolved
+        ):
+            continue
+
+        maturity_risks.append(
+            IntelligenceMaturityRisk(
+                risk_id=risk_id,
+                title=getattr(
+                    risk,
+                    "title",
+                    None,
+                ),
+                description=getattr(
+                    risk,
+                    "description",
+                    None,
+                ),
+                likelihood=getattr(
+                    risk,
+                    "likelihood",
+                    None,
+                ),
+                impact=getattr(
+                    risk,
+                    "impact",
+                    None,
+                ),
+                current_score=getattr(
+                    risk,
+                    "score",
+                    None,
+                ),
+                risk_level=getattr(
+                    risk,
+                    "risk_level",
+                    None,
+                ),
+                status=getattr(
+                    risk,
+                    "status",
+                    None,
+                ),
+                treatment=getattr(
+                    risk,
+                    "treatment",
+                    None,
+                ),
+                action=getattr(
+                    risk,
+                    "action",
+                    None,
+                ),
+                framework_resolved=True,
+                framework_consistency_status=(
+                    framework_context.consistency_status
+                ),
+                framework_reason=(
+                    framework_context.reason
+                ),
+                standard_id=(
+                    framework_context.standard_id
+                ),
+                standard_code=(
+                    framework_context.standard_code
+                ),
+                standard_title=(
+                    framework_context.standard_title
+                ),
+                standard_version_id=(
+                    framework_context.standard_version_id
+                ),
+                standard_version_code=(
+                    framework_context.version_code
+                ),
+                adoption_id=(
+                    framework_context.adoption_id
+                ),
+                framework_type=(
+                    framework_context.framework_type
+                ),
+                target_type=(
+                    framework_context.target_type
+                ),
+                risk_version_id=(
+                    framework_context.risk_version_id
+                ),
+                base_practice_id=(
+                    framework_context.base_practice_id
+                ),
+                base_practice_code=(
+                    framework_context.base_practice_code
+                ),
+                base_practice_title=(
+                    framework_context.base_practice_title
+                ),
+                reference_process_id=(
+                    framework_context.reference_process_id
+                ),
+                reference_process_code=(
+                    framework_context.reference_process_code
+                ),
+                reference_process_name=(
+                    framework_context.reference_process_name
+                ),
+            )
+        )
+
+    maturity_risks = sorted(
+        maturity_risks,
+        key=lambda item: (
+            int(item.current_score or 0),
+            _risk_level_rank(item.risk_level),
+            int(item.risk_id),
+        ),
+        reverse=True,
+    )
+
     return IntelligenceOverviewResponse(
         summary=summary,
         top_risks=top_risks,
+        maturity_risks=maturity_risks,
         top_controls=top_controls,
         executive_alerts=exec_alerts,
     )
@@ -1259,62 +1662,161 @@ def get_risk_exposure(
 ):
     tenant_id = user.tenant_id
 
+    tenant_risks = db.execute(
+        select(Risk)
+        .where(Risk.tenant_id == tenant_id)
+        .order_by(Risk.id)
+    ).scalars().all()
+
+    framework_context_by_risk: Dict[int, Any] = {}
+
+    for risk in tenant_risks:
+        risk_id = int(risk.id)
+
+        framework_context_by_risk[risk_id] = (
+            RiskFrameworkContextService.resolve(
+                db,
+                tenant_id=tenant_id,
+                risk_id=risk_id,
+            )
+        )
+
+    resolved_risk_ids = {
+        risk_id
+        for risk_id, ctx in framework_context_by_risk.items()
+        if ctx.resolved
+    }
+
     rows = ExposureEngine(
         db
     ).compute_risk_exposure(
         tenant_id=tenant_id,
         limit=int(limit),
+        risk_ids=resolved_risk_ids,
     )
 
-    return [
-        {
-            "tenant_id": int(r.tenant_id),
-            "risk_id": int(r.risk_id),
-            "risk_version_id": int(
-                r.risk_version_id
-            ),
-            "risk_score": float(
-                r.inherent_score
-            ),
-            "linked_evidence_count": int(
-                r.linked_evidence_count
-            ),
-            "approved_evidence_count": int(
-                r.approved_evidence_count
-            ),
-            "is_covered": bool(
-                r.approved_evidence_count > 0
-            ),
-            "exposure_score": float(
-                r.residual_exposure
-            ),
-            "evidence_quality": float(
-                r.evidence_quality
-            ),
-            "density_factor": float(
-                r.density_factor
-            ),
-            "pressure_factor": float(
-                r.pressure_factor
-            ),
-            "velocity_factor": float(
-                r.velocity_factor
-            ),
-            "escalation_probability_30d": float(
-                r.escalation_probability_30d
-            ),
-            "expected_score_delta": float(
-                r.expected_score_delta
-            ),
-            "unified_score": float(
-                r.unified_score
-            ),
-            "control_id": r.control_id,
-            "risk_level": r.risk_level,
-            "title": r.title,
-        }
-        for r in rows
-    ]
+    result = []
+
+    for r in rows:
+        risk_id = int(r.risk_id)
+
+        framework_context = (
+            framework_context_by_risk.get(
+                risk_id
+            )
+        )
+
+        if (
+            framework_context is None
+            or not framework_context.resolved
+        ):
+            continue
+
+        result.append(
+            {
+                "tenant_id": int(r.tenant_id),
+                "risk_id": risk_id,
+                "risk_version_id": int(
+                    r.risk_version_id
+                ),
+                "risk_score": float(
+                    r.inherent_score
+                ),
+                "linked_evidence_count": int(
+                    r.linked_evidence_count
+                ),
+                "approved_evidence_count": int(
+                    r.approved_evidence_count
+                ),
+                "is_covered": bool(
+                    r.approved_evidence_count > 0
+                ),
+                "exposure_score": float(
+                    r.residual_exposure
+                ),
+                "evidence_quality": float(
+                    r.evidence_quality
+                ),
+                "density_factor": float(
+                    r.density_factor
+                ),
+                "pressure_factor": float(
+                    r.pressure_factor
+                ),
+                "velocity_factor": float(
+                    r.velocity_factor
+                ),
+                "escalation_probability_30d": float(
+                    r.escalation_probability_30d
+                ),
+                "expected_score_delta": float(
+                    r.expected_score_delta
+                ),
+                "unified_score": float(
+                    r.unified_score
+                ),
+                "control_id": r.control_id,
+                "risk_level": r.risk_level,
+                "title": r.title,
+
+                "framework_resolved": True,
+                "framework_consistency_status": (
+                    framework_context.consistency_status
+                ),
+                "framework_reason": (
+                    framework_context.reason
+                ),
+
+                "standard_id": (
+                    framework_context.standard_id
+                ),
+                "standard_code": (
+                    framework_context.standard_code
+                ),
+                "standard_title": (
+                    framework_context.standard_title
+                ),
+
+                "standard_version_id": (
+                    framework_context.standard_version_id
+                ),
+                "standard_version_code": (
+                    framework_context.version_code
+                ),
+
+                "adoption_id": (
+                    framework_context.adoption_id
+                ),
+                "framework_type": (
+                    framework_context.framework_type
+                ),
+                "target_type": (
+                    framework_context.target_type
+                ),
+
+                "base_practice_id": (
+                    framework_context.base_practice_id
+                ),
+                "base_practice_code": (
+                    framework_context.base_practice_code
+                ),
+                "base_practice_title": (
+                    framework_context.base_practice_title
+                ),
+
+                "reference_process_id": (
+                    framework_context.reference_process_id
+                ),
+                "reference_process_code": (
+                    framework_context.reference_process_code
+                ),
+                "reference_process_name": (
+                    framework_context.reference_process_name
+                ),
+            }
+        )
+
+    return result
 
 
 # =========================================================
@@ -1391,7 +1893,7 @@ def get_exposure_coverage(
 # GAPS
 # =========================================================
 
-@router.get("/gaps")
+# Legacy duplicate GET /gaps disabled; canonical endpoint is intelligence_health.
 def get_gap_intelligence(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("risk.intelligence.view")),
@@ -1709,7 +2211,7 @@ def get_gap_intelligence(
 # GAP TREND
 # =========================================================
 
-@router.get("/gaps/trend")
+# Legacy duplicate GET /gaps/trend disabled; canonical endpoint is intelligence_health.
 def get_gap_trend(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("risk.intelligence.view")),

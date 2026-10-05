@@ -54,6 +54,59 @@ type ControlDetail = {
   }>;
 };
 
+type FrameworkType = "CONTROL_BASED" | "MATURITY_BASED";
+
+type FrameworkOption = {
+  adoption_id: number;
+  standard_id: number;
+  standard_version_id: number;
+  active_matrix_instance_id?: number | null;
+  standard_code: string;
+  standard_title: string;
+  standard_version_code?: string | null;
+  framework_type: FrameworkType;
+};
+
+type MatrixKpi = {
+  mode?: "control" | "maturity" | string;
+  matrix_instance_id?: number | null;
+  standard_id?: number | null;
+  standard_version_id?: number | null;
+  assessment_id?: number | null;
+  assessment_status?: string | null;
+  compliance_percentage?: number | null;
+  target_achievement_percentage?: number | null;
+  assessment_coverage_percentage?: number | null;
+  controls?: {
+    total?: number;
+    covered?: number;
+    partial?: number;
+    not_covered?: number;
+  };
+  maturity?: {
+    total?: number;
+    measured?: number;
+    calculated?: number;
+    unassessed?: number;
+    achieved?: number;
+    partial?: number;
+    not_achieved?: number;
+  };
+  evidence?: {
+    total?: number;
+    approved?: number;
+    pending?: number;
+    uploaded?: number;
+    rejected?: number;
+    draft?: number;
+    linked?: number;
+  };
+  risk?: {
+    critical?: number;
+    high?: number;
+  };
+};
+
 type CoverageStatus = "healthy" | "partial" | "weak" | "unassessed";
 
 function getCoverageStatus(value: number | null): CoverageStatus {
@@ -111,31 +164,187 @@ export default function MatrixIntelligencePage() {
   const [selectedControl, setSelectedControl] = useState<number | null>(null);
   const [controlDetail, setControlDetail] = useState<ControlDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  const [frameworks, setFrameworks] = useState<FrameworkOption[]>([]);
+  const [selectedFrameworkId, setSelectedFrameworkId] = useState<number | null>(null);
+  const [matrixKpi, setMatrixKpi] = useState<MatrixKpi | null>(null);
+
 
   async function load() {
     setLoading(true);
     setError(null);
 
     try {
-      const res = await apiFetch("/analytics/control-health");
+      const [adoptionsRes, standardsRes] = await Promise.all([
+        apiFetch("/framework/adoptions?status=ACTIVE"),
+        apiFetch("/standards/"),
+      ]);
 
-      if (!res.ok) {
-        throw new Error(await res.text());
+      if (!adoptionsRes.ok) {
+        throw new Error(await adoptionsRes.text());
       }
 
-      const data = await res.json();
-      setSummary(data.summary || null);
-      setControls(Array.isArray(data.controls) ? data.controls : []);
+      if (!standardsRes.ok) {
+        throw new Error(await standardsRes.text());
+      }
+
+      const adoptionsPayload = await adoptionsRes.json();
+      const standardsPayload = await standardsRes.json();
+
+      const rawAdoptions = Array.isArray(adoptionsPayload)
+        ? adoptionsPayload
+        : Array.isArray(adoptionsPayload?.items)
+          ? adoptionsPayload.items
+          : Array.isArray(adoptionsPayload?.adoptions)
+            ? adoptionsPayload.adoptions
+            : [];
+
+      const rawStandards = Array.isArray(standardsPayload)
+        ? standardsPayload
+        : Array.isArray(standardsPayload?.items)
+          ? standardsPayload.items
+          : Array.isArray(standardsPayload?.standards)
+            ? standardsPayload.standards
+            : [];
+
+      const activeApplicable = rawAdoptions.filter((item: any) => {
+        const status = String(item?.status ?? "").toUpperCase();
+        const applicability = String(
+          item?.applicability ?? "APPLICABLE",
+        ).toUpperCase();
+
+        return status === "ACTIVE" && applicability === "APPLICABLE";
+      });
+
+      const options: FrameworkOption[] = activeApplicable
+        .map((adoption: any) => {
+          const standardId = Number(adoption?.standard_id);
+
+          const standard = rawStandards.find(
+            (item: any) => Number(item?.id) === standardId,
+          );
+
+          const frameworkType = String(
+            adoption?.standard_type ??
+              adoption?.framework_type ??
+              standard?.type ??
+              "",
+          ).toUpperCase();
+
+          if (
+            frameworkType !== "CONTROL_BASED" &&
+            frameworkType !== "MATURITY_BASED"
+          ) {
+            return null;
+          }
+
+          const adoptionId = Number(
+            adoption?.id ??
+              adoption?.adoption_id ??
+              adoption?.framework_adoption_id,
+          );
+
+          const standardVersionId = Number(
+            adoption?.standard_version_id ?? 0,
+          );
+
+          if (
+            !Number.isFinite(adoptionId) ||
+            adoptionId <= 0 ||
+            !Number.isFinite(standardId) ||
+            standardId <= 0
+          ) {
+            return null;
+          }
+
+          return {
+            adoption_id: adoptionId,
+            standard_id: standardId,
+            standard_version_id: standardVersionId,
+            active_matrix_instance_id:
+              adoption?.active_matrix_instance_id ?? null,
+            standard_code: String(
+              adoption?.standard_code ??
+                standard?.code ??
+                `Standard ${standardId}`,
+            ),
+            standard_title: String(
+              adoption?.standard_title ??
+                standard?.title ??
+                standard?.name ??
+                "",
+            ),
+            standard_version_code:
+              adoption?.standard_version_code ??
+              adoption?.version_code ??
+              standard?.version ??
+              null,
+            framework_type: frameworkType as FrameworkType,
+          };
+        })
+        .filter(Boolean) as FrameworkOption[];
+
+      setFrameworks(options);
+
+      if (options.length === 0) {
+        setSelectedFrameworkId(null);
+        setSummary(null);
+        setControls([]);
+        setMatrixKpi(null);
+        return;
+      }
+
+      const current =
+        options.find(
+          (item) => item.standard_id === selectedFrameworkId,
+        ) ?? options[0];
+
+      if (selectedFrameworkId !== current.standard_id) {
+        setSelectedFrameworkId(current.standard_id);
+      }
+
+      const kpiRes = await apiFetch(
+        `/matrix/kpi?standard_id=${current.standard_id}`,
+      );
+
+      if (!kpiRes.ok) {
+        throw new Error(await kpiRes.text());
+      }
+
+      const kpi = (await kpiRes.json()) as MatrixKpi;
+      setMatrixKpi(kpi);
+
+      if (current.framework_type === "CONTROL_BASED") {
+        const controlRes = await apiFetch("/analytics/control-health");
+
+        if (!controlRes.ok) {
+          throw new Error(await controlRes.text());
+        }
+
+        const controlData = await controlRes.json();
+
+        setSummary(controlData.summary || null);
+        setControls(
+          Array.isArray(controlData.controls)
+            ? controlData.controls
+            : [],
+        );
+      } else {
+        setSummary(null);
+        setControls([]);
+        closeDrawer();
+      }
     } catch (err: any) {
-      console.error("Control Analytics load error:", err);
-      setError(err?.message || "Unable to load control analytics.");
+      console.error("Matrix Intelligence load error:", err);
+      setError(
+        err?.message || "Unable to load Matrix Intelligence.",
+      );
       setSummary(null);
       setControls([]);
+      setMatrixKpi(null);
     } finally {
       setLoading(false);
     }
   }
-
   async function openControl(controlId: number) {
     setSelectedControl(controlId);
     setDrawerLoading(true);
@@ -163,7 +372,34 @@ export default function MatrixIntelligencePage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [selectedFrameworkId]);
+
+  const selectedFramework =
+    frameworks.find(
+      (item) => item.standard_id === selectedFrameworkId,
+    ) ?? frameworks[0] ?? null;
+
+  const isControlFramework =
+    selectedFramework?.framework_type === "CONTROL_BASED";
+
+  const isMaturityFramework =
+    selectedFramework?.framework_type === "MATURITY_BASED";
+
+  const maturity = matrixKpi?.maturity ?? {};
+
+  const maturityTotal = Number(maturity.total ?? 0);
+  const maturityMeasured = Number(maturity.measured ?? 0);
+  const maturityCalculated = Number(maturity.calculated ?? 0);
+  const maturityUnassessed = Number(maturity.unassessed ?? 0);
+  const maturityAchieved = Number(maturity.achieved ?? 0);
+  const maturityPartial = Number(maturity.partial ?? 0);
+  const maturityNotAchieved = Number(maturity.not_achieved ?? 0);
+
+  const targetAchievement =
+    matrixKpi?.target_achievement_percentage ?? null;
+
+  const adoptionCoverage =
+    matrixKpi?.assessment_coverage_percentage ?? 0;
 
   const metrics = useMemo(() => {
     const healthy = controls.filter((c) => getCoverageStatus(c.coverage_score) === "healthy").length;
@@ -220,14 +456,78 @@ export default function MatrixIntelligencePage() {
                 <BarChart3 className="h-5 w-5 text-cyan-300" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight sm:text-[28px]">Control Analytics</h1>
+                <h1 className="text-2xl font-bold tracking-tight sm:text-[28px]">Matrix Intelligence</h1>
                 <p className="mt-1 text-sm text-slate-400">
-                  Control health, coverage, risk linkage and weakness distribution across the compliance matrix.
+                  Framework-aware intelligence across control-based and maturity-based compliance models.
                 </p>
               </div>
             </div>
           </div>
         </header>
+
+        <section className="mb-5 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Framework Context
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-100">
+                {selectedFramework
+                  ? `${selectedFramework.standard_code}${selectedFramework.standard_version_code ? ` / ${selectedFramework.standard_version_code}` : ""}`
+                  : "No active applicable framework"}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {selectedFramework?.standard_title || "Framework adoption context is unavailable."}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              {selectedFramework && (
+                <span
+                  className={`inline-flex rounded-full border px-3 py-1.5 text-[10px] font-semibold tracking-wide ${
+                    isControlFramework
+                      ? "border-cyan-400/20 bg-cyan-400/10 text-cyan-300"
+                      : "border-violet-400/20 bg-violet-400/10 text-violet-300"
+                  }`}
+                >
+                  {selectedFramework.framework_type}
+                </span>
+              )}
+
+              <select
+                value={selectedFrameworkId ?? ""}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  closeDrawer();
+                  setSelectedFrameworkId(
+                    Number.isFinite(value) && value > 0
+                      ? value
+                      : null,
+                  );
+                }}
+                className="h-10 min-w-[260px] rounded-lg border border-slate-700 bg-slate-950 px-3 text-xs text-slate-200 outline-none focus:border-cyan-400/40"
+              >
+                {frameworks.length === 0 && (
+                  <option value="">No active frameworks</option>
+                )}
+
+                {frameworks.map((framework) => (
+                  <option
+                    key={framework.adoption_id}
+                    value={framework.standard_id}
+                  >
+                    {framework.standard_code}
+                    {framework.standard_version_code
+                      ? ` / ${framework.standard_version_code}`
+                      : ""}
+                    {" - "}
+                    {framework.framework_type}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
 
         {error && (
           <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
@@ -235,6 +535,8 @@ export default function MatrixIntelligencePage() {
           </div>
         )}
 
+        {isControlFramework && (
+          <>
         <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <MetricCard label="Total Controls" value={summary?.total_controls ?? controls.length} />
           <MetricCard
@@ -404,9 +706,27 @@ export default function MatrixIntelligencePage() {
             </table>
           </div>
         </section>
+          </>
+        )}
+
+        {isMaturityFramework && (
+          <MaturityIntelligence
+            loading={loading}
+            matrixKpi={matrixKpi}
+            total={maturityTotal}
+            measured={maturityMeasured}
+            calculated={maturityCalculated}
+            unassessed={maturityUnassessed}
+            achieved={maturityAchieved}
+            partial={maturityPartial}
+            notAchieved={maturityNotAchieved}
+            targetAchievement={targetAchievement}
+            adoptionCoverage={adoptionCoverage}
+          />
+        )}
       </div>
 
-      {selectedControl !== null && (
+      {isControlFramework && selectedControl !== null && (
         <>
           <button aria-label="Close control details" onClick={closeDrawer} className="fixed inset-0 z-40 cursor-default bg-black/60" />
 
@@ -463,6 +783,194 @@ export default function MatrixIntelligencePage() {
           </aside>
         </>
       )}
+    </div>
+  );
+}
+
+function MaturityIntelligence({
+  loading,
+  matrixKpi,
+  total,
+  measured,
+  calculated,
+  unassessed,
+  achieved,
+  partial,
+  notAchieved,
+  targetAchievement,
+  adoptionCoverage,
+}: {
+  loading: boolean;
+  matrixKpi: MatrixKpi | null;
+  total: number;
+  measured: number;
+  calculated: number;
+  unassessed: number;
+  achieved: number;
+  partial: number;
+  notAchieved: number;
+  targetAchievement: number | null;
+  adoptionCoverage: number;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-10 text-center text-sm text-slate-500">
+        Loading maturity intelligence...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+        <MetricCard
+          label="Target Achievement"
+          value={
+            targetAchievement == null
+              ? "N/A"
+              : `${Number(targetAchievement).toFixed(1)}%`
+          }
+          tone="green"
+          sub="Calculated processes meeting target"
+        />
+
+        <MetricCard
+          label="Adoption Coverage"
+          value={`${Number(adoptionCoverage).toFixed(1)}%`}
+          tone="cyan"
+          sub="Measured processes in adoption scope"
+        />
+
+        <MetricCard
+          label="Processes"
+          value={total}
+          sub="Active adoption scope"
+        />
+
+        <MetricCard
+          label="Measured"
+          value={measured}
+          tone="cyan"
+          sub="Processes with measurement"
+        />
+
+        <MetricCard
+          label="Calculated"
+          value={calculated}
+          tone="purple"
+          sub="Capability calculated"
+        />
+
+        <MetricCard
+          label="Unassessed"
+          value={unassessed}
+          tone="amber"
+          sub="Not yet measured"
+        />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100">
+                Maturity Assessment Posture
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Capability outcome is evaluated only for calculated processes.
+              </p>
+            </div>
+
+            <ShieldCheck className="h-5 w-5 text-violet-300" />
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            <DetailCard label="Achieved" value={achieved} />
+            <DetailCard label="Partial" value={partial} />
+            <DetailCard label="Not Achieved" value={notAchieved} />
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+            <div className="text-xs font-semibold text-slate-300">
+              Assessment semantics
+            </div>
+
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              Unassessed processes are kept outside capability outcome
+              classification. They are not interpreted as CL0, failed,
+              partial, or not achieved.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-100">
+                Assessment Context
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Current canonical maturity assessment selected by Matrix KPI.
+              </p>
+            </div>
+
+            <Target className="h-5 w-5 text-amber-300" />
+          </div>
+
+          <div className="mt-5 space-y-3">
+            <MaturityContextRow
+              label="Assessment"
+              value={
+                matrixKpi?.assessment_id == null
+                  ? "N/A"
+                  : `#${matrixKpi.assessment_id}`
+              }
+            />
+
+            <MaturityContextRow
+              label="Status"
+              value={matrixKpi?.assessment_status || "N/A"}
+            />
+
+            <MaturityContextRow
+              label="Measured / Scope"
+              value={`${measured} / ${total}`}
+            />
+
+            <MaturityContextRow
+              label="Calculated / Measured"
+              value={`${calculated} / ${measured}`}
+            />
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-violet-400/15 bg-violet-400/[0.04] p-5">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-300">
+          Maturity Intelligence Boundary
+        </div>
+
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
+          This view uses maturity capability and adoption coverage semantics.
+          Control coverage, control-health thresholds and the compatibility
+          compliance percentage are intentionally excluded.
+        </p>
+      </section>
+    </div>
+  );
+}
+
+function MaturityContextRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-slate-800 pb-3 text-xs last:border-b-0 last:pb-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-medium text-slate-200">{value}</span>
     </div>
   );
 }

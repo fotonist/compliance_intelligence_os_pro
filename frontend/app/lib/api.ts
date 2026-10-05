@@ -18,16 +18,15 @@ export async function apiFetch(
     ? path
     : `/${path}`;
 
-  // Company Home historically requested legacy KPI/trend endpoints.
-  // Keep those client contracts while routing strategic reads through
-  // the canonical tenant-safe KPI endpoints.
+  // Preserve endpoint semantics. Matrix KPI requests must reach
+  // /matrix/kpi with their query parameters intact.
+  //
+  // Only the legacy dashboard trends alias is translated here.
   const pathOnly = safePath.split("?", 1)[0];
   const requestPath =
-    pathOnly === "/matrix/kpi"
-      ? "/kpi/summary"
-      : pathOnly === "/dashboard/trends"
-        ? `/kpi/trends${safePath.includes("?") ? `?${safePath.split("?").slice(1).join("?")}` : ""}`
-        : safePath;
+    pathOnly === "/dashboard/trends"
+      ? `/kpi/trends${safePath.includes("?") ? `?${safePath.split("?").slice(1).join("?")}` : ""}`
+      : safePath;
 
   const headers: HeadersInit = {};
 

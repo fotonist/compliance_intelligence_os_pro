@@ -23,19 +23,11 @@ type UeeSummary = {
   compliance_health_index?: number;
 
   indices?: {
-    risk?: number;
-    coverage?: number;
-    maturity?: number;
-    evidence?: number;
-    task_pressure?: number;
-  };
-
-  exposure_indices?: {
-    risk?: number;
-    coverage?: number;
-    maturity?: number;
-    evidence?: number;
-    task_pressure?: number;
+    risk_index?: number;
+    coverage_index?: number;
+    maturity_index?: number;
+    evidence_index?: number;
+    task_pressure_index?: number;
   };
 
   weights?: {
@@ -81,6 +73,51 @@ type UeeSummary = {
   };
 
   warnings?: string[];
+
+  framework_context?: {
+    active_framework_count?: number;
+    control_based_count?: number;
+    maturity_based_count?: number;
+    has_control_based?: boolean;
+    has_maturity_based?: boolean;
+    adoptions?: Array<{
+      adoption_id?: number;
+      standard_id?: number;
+      standard_version_id?: number;
+      adoption_status?: string;
+      applicability?: string;
+      standard_code?: string;
+      standard_type?: string;
+    }>;
+  };
+
+  maturity_context?: {
+    framework_count?: number;
+    total_processes?: number;
+    measured_processes?: number;
+    calculated_processes?: number;
+    unassessed_processes?: number;
+    achieved_processes?: number;
+    target_achievement_percentage?: number | null;
+    assessment_coverage_percentage?: number;
+    frameworks?: Array<{
+      adoption_id?: number;
+      standard_id?: number;
+      standard_version_id?: number;
+      standard_code?: string;
+      assessment_id?: number | null;
+      assessment_status?: string | null;
+      total_processes?: number;
+      measured_processes?: number;
+      calculated_processes?: number;
+      unassessed_processes?: number;
+      achieved_processes?: number;
+      partial_processes?: number;
+      not_achieved_processes?: number;
+      target_achievement_percentage?: number | null;
+      assessment_coverage_percentage?: number;
+    }>;
+  };
 };
 
 type IntelligenceConfiguration = {
@@ -123,12 +160,74 @@ type RiskExposure = {
   title?: string | null;
 };
 
+type MatrixKpi = {
+  mode?: string;
+  standard_id?: number;
+  standard_version_id?: number;
+  compliance_percentage?: number | null;
+  controls?: {
+    total?: number;
+    covered?: number;
+    partial?: number;
+    not_covered?: number;
+  };
+};
+
+type EvidenceSummary = {
+  total?: number;
+  by_assessment_type?: Record<string, number>;
+  by_status?: Record<string, number>;
+  by_framework?: Array<{
+    standard_id?: number | null;
+    standard_code?: string | null;
+    assessment_type?: string;
+    total?: number;
+  }>;
+};
+
+type RiskSummary = {
+  total?: number;
+  open?: number;
+  by_framework_type?: {
+    control?: number;
+    maturity?: number;
+    unlinked?: number;
+  };
+  by_status?: Record<string, number>;
+  by_level?: Record<string, number>;
+  by_framework?: Array<{
+    standard_id?: number;
+    standard_code?: string;
+    standard_type?: string;
+    total?: number;
+  }>;
+};
+
+type RemediationSummary = {
+  total?: number;
+  active?: number;
+  overdue?: number;
+  due_soon?: number;
+  high_priority?: number;
+  awaiting_review?: number;
+  completed?: number;
+};
+
+type RemediationResponse = {
+  summary?: RemediationSummary;
+  items?: unknown[];
+};
+
 type LoadState = {
   uee: UeeSummary | null;
   configuration: IntelligenceConfiguration | null;
   configurationError: string | null;
   risks: RiskExposure[];
   riskError: string | null;
+  controlKpis: MatrixKpi[];
+  evidenceSummary: EvidenceSummary | null;
+  riskSummary: RiskSummary | null;
+  remediation: RemediationResponse | null;
 };
 
 function num(value: unknown, fallback = 0): number {
@@ -200,28 +299,6 @@ function formatDate(value?: string): string {
   }).format(date);
 }
 
-function maturityLabel(exposure: number): {
-  value: string;
-  detail: string;
-  tone: string;
-} {
-  if (exposure <= 0) {
-    return {
-      value: "Not Assessed",
-      detail: "No active maturity assessment",
-      tone: "text-slate-500",
-    };
-  }
-
-  const health = healthFromExposure(exposure);
-
-  return {
-    value: `${health.toFixed(1)}%`,
-    detail: `Exposure ${exposure.toFixed(1)}`,
-    tone: scoreTone(health),
-  };
-}
-
 export default function ExecutiveIntelligencePage() {
   const [state, setState] = useState<LoadState>({
     uee: null,
@@ -229,6 +306,10 @@ export default function ExecutiveIntelligencePage() {
     configurationError: null,
     risks: [],
     riskError: null,
+    controlKpis: [],
+    evidenceSummary: null,
+    riskSummary: null,
+    remediation: null,
   });
 
   const [loading, setLoading] = useState(true);
@@ -246,7 +327,7 @@ export default function ExecutiveIntelligencePage() {
 
       setError(null);
 
-      const ueeResponse = await apiFetch("/kpi/summary");
+      const ueeResponse = await apiFetch("/uee/summary");
 
       if (!ueeResponse.ok) {
         throw new Error(
@@ -255,6 +336,83 @@ export default function ExecutiveIntelligencePage() {
       }
 
       const uee = (await ueeResponse.json()) as UeeSummary;
+
+      const controlAdoptions =
+        uee.framework_context?.adoptions?.filter(
+          (adoption) =>
+            String(adoption.standard_type || "").toUpperCase() ===
+            "CONTROL_BASED"
+        ) ?? [];
+
+      const controlKpis: MatrixKpi[] = [];
+
+      for (const adoption of controlAdoptions) {
+        if (!adoption.standard_id) {
+          continue;
+        }
+
+        const response = await apiFetch(
+          `/matrix/kpi?standard_id=${adoption.standard_id}`
+        );
+
+        if (response.ok) {
+          controlKpis.push(
+            (await response.json()) as MatrixKpi
+          );
+        }
+      }
+
+      let evidenceSummary: EvidenceSummary | null = null;
+
+      try {
+        const response = await apiFetch("/evidences/summary");
+
+        if (response.ok) {
+          evidenceSummary =
+            (await response.json()) as EvidenceSummary;
+        }
+      } catch {
+        evidenceSummary = null;
+      }
+
+      let riskSummary: RiskSummary | null = null;
+
+      try {
+        const response = await apiFetch("/risks/summary");
+
+        if (response.ok) {
+          riskSummary =
+            (await response.json()) as RiskSummary;
+        }
+      } catch {
+        riskSummary = null;
+      }
+
+      let remediation: RemediationResponse | null = null;
+
+      try {
+        const response = await apiFetch("/company/remediation");
+
+        if (response.ok) {
+          remediation =
+            (await response.json()) as RemediationResponse;
+        } else {
+          const remediationErrorBody = await response.text();
+
+          console.error(
+            "Remediation summary unavailable:",
+            response.status,
+            remediationErrorBody
+          );
+        }
+      } catch (remediationError) {
+        console.error(
+          "Remediation summary request failed:",
+          remediationError
+        );
+
+        remediation = null;
+      }
 
       // Custom controls are tenant-defined controls and must remain
       // separate from the standard/canonical control coverage scope.
@@ -330,6 +488,10 @@ export default function ExecutiveIntelligencePage() {
         configurationError,
         risks,
         riskError,
+        controlKpis,
+        evidenceSummary,
+        riskSummary,
+        remediation,
       });
     } catch (err: unknown) {
       setError(
@@ -358,35 +520,19 @@ export default function ExecutiveIntelligencePage() {
   );
 
   const riskExposure = clamp(
-    num(
-      uee?.exposure_indices?.risk ??
-        uee?.source_stats?.risk?.normalized_risk_exposure
-    )
+    num(uee?.indices?.risk_index)
   );
 
   const coverageExposure = clamp(
-    num(
-      uee?.exposure_indices?.coverage ??
-        100 -
-          num(
-            uee?.source_stats?.coverage?.coverage_health
-          )
-    )
+    num(uee?.indices?.coverage_index)
   );
 
   const evidenceExposure = clamp(
-    num(
-      uee?.exposure_indices?.evidence ??
-        uee?.source_stats?.evidence?.evidence_exposure
-    )
-  );
-
-  const maturityExposure = clamp(
-    num(uee?.exposure_indices?.maturity)
+    num(uee?.indices?.evidence_index)
   );
 
   const taskExposure = clamp(
-    num(uee?.exposure_indices?.task_pressure)
+    num(uee?.indices?.task_pressure_index)
   );
 
   const riskHealth = healthFromExposure(riskExposure);
@@ -394,41 +540,114 @@ export default function ExecutiveIntelligencePage() {
   const evidenceHealth = healthFromExposure(evidenceExposure);
   const taskHealth = healthFromExposure(taskExposure);
 
-  const maturity = maturityLabel(maturityExposure);
+  const frameworkContext = uee?.framework_context;
+  const maturityContext = uee?.maturity_context;
+
+  const activeFrameworks = num(
+    frameworkContext?.active_framework_count
+  );
+
+  const controlFrameworks = num(
+    frameworkContext?.control_based_count
+  );
+
+  const maturityFrameworks = num(
+    frameworkContext?.maturity_based_count
+  );
+
+  const maturityTotalProcesses = num(
+    maturityContext?.total_processes
+  );
+
+  const maturityCalculatedProcesses = num(
+    maturityContext?.calculated_processes
+  );
+
+  const maturityUnassessedProcesses = num(
+    maturityContext?.unassessed_processes
+  );
+
+  const maturityTargetAchievement =
+    maturityContext?.target_achievement_percentage == null
+      ? null
+      : clamp(num(maturityContext.target_achievement_percentage));
+
+  const maturityAssessmentCoverage = clamp(
+    num(maturityContext?.assessment_coverage_percentage)
+  );
+
+
+  const primaryControlKpi =
+    state.controlKpis.length > 0
+      ? state.controlKpis[0]
+      : null;
+
+  const controlCompliance =
+    primaryControlKpi?.compliance_percentage == null
+      ? null
+      : clamp(num(primaryControlKpi.compliance_percentage));
+
+  const canonicalTotalControls = num(
+    primaryControlKpi?.controls?.total
+  );
+
+  const canonicalCoveredControls = num(
+    primaryControlKpi?.controls?.covered
+  );
+
+  const canonicalPartialControls = num(
+    primaryControlKpi?.controls?.partial
+  );
+
+  const canonicalNotCoveredControls = num(
+    primaryControlKpi?.controls?.not_covered
+  );
+
+  const enterpriseEvidenceTotal = num(
+    state.evidenceSummary?.total
+  );
+
+  const enterpriseEvidenceUploaded = num(
+    state.evidenceSummary?.by_status?.uploaded
+  );
+
+  const enterpriseEvidenceDraft = num(
+    state.evidenceSummary?.by_status?.draft
+  );
+
+  const enterpriseRiskTotal = num(
+    state.riskSummary?.total
+  );
+
+  const enterpriseOpenRisks = num(
+    state.riskSummary?.open
+  );
+
+  const enterpriseControlRisks = num(
+    state.riskSummary?.by_framework_type?.control
+  );
+
+  const enterpriseMaturityRisks = num(
+    state.riskSummary?.by_framework_type?.maturity
+  );
+
+  const remediationTotal = num(
+    state.remediation?.summary?.total
+  );
+
+  const remediationActive = num(
+    state.remediation?.summary?.active
+  );
+
+  const remediationOverdue = num(
+    state.remediation?.summary?.overdue
+  );
+
+  const remediationAwaitingReview = num(
+    state.remediation?.summary?.awaiting_review
+  );
 
   const stats = uee?.source_stats;
-
-  const totalControls = num(
-    stats?.coverage?.total_controls
-  );
-
-  const coveredControls = num(
-    stats?.coverage?.covered_controls
-  );
-
-  const partialControls = num(
-    stats?.coverage?.partial_controls
-  );
-
-  const uncoveredControls = num(
-    stats?.coverage?.uncovered_controls
-  );
-
-  const totalEvidence = num(
-    stats?.evidence?.total_files
-  );
-
-  const approvedEvidence = num(
-    stats?.evidence?.approved_files
-  );
-
-  const openTasks = num(
-    stats?.task_pressure?.open_count
-  );
-
-  const overdueTasks = num(
-    stats?.task_pressure?.overdue_count
-  );
 
   const riskCount = num(
     stats?.risk?.row_count
@@ -446,6 +665,16 @@ export default function ExecutiveIntelligencePage() {
       "high"
   ).length;
 
+  const maturityExposureAvailable =
+    !(uee?.warnings || []).includes(
+      "maturity:exposure_not_available"
+    );
+
+  const executiveModelWarnings = (uee?.warnings || []).filter(
+    (warning) =>
+      warning !== "maturity:exposure_not_available"
+  );
+
   const executiveSignals = useMemo(() => {
     const signals: Array<{
       severity: "Critical" | "High" | "Medium";
@@ -462,33 +691,39 @@ export default function ExecutiveIntelligencePage() {
       });
     }
 
-    if (uncoveredControls > 0) {
+    if (canonicalNotCoveredControls > 0) {
       signals.push({
         severity: "High",
         title: "Control coverage deficiency",
         description:
-          `${uncoveredControls} of ${totalControls} standard controls are currently uncovered.`,
+          `${canonicalNotCoveredControls} of ${canonicalTotalControls} canonical control(s) are currently not covered.`,
       });
     }
 
-    if (overdueTasks > 0) {
+    if (remediationOverdue > 0) {
       signals.push({
         severity: "High",
-        title: "Execution pressure",
+        title: "Overdue remediation",
         description:
-          `${overdueTasks} open task(s) are overdue.`,
+          `${remediationOverdue} active remediation item(s) are overdue.`,
       });
     }
 
-    if (
-      approvedEvidence < totalEvidence &&
-      totalEvidence > 0
-    ) {
+    if (remediationAwaitingReview > 0) {
       signals.push({
         severity: "Medium",
-        title: "Evidence approval backlog",
+        title: "Remediation awaiting review",
         description:
-          `${totalEvidence - approvedEvidence} evidence file(s) are not approved.`,
+          `${remediationAwaitingReview} remediation item(s) are awaiting review.`,
+      });
+    }
+
+    if (enterpriseEvidenceDraft > 0) {
+      signals.push({
+        severity: "Medium",
+        title: "Draft evidence backlog",
+        description:
+          `${enterpriseEvidenceDraft} evidence item(s) remain in draft status.`,
       });
     }
 
@@ -497,18 +732,18 @@ export default function ExecutiveIntelligencePage() {
         severity: "Medium",
         title: "No material escalation signal",
         description:
-          "No additional executive signal was identified from the current UEE source data.",
+          "No additional executive signal was identified from the current canonical enterprise data.",
       });
     }
 
     return signals;
   }, [
     criticalRisks,
-    uncoveredControls,
-    totalControls,
-    overdueTasks,
-    approvedEvidence,
-    totalEvidence,
+    canonicalNotCoveredControls,
+    canonicalTotalControls,
+    remediationOverdue,
+    remediationAwaitingReview,
+    enterpriseEvidenceDraft,
   ]);
 
   if (loading) {
@@ -584,27 +819,13 @@ export default function ExecutiveIntelligencePage() {
                   Executive Intelligence
                 </h1>
 
-                <span
-                  className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${
-                    complianceHealth >= 75
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : complianceHealth >= 50
-                        ? "border-amber-200 bg-amber-50 text-amber-700"
-                        : "border-red-200 bg-red-50 text-red-700"
-                  }`}
-                >
-                  {complianceHealth >= 75
-                    ? "Healthy"
-                    : complianceHealth >= 50
-                      ? "Watch"
-                      : "Critical"}
-                </span>
+
               </div>
 
               <p className="mt-1.5 max-w-3xl text-sm text-slate-500">
-                Canonical enterprise view of compliance health,
-                exposure, control coverage, evidence strength and
-                execution pressure.
+                Framework-aware executive view of enterprise exposure,
+                control-based compliance, maturity posture, evidence
+                strength and execution pressure.
               </p>
 
               <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-400">
@@ -645,50 +866,39 @@ export default function ExecutiveIntelligencePage() {
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
 
           <MetricCard
-            label="Compliance Health"
-            value={`${complianceHealth.toFixed(2)}%`}
-            icon={
-              <CheckCircle2 className="h-5 w-5" />
-            }
-            tone={scoreTone(complianceHealth)}
-            progress={complianceHealth}
-          />
-
-          <MetricCard
-            label="Unified Exposure"
+            label="Enterprise Exposure"
             value={exposure.toFixed(2)}
-            icon={
-              <AlertTriangle className="h-5 w-5" />
-            }
+            description="Tenant-wide weighted exposure across active UEE components"
+            icon={<AlertTriangle className="h-5 w-5" />}
             tone={exposureTone(exposure)}
           />
 
           <MetricCard
-            label="Risk Health"
-            value={`${riskHealth.toFixed(1)}%`}
-            icon={
-              <ShieldAlert className="h-5 w-5" />
-            }
-            tone={scoreTone(riskHealth)}
-            progress={riskHealth}
+            label="Active Frameworks"
+            value={String(activeFrameworks)}
+            icon={<BrainCircuit className="h-5 w-5" />}
+            tone="text-slate-800"
           />
 
           <MetricCard
-            label="Coverage Health"
-            value={`${coverageHealth.toFixed(2)}%`}
+            label="Control-Based"
+            value={String(controlFrameworks)}
             icon={<Target className="h-5 w-5" />}
-            tone={scoreTone(coverageHealth)}
-            progress={coverageHealth}
+            tone="text-cyan-700"
           />
 
           <MetricCard
-            label="Evidence Health"
-            value={`${evidenceHealth.toFixed(1)}%`}
-            icon={
-              <FileCheck2 className="h-5 w-5" />
-            }
-            tone={scoreTone(evidenceHealth)}
-            progress={evidenceHealth}
+            label="Maturity-Based"
+            value={String(maturityFrameworks)}
+            icon={<Activity className="h-5 w-5" />}
+            tone="text-violet-700"
+          />
+
+          <MetricCard
+            label="Remediation Pressure"
+            value={`${taskExposure.toFixed(1)}`}
+            icon={<Clock3 className="h-5 w-5" />}
+            tone={exposureTone(taskExposure)}
           />
 
         </section>
@@ -727,17 +937,54 @@ export default function ExecutiveIntelligencePage() {
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="text-xs font-semibold text-slate-500">
-                  Maturity
+                  Maturity Assessment
                 </div>
 
-                <div
-                  className={`mt-3 text-lg font-bold ${maturity.tone}`}
-                >
-                  {maturity.value}
+                <div className="mt-3 text-lg font-bold text-slate-900">
+                  {maturityTargetAchievement == null
+                    ? "N/A"
+                    : `${maturityTargetAchievement.toFixed(1)}%`}
                 </div>
 
                 <div className="mt-1 text-[11px] text-slate-400">
-                  {maturity.detail}
+                  Target achievement
+                </div>
+
+                <div className="mt-3 border-t border-slate-200 pt-3">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-slate-500">
+                      Assessment coverage
+                    </span>
+                    <span className="font-semibold text-slate-700">
+                      {maturityAssessmentCoverage.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 border-t border-slate-200 pt-3">
+                  <div className="flex items-center justify-between gap-3 text-[11px]">
+                    <span className="text-slate-500">
+                      UEE exposure contribution
+                    </span>
+
+                    <span
+                      className={
+                        maturityExposureAvailable
+                          ? "font-semibold text-slate-700"
+                          : "font-semibold text-amber-700"
+                      }
+                    >
+                      {maturityExposureAvailable
+                        ? "Available"
+                        : "Not available"}
+                    </span>
+                  </div>
+
+                  {!maturityExposureAvailable ? (
+                    <div className="mt-1 text-[10px] leading-4 text-slate-400">
+                      No approved maturity-to-exposure transformation is defined.
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -788,14 +1035,14 @@ export default function ExecutiveIntelligencePage() {
               ))}
             </div>
 
-            {uee.warnings?.length ? (
+            {executiveModelWarnings.length ? (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                 <div className="font-semibold">
                   Model warnings
                 </div>
 
                 <div className="mt-1">
-                  {uee.warnings.join(" · ")}
+                  {executiveModelWarnings.join(" / ")}
                 </div>
               </div>
             ) : null}
@@ -803,137 +1050,392 @@ export default function ExecutiveIntelligencePage() {
 
         </section>
 
-        <section className="mt-6 grid gap-5 xl:grid-cols-3">
-
-          <PosturePanel
-            title="Control Posture"
-            icon={
-              <Target className="h-5 w-5 text-cyan-700" />
-            }
+        <section className="mt-6">
+          <Panel
+            title="Framework Posture"
+            subtitle="Framework-specific posture is preserved according to each active framework's canonical assessment model."
           >
-            <Row
-              label="Total Controls"
-              value={totalControls}
-            />
+            <div className="grid gap-5 xl:grid-cols-2">
 
-            <Row
-              label="Covered"
-              value={coveredControls}
-              tone="success"
-            />
+              {frameworkContext?.adoptions
+                ?.filter(
+                  (adoption) =>
+                    String(adoption.standard_type || "").toUpperCase() ===
+                    "CONTROL_BASED"
+                )
+                .map((adoption) => {
+                  const kpi = state.controlKpis.find(
+                    (item) =>
+                      item.standard_id === adoption.standard_id
+                  );
 
-            <Row
-              label="Partial"
-              value={partialControls}
-              tone={
-                partialControls > 0
-                  ? "warning"
-                  : "default"
-              }
-            />
+                  const compliance =
+                    kpi?.compliance_percentage == null
+                      ? null
+                      : clamp(num(kpi.compliance_percentage));
 
-            <Row
-              label="Uncovered"
-              value={uncoveredControls}
-              tone={
-                uncoveredControls > 0
-                  ? "danger"
-                  : "success"
-              }
-            />
+                  const total = num(kpi?.controls?.total);
+                  const covered = num(kpi?.controls?.covered);
+                  const partial = num(kpi?.controls?.partial);
+                  const notCovered = num(
+                    kpi?.controls?.not_covered
+                  );
 
-            <div className="mt-4">
-              <Progress
-                label="Coverage health"
-                value={coverageHealth}
-              />
+                  return (
+                    <div
+                      key={`control-${adoption.adoption_id}`}
+                      className="rounded-2xl border border-cyan-200 bg-cyan-50/30 p-5"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-700">
+                            Control-Based
+                          </div>
+
+                          <h3 className="mt-1 text-lg font-bold text-slate-900">
+                            {adoption.standard_code || "Control Framework"}
+                          </h3>
+
+                          <div className="mt-1 text-xs text-slate-400">
+                            Version ID {adoption.standard_version_id ?? "N/A"}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl border border-cyan-200 bg-white px-4 py-3 text-right">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            Compliance
+                          </div>
+
+                          <div
+                            className={`mt-1 text-2xl font-bold ${
+                              compliance == null
+                                ? "text-slate-400"
+                                : scoreTone(compliance)
+                            }`}
+                          >
+                            {compliance == null
+                              ? "N/A"
+                              : `${compliance.toFixed(1)}%`}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        <FrameworkMetric
+                          label="Controls"
+                          value={total}
+                        />
+
+                        <FrameworkMetric
+                          label="Covered"
+                          value={covered}
+                          tone="success"
+                        />
+
+                        <FrameworkMetric
+                          label="Partial"
+                          value={partial}
+                          tone={partial > 0 ? "warning" : "default"}
+                        />
+
+                        <FrameworkMetric
+                          label="Not Covered"
+                          value={notCovered}
+                          tone={notCovered > 0 ? "danger" : "success"}
+                        />
+                      </div>
+
+                      {compliance != null ? (
+                        <div className="mt-5">
+                          <Progress
+                            label="Control compliance"
+                            value={compliance}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
+              {maturityContext?.frameworks?.map((framework) => {
+                const achievement =
+                  framework.target_achievement_percentage == null
+                    ? null
+                    : clamp(
+                        num(
+                          framework.target_achievement_percentage
+                        )
+                      );
+
+                const assessmentCoverage = clamp(
+                  num(
+                    framework.assessment_coverage_percentage
+                  )
+                );
+
+                return (
+                  <div
+                    key={`maturity-${framework.adoption_id}`}
+                    className="rounded-2xl border border-violet-200 bg-violet-50/30 p-5"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-violet-700">
+                          Maturity-Based
+                        </div>
+
+                        <h3 className="mt-1 text-lg font-bold text-slate-900">
+                          {framework.standard_code || "Maturity Framework"}
+                        </h3>
+
+                        <div className="mt-1 text-xs text-slate-400">
+                          Assessment #{framework.assessment_id ?? "N/A"}
+                          {" ? "}
+                          {framework.assessment_status || "Unknown"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-violet-200 bg-white px-4 py-3 text-right">
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          Target Achievement
+                        </div>
+
+                        <div
+                          className={`mt-1 text-2xl font-bold ${
+                            achievement == null
+                              ? "text-slate-400"
+                              : scoreTone(achievement)
+                          }`}
+                        >
+                          {achievement == null
+                            ? "N/A"
+                            : `${achievement.toFixed(1)}%`}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      <FrameworkMetric
+                        label="Processes"
+                        value={num(framework.total_processes)}
+                      />
+
+                      <FrameworkMetric
+                        label="Measured"
+                        value={num(framework.measured_processes)}
+                      />
+
+                      <FrameworkMetric
+                        label="Calculated"
+                        value={num(framework.calculated_processes)}
+                        tone="success"
+                      />
+
+                      <FrameworkMetric
+                        label="Unassessed"
+                        value={num(framework.unassessed_processes)}
+                        tone={
+                          num(framework.unassessed_processes) > 0
+                            ? "warning"
+                            : "success"
+                        }
+                      />
+                    </div>
+
+                    <div className="mt-5">
+                      <Progress
+                        label="Assessment coverage"
+                        value={assessmentCoverage}
+                      />
+                    </div>
+
+                    <div className="mt-3 text-[11px] leading-5 text-slate-500">
+                      Target Achievement is calculated only from
+                      processes with a calculated capability result.
+                      Assessment Coverage represents measured
+                      in-scope processes.
+                    </div>
+                  </div>
+                );
+              })}
+
             </div>
-          </PosturePanel>
+          </Panel>
+        </section>
 
-          <PosturePanel
-            title="Risk Posture"
-            icon={
-              <ShieldAlert className="h-5 w-5 text-orange-600" />
-            }
+        <section className="mt-6">
+          <Panel
+            title="Enterprise Operations"
+            subtitle="Tenant-wide risk, evidence and remediation position. These measures are not combined with framework-specific posture scores."
           >
-            <Row
-              label="Risk records"
-              value={riskCount}
-            />
+            <div className="grid gap-5 lg:grid-cols-3">
 
-            <Row
-              label="Critical in exposure set"
-              value={criticalRisks}
-              tone={
-                criticalRisks > 0
-                  ? "danger"
-                  : "success"
-              }
-            />
+              <div className="rounded-xl border border-slate-200 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-orange-50">
+                    <ShieldAlert className="h-5 w-5 text-orange-600" />
+                  </div>
 
-            <Row
-              label="High in exposure set"
-              value={highRisks}
-              tone={
-                highRisks > 0
-                  ? "warning"
-                  : "default"
-              }
-            />
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">
+                      Risk
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Enterprise risk inventory
+                    </div>
+                  </div>
+                </div>
 
-            <Row
-              label="Average risk score"
-              value={num(
-                stats?.risk?.avg_risk_score
-              ).toFixed(1)}
-            />
+                <div className="mt-5 space-y-1">
+                  <Row
+                    label="Total risks"
+                    value={enterpriseRiskTotal}
+                  />
+                  <Row
+                    label="Open"
+                    value={enterpriseOpenRisks}
+                    tone={
+                      enterpriseOpenRisks > 0
+                        ? "warning"
+                        : "success"
+                    }
+                  />
+                  <Row
+                    label="Control-based"
+                    value={enterpriseControlRisks}
+                  />
+                  <Row
+                    label="Maturity-based"
+                    value={enterpriseMaturityRisks}
+                  />
+                </div>
 
-            <Row
-              label="Risk exposure"
-              value={riskExposure.toFixed(1)}
-            />
-          </PosturePanel>
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">
+                      UEE risk exposure
+                    </span>
+                    <span className={`font-bold ${exposureTone(riskExposure)}`}>
+                      {riskExposure.toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-          <PosturePanel
-            title="Evidence & Execution"
-            icon={
-              <FileCheck2 className="h-5 w-5 text-emerald-600" />
-            }
-          >
-            <Row
-              label="Evidence files"
-              value={totalEvidence}
-            />
+              <div className="rounded-xl border border-slate-200 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50">
+                    <FileCheck2 className="h-5 w-5 text-emerald-600" />
+                  </div>
 
-            <Row
-              label="Approved"
-              value={approvedEvidence}
-              tone="success"
-            />
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">
+                      Evidence
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Enterprise evidence inventory
+                    </div>
+                  </div>
+                </div>
 
-            <Row
-              label="Open tasks"
-              value={openTasks}
-            />
+                <div className="mt-5 space-y-1">
+                  <Row
+                    label="Total evidence"
+                    value={enterpriseEvidenceTotal}
+                  />
+                  <Row
+                    label="Control-based"
+                    value={num(
+                      state.evidenceSummary?.by_assessment_type?.control
+                    )}
+                  />
+                  <Row
+                    label="Maturity-based"
+                    value={num(
+                      state.evidenceSummary?.by_assessment_type?.maturity
+                    )}
+                  />
+                  <Row
+                    label="Uploaded"
+                    value={enterpriseEvidenceUploaded}
+                  />
+                  <Row
+                    label="Draft"
+                    value={enterpriseEvidenceDraft}
+                  />
+                </div>
 
-            <Row
-              label="Overdue tasks"
-              value={overdueTasks}
-              tone={
-                overdueTasks > 0
-                  ? "danger"
-                  : "success"
-              }
-            />
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">
+                      UEE evidence exposure
+                    </span>
+                    <span className={`font-bold ${exposureTone(evidenceExposure)}`}>
+                      {evidenceExposure.toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-            <Row
-              label="Evidence quality"
-              value={`${num(
-                stats?.evidence?.evidence_quality
-              ).toFixed(1)}%`}
-            />
-          </PosturePanel>
+              <div className="rounded-xl border border-slate-200 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50">
+                    <Clock3 className="h-5 w-5 text-amber-600" />
+                  </div>
 
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">
+                      Remediation
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      Canonical remediation workload
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-1">
+                  <Row
+                    label="Total"
+                    value={remediationTotal}
+                  />
+                  <Row
+                    label="Active"
+                    value={remediationActive}
+                    tone={
+                      remediationActive > 0
+                        ? "warning"
+                        : "success"
+                    }
+                  />
+                  <Row
+                    label="Overdue"
+                    value={remediationOverdue}
+                    tone={
+                      remediationOverdue > 0
+                        ? "danger"
+                        : "success"
+                    }
+                  />
+                  <Row
+                    label="Awaiting review"
+                    value={remediationAwaitingReview}
+                  />
+                </div>
+
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-500">
+                      UEE task pressure
+                    </span>
+                    <span className={`font-bold ${exposureTone(taskExposure)}`}>
+                      {taskExposure.toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </Panel>
         </section>
 
         <section className="mt-6 grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
@@ -1026,60 +1528,7 @@ export default function ExecutiveIntelligencePage() {
             ) : null}
           </Panel>
 
-          <Panel
-            title="Operational Pressure"
-            subtitle="Current evidence and task pressure contributing to UEE."
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-
-              <MiniMetric
-                label="Open Tasks"
-                value={openTasks}
-                icon={
-                  <Clock3 className="h-4 w-4" />
-                }
-              />
-
-              <MiniMetric
-                label="Overdue"
-                value={overdueTasks}
-                icon={
-                  <TriangleAlert className="h-4 w-4" />
-                }
-                danger={overdueTasks > 0}
-              />
-
-              <MiniMetric
-                label="Evidence Files"
-                value={totalEvidence}
-                icon={
-                  <FileCheck2 className="h-4 w-4" />
-                }
-              />
-
-              <MiniMetric
-                label="Approved"
-                value={approvedEvidence}
-                icon={
-                  <CheckCircle2 className="h-4 w-4" />
-                }
-              />
-            </div>
-
-            <div className="mt-5 border-t border-slate-100 pt-5">
-              <Progress
-                label="Task health"
-                value={taskHealth}
-              />
-
-              <div className="mt-4">
-                <Progress
-                  label="Evidence health"
-                  value={evidenceHealth}
-                />
-              </div>
-            </div>
-          </Panel>
+          
 
         </section>
 
@@ -1089,7 +1538,7 @@ export default function ExecutiveIntelligencePage() {
           </span>
 
           <span>
-            Canonical UEE · tenant {uee.tenant_id ?? "—"}
+            Canonical UEE
           </span>
         </footer>
 
@@ -1104,12 +1553,14 @@ function MetricCard({
   icon,
   tone,
   progress,
+  description,
 }: {
   label: string;
   value: string;
   icon: ReactNode;
   tone: string;
   progress?: number;
+  description?: string;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1131,11 +1582,11 @@ function MetricCard({
             }}
           />
         </div>
-      ) : (
-        <div className="mt-4 text-[11px] text-slate-400">
-          Canonical UEE value
+      ) : description ? (
+        <div className="mt-4 text-[11px] leading-4 text-slate-400">
+          {description}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -1238,6 +1689,37 @@ function PosturePanel({
 
       {children}
     </section>
+  );
+}
+
+function FrameworkMetric({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string | number;
+  tone?: "default" | "success" | "warning" | "danger";
+}) {
+  const toneClass =
+    tone === "success"
+      ? "text-emerald-700"
+      : tone === "warning"
+        ? "text-amber-700"
+        : tone === "danger"
+          ? "text-red-700"
+          : "text-slate-900";
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        {label}
+      </div>
+
+      <div className={`mt-1 text-xl font-bold ${toneClass}`}>
+        {value}
+      </div>
+    </div>
   );
 }
 

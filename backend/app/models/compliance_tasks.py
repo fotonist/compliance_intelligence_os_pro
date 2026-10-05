@@ -22,13 +22,37 @@ class ComplianceTask(Base):
     process_id = Column(
         Integer,
         ForeignKey("processes.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
     control_id = Column(
         Integer,
         ForeignKey("controls.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    pam_assessment_process_id = Column(
+        Integer,
+        ForeignKey("pam_assessment_processes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    pam_indicator_evaluation_id = Column(
+        Integer,
+        ForeignKey("pam_indicator_evaluations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    pam_process_attribute_evaluation_id = Column(
+        Integer,
+        ForeignKey(
+            "pam_process_attribute_evaluations.id",
+            ondelete="SET NULL",
+        ),
         nullable=True,
         index=True,
     )

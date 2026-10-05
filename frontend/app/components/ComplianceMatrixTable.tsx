@@ -19,8 +19,12 @@ export interface MatrixRow {
   practice_title?: string;
   practice_description?: string;
   target_level?: number;
-  achieved_level?: number;
+  achieved_level?: number | null;
   evidence_count?: number;
+  measured?: boolean;
+  measurement_status?: string;
+  capability_status?: string;
+  capability_reason?: string;
   clause_code?: string;
   clause_title?: string;
   clause_description?: string;
@@ -277,17 +281,24 @@ export default function ComplianceMatrixTable({
             <tbody className="divide-y divide-slate-100">
               {pagedRows.map((row, i) => {
                 const target = row.target_level ?? 0;
-                const achieved = row.achieved_level ?? 0;
+
+                const hasCalculatedCapability =
+                  row.capability_status === "CALCULATED" &&
+                  row.achieved_level != null;
+
+                const achieved = hasCalculatedCapability
+                  ? row.achieved_level
+                  : null;
 
                 const progress =
-                  target > 0
+                  achieved != null && target > 0
                     ? Math.min(
                         100,
                         Math.round(
                           (achieved / target) * 100
                         )
                       )
-                    : 0;
+                    : null;
 
                 return (
                   <tr
@@ -348,20 +359,34 @@ export default function ComplianceMatrixTable({
 
                     <td className="px-5 py-4 align-top">
                       <div className="flex flex-col items-center gap-2">
-                        <CapabilityBadge level={achieved} />
+                        {achieved == null ? (
+                          <>
+                            <span className="inline-flex items-center border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Not Assessed
+                            </span>
 
-                        <div className="h-1 w-20 overflow-hidden bg-slate-100">
-                          <div
-                            className="h-full bg-slate-500 transition-all"
-                            style={{
-                              width: `${progress}%`,
-                            }}
-                          />
-                        </div>
+                            <span className="text-[10px] text-slate-400">
+                              Capability not calculated
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <CapabilityBadge level={achieved} />
 
-                        <span className="text-[10px] text-slate-400">
-                          {progress}% of target
-                        </span>
+                            <div className="h-1 w-20 overflow-hidden bg-slate-100">
+                              <div
+                                className="h-full bg-slate-500 transition-all"
+                                style={{
+                                  width: `${progress ?? 0}%`,
+                                }}
+                              />
+                            </div>
+
+                            <span className="text-[10px] text-slate-400">
+                              {progress}% of target
+                            </span>
+                          </>
+                        )}
                       </div>
                     </td>
 

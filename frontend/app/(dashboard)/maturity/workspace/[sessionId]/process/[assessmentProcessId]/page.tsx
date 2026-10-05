@@ -843,6 +843,54 @@ function SummaryValue({
   );
 }
 
+
+type BasePracticeRiskItem = {
+  id: number;
+  risk_version_id: number;
+  version_number: number;
+  title: string;
+  description?: string | null;
+  likelihood: number;
+  impact: number;
+  score: number;
+  risk_level: string;
+  status: string;
+  action?: string | null;
+  treatment?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type BasePracticeRiskContext = {
+  framework: {
+    standard_id: number;
+    standard_code: string;
+    standard_version_id: number;
+    standard_version_code: string;
+    adoption_id: number;
+    framework_type: string;
+  };
+  target: {
+    type: string;
+    base_practice_id: number;
+    base_practice_code: string;
+    base_practice_title?: string | null;
+    reference_process_id: number;
+    reference_process_code: string;
+    reference_process_name?: string | null;
+  };
+  count: number;
+  items: BasePracticeRiskItem[];
+};
+
+type BasePracticeRiskDraft = {
+  title: string;
+  description: string;
+  likelihood: number;
+  impact: number;
+  action: string;
+};
+
 function BasePractices({
   items,
   definitions,
@@ -872,6 +920,34 @@ function BasePractices({
   const [saveError, setSaveError] = useState("");
   const [savedId, setSavedId] =
     useState<number | null>(null);
+
+  const [riskContexts, setRiskContexts] = useState<
+    Record<number, BasePracticeRiskContext>
+  >({});
+
+  const [riskLoading, setRiskLoading] = useState<
+    Record<number, boolean>
+  >({});
+
+  const [riskErrors, setRiskErrors] = useState<
+    Record<number, string>
+  >({});
+
+  const [riskModalItem, setRiskModalItem] =
+    useState<BasePracticeEvaluation | null>(null);
+
+  const [riskSaving, setRiskSaving] = useState(false);
+  const [riskCreateError, setRiskCreateError] =
+    useState("");
+
+  const [riskDraft, setRiskDraft] =
+    useState<BasePracticeRiskDraft>({
+      title: "",
+      description: "",
+      likelihood: 1,
+      impact: 1,
+      action: "assessment",
+    });
 
   useEffect(() => {
     const next: Record<
@@ -967,6 +1043,181 @@ function BasePractices({
       );
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const loadRiskContext = async (
+    basePracticeId: number
+  ) => {
+    const token = getToken();
+
+    if (!token) {
+      setRiskErrors((current) => ({
+        ...current,
+        [basePracticeId]:
+          "Authentication token is unavailable.",
+      }));
+      return;
+    }
+
+    setRiskLoading((current) => ({
+      ...current,
+      [basePracticeId]: true,
+    }));
+
+    setRiskErrors((current) => ({
+      ...current,
+      [basePracticeId]: "",
+    }));
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/pam/assessments/${assessmentId}/processes/${assessmentProcessId}/base-practices/${basePracticeId}/risks`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+
+        throw new Error(
+          body ||
+            `Base practice risks could not be loaded: ${response.status}`
+        );
+      }
+
+      const data =
+        (await response.json()) as BasePracticeRiskContext;
+
+      setRiskContexts((current) => ({
+        ...current,
+        [basePracticeId]: data,
+      }));
+    } catch (err) {
+      setRiskErrors((current) => ({
+        ...current,
+        [basePracticeId]:
+          err instanceof Error
+            ? err.message
+            : "Base practice risks could not be loaded.",
+      }));
+    } finally {
+      setRiskLoading((current) => ({
+        ...current,
+        [basePracticeId]: false,
+      }));
+    }
+  };
+
+  useEffect(() => {
+    for (const item of items) {
+      if (
+        !riskContexts[item.base_practice_id] &&
+        !riskLoading[item.base_practice_id]
+      ) {
+        void loadRiskContext(item.base_practice_id);
+      }
+    }
+    // Loading is keyed by the current assessment/process and BP ids.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assessmentId, assessmentProcessId, items]);
+
+  const openRiskModal = (
+    item: BasePracticeEvaluation
+  ) => {
+    setRiskModalItem(item);
+    setRiskCreateError("");
+    setRiskDraft({
+      title: "",
+      description: "",
+      likelihood: 1,
+      impact: 1,
+      action: "assessment",
+    });
+  };
+
+  const closeRiskModal = () => {
+    if (riskSaving) {
+      return;
+    }
+
+    setRiskModalItem(null);
+    setRiskCreateError("");
+  };
+
+  const createRisk = async () => {
+    if (!riskModalItem) {
+      return;
+    }
+
+    const token = getToken();
+
+    if (!token) {
+      setRiskCreateError(
+        "Authentication token is unavailable."
+      );
+      return;
+    }
+
+    const title = riskDraft.title.trim();
+
+    if (!title) {
+      setRiskCreateError("Risk title is required.");
+      return;
+    }
+
+    setRiskSaving(true);
+    setRiskCreateError("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE}/pam/assessments/${assessmentId}/processes/${assessmentProcessId}/base-practices/${riskModalItem.base_practice_id}/risks`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            title,
+            description:
+              riskDraft.description.trim() || null,
+            likelihood: riskDraft.likelihood,
+            impact: riskDraft.impact,
+            action: riskDraft.action,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+
+        throw new Error(
+          body ||
+            `Risk creation failed: ${response.status}`
+        );
+      }
+
+      await response.json();
+
+      const basePracticeId =
+        riskModalItem.base_practice_id;
+
+      setRiskModalItem(null);
+
+      await loadRiskContext(basePracticeId);
+    } catch (err) {
+      setRiskCreateError(
+        err instanceof Error
+          ? err.message
+          : "Risk could not be created."
+      );
+    } finally {
+      setRiskSaving(false);
     }
   };
 
@@ -1135,9 +1386,371 @@ function BasePractices({
                 {saving ? "Saving..." : "Save Evaluation"}
               </button>
             </div>
+
+            <div className="border-t border-slate-200 bg-white px-5 py-5">
+              <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-950">
+                      Risk Context
+                    </h3>
+
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                      {riskContexts[item.base_practice_id]?.count ?? 0}
+                    </span>
+                  </div>
+
+                  <p className="mt-1 max-w-3xl text-xs leading-5 text-slate-500">
+                    Risks identified specifically for this Base Practice.
+                    Assessment status does not automatically create a risk.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openRiskModal(item)}
+                  className="inline-flex shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                  + Add Risk
+                </button>
+              </div>
+
+              {riskLoading[item.base_practice_id] ? (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  Loading risk context...
+                </div>
+              ) : null}
+
+              {riskErrors[item.base_practice_id] ? (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {riskErrors[item.base_practice_id]}
+                </div>
+              ) : null}
+
+              {!riskLoading[item.base_practice_id] &&
+              !riskErrors[item.base_practice_id] &&
+              (riskContexts[item.base_practice_id]?.items
+                ?.length ?? 0) === 0 ? (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4">
+                  <div className="text-sm font-medium text-slate-700">
+                    No risks are linked to this Base Practice.
+                  </div>
+
+                  <div className="mt-1 text-xs leading-5 text-slate-500">
+                    Add a risk when a concrete uncertainty or threat
+                    requires explicit risk management.
+                  </div>
+                </div>
+              ) : null}
+
+              {(riskContexts[item.base_practice_id]?.items ?? [])
+                .length > 0 ? (
+                <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                  {(riskContexts[item.base_practice_id]?.items ?? []).map(
+                    (risk) => (
+                      <div
+                        key={risk.id}
+                        className="border-b border-slate-100 px-4 py-4 last:border-b-0"
+                      >
+                        <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-semibold text-slate-950">
+                                {risk.title}
+                              </span>
+
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                                {risk.risk_level}
+                              </span>
+
+                              <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                                {normalizeStatus(risk.status)}
+                              </span>
+                            </div>
+
+                            {risk.description ? (
+                              <div className="mt-1 text-xs leading-5 text-slate-500">
+                                {risk.description}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="grid shrink-0 grid-cols-3 gap-4 text-right text-xs">
+                            <div>
+                              <div className="text-slate-400">
+                                Likelihood
+                              </div>
+                              <div className="mt-0.5 font-semibold text-slate-700">
+                                {risk.likelihood}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div className="text-slate-400">
+                                Impact
+                              </div>
+                              <div className="mt-0.5 font-semibold text-slate-700">
+                                {risk.impact}
+                              </div>
+                            </div>
+
+                            <div>
+                              <div className="text-slate-400">
+                                Score
+                              </div>
+                              <div className="mt-0.5 font-semibold text-slate-950">
+                                {risk.score}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  )}
+                </div>
+              ) : null}
+
+              {riskContexts[item.base_practice_id] ? (
+                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 border-t border-slate-100 pt-4 text-xs">
+                  <div>
+                    <span className="text-slate-400">
+                      Framework
+                    </span>{" "}
+                    <span className="font-medium text-slate-700">
+                      {
+                        riskContexts[item.base_practice_id]
+                          .framework.standard_code
+                      }{" "}
+                      /{" "}
+                      {
+                        riskContexts[item.base_practice_id]
+                          .framework.standard_version_code
+                      }
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400">
+                      Process
+                    </span>{" "}
+                    <span className="font-medium text-slate-700">
+                      {
+                        riskContexts[item.base_practice_id]
+                          .target.reference_process_code
+                      }
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400">
+                      Target
+                    </span>{" "}
+                    <span className="font-medium text-slate-700">
+                      {
+                        riskContexts[item.base_practice_id]
+                          .target.base_practice_code
+                      }
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </section>
         );
       })}
+
+      {riskModalItem ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="base-practice-risk-title"
+        >
+          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
+              <div>
+                <div
+                  id="base-practice-risk-title"
+                  className="text-lg font-semibold text-slate-950"
+                >
+                  Add Base Practice Risk
+                </div>
+
+                <div className="mt-1 text-sm text-slate-500">
+                  {riskModalItem.code}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeRiskModal}
+                disabled={riskSaving}
+                className="rounded-lg px-2.5 py-1.5 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-5 px-6 py-5">
+              {riskContexts[riskModalItem.base_practice_id] ? (
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Framework
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-800">
+                      {
+                        riskContexts[riskModalItem.base_practice_id]
+                          .framework.standard_code
+                      }{" "}
+                      /{" "}
+                      {
+                        riskContexts[riskModalItem.base_practice_id]
+                          .framework.standard_version_code
+                      }
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Process
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-800">
+                      {
+                        riskContexts[riskModalItem.base_practice_id]
+                          .target.reference_process_code
+                      }
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Base Practice
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-800">
+                      {
+                        riskContexts[riskModalItem.base_practice_id]
+                          .target.base_practice_code
+                      }
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Risk Title
+                </span>
+                <input
+                  value={riskDraft.title}
+                  onChange={(event) =>
+                    setRiskDraft((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                  autoFocus
+                  className="mt-2 w-full rounded-xl border border-slate-200 px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Describe the risk clearly..."
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Description
+                </span>
+                <textarea
+                  value={riskDraft.description}
+                  onChange={(event) =>
+                    setRiskDraft((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
+                  }
+                  rows={4}
+                  className="mt-2 w-full resize-y rounded-xl border border-slate-200 px-3.5 py-3 text-sm leading-6 text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  placeholder="Describe the uncertainty, threat, cause, or consequence..."
+                />
+              </label>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Likelihood
+                  </span>
+                  <select
+                    value={riskDraft.likelihood}
+                    onChange={(event) =>
+                      setRiskDraft((current) => ({
+                        ...current,
+                        likelihood: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  >
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    Impact
+                  </span>
+                  <select
+                    value={riskDraft.impact}
+                    onChange={(event) =>
+                      setRiskDraft((current) => ({
+                        ...current,
+                        impact: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+                  >
+                    {[1, 2, 3, 4, 5].map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {riskCreateError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {riskCreateError}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+              <button
+                type="button"
+                onClick={closeRiskModal}
+                disabled={riskSaving}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void createRisk()}
+                disabled={
+                  riskSaving ||
+                  !riskDraft.title.trim()
+                }
+                className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {riskSaving ? "Creating..." : "Create Risk"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

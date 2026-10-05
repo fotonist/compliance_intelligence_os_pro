@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.services.uee_engine import UEEEngine
 from app.services.uee_config_provider import get_active_uee_weights
+from app.dependencies.auth import get_current_user
+from app.models.user import User
 
 router = APIRouter(prefix="/uee", tags=["UEE"])
 
@@ -16,14 +18,32 @@ engine = UEEEngine(weights_provider=get_active_uee_weights)
 
 @router.get("/summary")
 def uee_summary(
-    tenant_id: int = Query(..., description="Tenant ID"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
-
-    if tenant_id <= 0:
-        raise HTTPException(status_code=400, detail="Invalid tenant_id")
+    tenant_id = current_user.tenant_id
 
     state = engine.compute_summary(db=db, tenant_id=tenant_id)
+
+    framework_context = engine._get_framework_context(
+        db,
+        tenant_id=tenant_id,
+    )
+
+    maturity_context = engine._get_maturity_framework_state(
+        db,
+        tenant_id=tenant_id,
+        framework_context=framework_context,
+    )
+
+    framework_summary = {
+        "active_framework_count": framework_context["active_framework_count"],
+        "control_based_count": framework_context["control_based_count"],
+        "maturity_based_count": framework_context["maturity_based_count"],
+        "has_control_based": framework_context["has_control_based"],
+        "has_maturity_based": framework_context["has_maturity_based"],
+        "adoptions": framework_context["adoptions"],
+    }
 
     return {
         "tenant_id": state.tenant_id,
@@ -40,4 +60,6 @@ def uee_summary(
         "weights": state.weights,
         "components": state.components,
         "warnings": state.warnings,
+        "framework_context": framework_summary,
+        "maturity_context": maturity_context,
     }

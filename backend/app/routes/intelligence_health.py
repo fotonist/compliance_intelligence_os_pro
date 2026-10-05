@@ -1,4 +1,15 @@
 from __future__ import annotations
+from app.services.gap_intelligence_service import GapIntelligenceService
+from app.services.gap_remediation_service import GapRemediationService
+from app.schemas.gap_remediation import (
+    ControlGapRemediationCreate,
+    GapRemediationResponse,
+)
+from app.services.task_authorization import (
+    TASK_PERMISSIONS,
+    require_process_scope,
+    require_task_create_permission,
+)
 
 from collections import defaultdict
 from typing import Any, Dict, List
@@ -65,191 +76,59 @@ def get_gap_intelligence_fixed(
     user: User = Depends(require_permission("risk.intelligence.view")),
     scope=Depends(require_tenant_scope()),
 ):
-    tenant_id = user.tenant_id
+    tenant_id = int(user.tenant_id)
 
-    stmt = text(
-        """
-        SELECT gi.id, gi.risk_id, gi.control_id, gi.severity_score, gi.status, gi.created_at,
-               co.code AS control_code, co.title AS control_title,
-               r.title AS risk_title, r.risk_level, r.score AS risk_score
-        FROM gap_items gi
-        LEFT JOIN controls co ON co.id = gi.control_id
-           AND EXISTS (
-               SELECT 1 FROM matrix_rows mr
-               WHERE mr.control_id = co.id AND mr.tenant_id = :tenant_id
-           )
-        LEFT JOIN risks r ON r.id = gi.risk_id AND r.tenant_id = :tenant_id
-        WHERE gi.tenant_id = :tenant_id
-        ORDER BY gi.severity_score DESC NULLS LAST, gi.id DESC
-        """
+    return GapIntelligenceService.get(
+        db,
+        tenant_id=tenant_id,
     )
 
-    rows = db.execute(stmt, {"tenant_id": tenant_id}).mappings().all()
 
-    if not rows:
-        return {
-            "summary": {
-                "gaps_total": 0,
-                "uncovered": 0,
-                "partial": 0,
-                "resolved": 0,
-                "active_gaps": 0,
-                "worst_severity_score": 0,
-                "global_health_index": 100,
-            },
-            "controls": [],
-            "trend": [],
-        }
-
-    uncovered = sum(
-        1 for r in rows
-        if not _is_resolved_gap(r.get("status"))
-        and not _is_partial_gap(r.get("status"))
-    )
-    partial = sum(1 for r in rows if _is_partial_gap(r.get("status")))
-    resolved = sum(1 for r in rows if _is_resolved_gap(r.get("status")))
-    active_rows = [r for r in rows if not _is_resolved_gap(r.get("status"))]
-
-    active_worst_severity = max(
-        (float(r.get("severity_score") or 0.0) for r in active_rows),
-        default=0.0,
-    )
-    global_health_index = round(
-        max(0.0, min(100.0, 100.0 - active_worst_severity)),
-        1,
+@router.post(
+    "/company/intelligence/gaps/remediation",
+    response_model=GapRemediationResponse,
+)
+def create_gap_remediation(
+    payload: ControlGapRemediationCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(
+        require_permission("risk.intelligence.view")
+    ),
+    scope=Depends(require_tenant_scope()),
+):
+    require_task_create_permission(
+        TASK_PERMISSIONS["create"],
+        db,
+        user,
     )
 
-    control_map: Dict[int, Dict[str, Any]] = {}
-    for row in rows:
-        if _is_resolved_gap(row.get("status")):
-            continue
+    result = GapRemediationService.start_control_gap(
+        db,
+        tenant_id=int(user.tenant_id),
+        user_id=int(user.id),
+        standard_id=payload.standard_id,
+        standard_version_id=payload.standard_version_id,
+        adoption_id=payload.adoption_id,
+        control_id=payload.control_id,
+        priority_score=payload.priority_score,
+        owner_role=payload.owner_role,
+        assignee_user_id=payload.assignee_user_id,
+        due_date=payload.due_date,
+    )
 
-        cid = row.get("control_id")
-        if cid is None:
-            continue
+    process_id = result.get("process_id")
 
-        control = control_map.setdefault(
-            int(cid),
-            {
-                "control_id": int(cid),
-                "control_code": row.get("control_code"),
-                "control_title": row.get("control_title"),
-                "gap_count": 0,
-                "worst_severity": 0.0,
-                "risks": {},
-            },
+    if process_id is not None:
+        require_process_scope(
+            int(process_id),
+            user,
+            db,
         )
 
-        severity = float(row.get("severity_score") or 0.0)
-        control["gap_count"] += 1
-        control["worst_severity"] = max(control["worst_severity"], severity)
+    if result.get("created"):
+        db.commit()
 
-        rid = row.get("risk_id")
-        if rid is not None:
-            risk = control["risks"].setdefault(
-                int(rid),
-                {
-                    "risk_id": int(rid),
-                    "risk_title": row.get("risk_title"),
-                    "risk_level": row.get("risk_level"),
-                    "exposure_score": float(row.get("risk_score") or 0.0),
-                    "escalation_probability": 0.0,
-                    "gap_count": 0,
-                    "worst_severity": 0.0,
-                    "gaps": [],
-                },
-            )
-            risk["gap_count"] += 1
-            risk["worst_severity"] = max(risk["worst_severity"], severity)
-            risk["gaps"].append(
-                {
-                    "gap_id": int(row["id"]),
-                    "severity_score": severity,
-                    "status": row.get("status"),
-                    "task_id": None,
-                    "task_status": None,
-                }
-            )
-
-    controls = []
-    for control in control_map.values():
-        risks = list(control["risks"].values())
-        avg_exposure = (
-            sum(float(r["exposure_score"]) for r in risks) / len(risks)
-            if risks else 0.0
-        )
-        priority = round(
-            float(control["worst_severity"]) * 0.55
-            + avg_exposure * 0.35
-            + float(control["gap_count"]) * 0.10,
-            2,
-        )
-        controls.append(
-            {
-                "control_id": control["control_id"],
-                "control_code": control["control_code"],
-                "control_title": control["control_title"],
-                "gap_count": control["gap_count"],
-                "worst_severity": control["worst_severity"],
-                "ai_priority_score": priority,
-                "risks": risks,
-            }
-        )
-
-    controls.sort(key=lambda x: x["ai_priority_score"], reverse=True)
-
-    trend_stmt = text(
-        """
-        SELECT
-            date_trunc('day', created_at) AS day,
-            count(*) FILTER (
-                WHERE lower(coalesce(status, '')) NOT IN
-                ('resolved', 'accepted', 'closed', 'cancelled', 'archived')
-            ) AS active_gap_count,
-            count(*) FILTER (
-                WHERE lower(coalesce(status, '')) IN
-                ('in_progress', 'in-progress', 'partial', 'partially_achieved')
-            ) AS partial_count,
-            coalesce(
-                max(severity_score) FILTER (
-                    WHERE lower(coalesce(status, '')) NOT IN
-                    ('resolved', 'accepted', 'closed', 'cancelled', 'archived')
-                ),
-                0
-            ) AS worst_severity
-        FROM gap_items
-        WHERE tenant_id = :tenant_id
-        GROUP BY day
-        ORDER BY day
-        """
-    )
-    trend_rows = db.execute(trend_stmt, {"tenant_id": tenant_id}).mappings().all()
-
-    return {
-        "summary": {
-            "gaps_total": len(rows),
-            "active_gaps": len(active_rows),
-            "uncovered": uncovered,
-            "partial": partial,
-            "resolved": resolved,
-            "worst_severity_score": active_worst_severity,
-            "global_health_index": global_health_index,
-        },
-        "controls": controls,
-        "trend": [
-            {
-                "day": r["day"].isoformat() if r.get("day") else None,
-                "gap_count": int(r.get("active_gap_count") or 0),
-                "partial_count": int(r.get("partial_count") or 0),
-                "worst_severity": float(r.get("worst_severity") or 0.0),
-                "health_index": round(
-                    max(0.0, min(100.0, 100.0 - float(r.get("worst_severity") or 0.0))),
-                    1,
-                ),
-            }
-            for r in trend_rows
-        ],
-    }
+    return result
 
 
 @router.get("/company/intelligence/gaps/trend")

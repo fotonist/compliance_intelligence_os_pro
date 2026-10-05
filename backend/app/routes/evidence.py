@@ -597,6 +597,95 @@ def get_evidences_by_control(
 # =====================================================
 # EVIDENCE DETAIL (ALIAS FOR UI)
 # =====================================================
+# EVIDENCE SUMMARY
+# Enterprise aggregation; independent from pagination.
+# =====================================================
+@router.get("/summary")
+def evidence_summary(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    base_filter = [
+        Evidence.tenant_id == user.tenant_id,
+        Evidence.is_deleted == False,
+    ]
+
+    total = (
+        db.query(func.count(Evidence.id))
+        .filter(*base_filter)
+        .scalar()
+        or 0
+    )
+
+    type_rows = (
+        db.query(
+            Evidence.assessment_type,
+            func.count(Evidence.id),
+        )
+        .filter(*base_filter)
+        .group_by(Evidence.assessment_type)
+        .all()
+    )
+
+    status_rows = (
+        db.query(
+            Evidence.status,
+            func.count(Evidence.id),
+        )
+        .filter(*base_filter)
+        .group_by(Evidence.status)
+        .all()
+    )
+
+    framework_rows = (
+        db.query(
+            Evidence.standard_id,
+            Standard.code,
+            Evidence.assessment_type,
+            func.count(Evidence.id),
+        )
+        .outerjoin(Standard, Standard.id == Evidence.standard_id)
+        .filter(*base_filter)
+        .group_by(
+            Evidence.standard_id,
+            Standard.code,
+            Evidence.assessment_type,
+        )
+        .order_by(Standard.code, Evidence.assessment_type)
+        .all()
+    )
+
+    by_assessment_type = {
+        str(assessment_type or "unknown").lower(): int(count or 0)
+        for assessment_type, count in type_rows
+    }
+
+    by_status = {
+        str(status or "unknown").lower(): int(count or 0)
+        for status, count in status_rows
+    }
+
+    by_framework = [
+        {
+            "standard_id": standard_id,
+            "standard_code": standard_code,
+            "assessment_type": str(assessment_type or "unknown").lower(),
+            "total": int(count or 0),
+        }
+        for standard_id, standard_code, assessment_type, count
+        in framework_rows
+    ]
+
+    return {
+        "total": int(total),
+        "by_assessment_type": by_assessment_type,
+        "by_status": by_status,
+        "by_framework": by_framework,
+    }
+
+
+
+# =====================================================
 @router.get("/{evidence_id}")
 def get_evidence_detail_alias(
     evidence_id: int,

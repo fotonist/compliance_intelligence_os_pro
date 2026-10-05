@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Collection, Dict, List, Optional, Tuple
 
 from sqlalchemy import and_, case, desc, func, select, text
 from sqlalchemy.orm import Session
@@ -199,24 +199,56 @@ class ExposureEngine:
             out[self._safe_int(rv_id)] = (self._safe_int(linked_cnt), self._safe_int(approved_cnt))
         return out
 
-    def _risk_count_per_control(self, tenant_id: int) -> Dict[int, int]:
+    def _risk_count_per_control(
+        self,
+        tenant_id: int,
+        risk_ids: Optional[Collection[int]] = None,
+    ) -> Dict[int, int]:
         """
-        Returns map: control_id -> risk_count
-        Uses current risks table mapping (Risk.control_id).
+        Returns map: control_id -> risk_count.
+
+        When risk_ids is provided, pressure is calculated only
+        from that explicit risk universe. None preserves the
+        legacy tenant-wide behavior.
         """
+        requested_risk_ids: Optional[set[int]]
+
+        if risk_ids is None:
+            requested_risk_ids = None
+        else:
+            requested_risk_ids = {
+                self._safe_int(risk_id)
+                for risk_id in risk_ids
+            }
+
+            if not requested_risk_ids:
+                return {}
+
+        conditions = [
+            Risk.tenant_id == tenant_id,
+            Risk.control_id.isnot(None),
+        ]
+
+        if requested_risk_ids is not None:
+            conditions.append(
+                Risk.id.in_(requested_risk_ids)
+            )
+
         stmt = (
             select(
                 Risk.control_id,
                 func.count(Risk.id).label("risk_cnt"),
             )
-            .where(and_(Risk.tenant_id == tenant_id, Risk.control_id.isnot(None)))
+            .where(and_(*conditions))
             .group_by(Risk.control_id)
         )
 
         rows = self.db.execute(stmt).all()
         out: Dict[int, int] = {}
+
         for cid, cnt in rows:
             out[self._safe_int(cid)] = self._safe_int(cnt)
+
         return out
 
     def _latest_forecasts_by_risk(self, tenant_id: int) -> Dict[int, Tuple[float, float]]:
@@ -300,18 +332,56 @@ class ExposureEngine:
     # Public API
     # -------------------------
 
-    def compute_risk_exposure(self, tenant_id: int, limit: int = 200) -> List[RiskExposureDTO]:
+    def compute_risk_exposure(
+        self,
+        tenant_id: int,
+        limit: int = 200,
+        risk_ids: Optional[Collection[int]] = None,
+    ) -> List[RiskExposureDTO]:
         """
         Returns exposure rows (Phase-2) sorted by unified_score desc.
         """
+        requested_risk_ids: Optional[set[int]]
+
+        if risk_ids is None:
+            requested_risk_ids = None
+        else:
+            requested_risk_ids = {
+                self._safe_int(risk_id)
+                for risk_id in risk_ids
+            }
+
+            if not requested_risk_ids:
+                return []
+
         # batch data
         latest_versions = self._latest_risk_versions(tenant_id)
-        evidence_map = self._evidence_counts_by_risk_version(tenant_id)
-        control_risk_counts = self._risk_count_per_control(tenant_id)
-        forecast_map = self._latest_forecasts_by_risk(tenant_id)
+
+        if requested_risk_ids is not None:
+            latest_versions = [
+                row
+                for row in latest_versions
+                if self._safe_int(row[0]) in requested_risk_ids
+            ]
 
         if not latest_versions:
             return []
+
+        effective_risk_ids = {
+            self._safe_int(row[0])
+            for row in latest_versions
+        }
+
+        evidence_map = self._evidence_counts_by_risk_version(tenant_id)
+        control_risk_counts = self._risk_count_per_control(
+            tenant_id,
+            risk_ids=(
+                effective_risk_ids
+                if requested_risk_ids is not None
+                else None
+            ),
+        )
+        forecast_map = self._latest_forecasts_by_risk(tenant_id)
 
         # risk meta (title/control/risk_level)
         risk_ids = [rid for (rid, _rv, _score) in latest_versions]

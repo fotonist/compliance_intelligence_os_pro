@@ -259,6 +259,101 @@ def assess_risk(
 # Get Single Risk
 # -------------------------------------------------
 
+
+
+@router.get("/summary")
+def risk_summary(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    tenant_id = current_user.tenant_id
+
+    rows = db.execute(
+        text("""
+            SELECT
+                r.id,
+                r.status,
+                r.risk_level,
+                r.standard_id,
+                s.code AS standard_code,
+                s.type AS standard_type
+            FROM risks r
+            LEFT JOIN standards s
+                ON s.id = r.standard_id
+            WHERE r.tenant_id = :tenant_id
+        """),
+        {"tenant_id": tenant_id},
+    ).mappings().all()
+
+    total = len(rows)
+
+    by_framework_type = {
+        "control": 0,
+        "maturity": 0,
+        "unlinked": 0,
+    }
+
+    by_status = {}
+    by_level = {}
+    framework_counts = {}
+
+    for row in rows:
+        standard_type = str(row["standard_type"] or "").upper()
+
+        if standard_type == "CONTROL_BASED":
+            by_framework_type["control"] += 1
+        elif standard_type == "MATURITY_BASED":
+            by_framework_type["maturity"] += 1
+        else:
+            by_framework_type["unlinked"] += 1
+
+        status = str(row["status"] or "UNKNOWN").upper()
+        by_status[status] = by_status.get(status, 0) + 1
+
+        level = str(row["risk_level"] or "UNKNOWN").upper()
+        by_level[level] = by_level.get(level, 0) + 1
+
+        standard_id = row["standard_id"]
+        standard_code = row["standard_code"]
+
+        if standard_id is not None:
+            key = (
+                int(standard_id),
+                str(standard_code or ""),
+                standard_type,
+            )
+            framework_counts[key] = framework_counts.get(key, 0) + 1
+
+    by_framework = [
+        {
+            "standard_id": standard_id,
+            "standard_code": standard_code,
+            "standard_type": standard_type,
+            "total": count,
+        }
+        for (standard_id, standard_code, standard_type), count
+        in sorted(
+            framework_counts.items(),
+            key=lambda item: (item[0][1], item[0][0]),
+        )
+    ]
+
+    open_total = sum(
+        count
+        for status, count in by_status.items()
+        if status not in {"CLOSED", "RESOLVED", "ACCEPTED"}
+    )
+
+    return {
+        "total": total,
+        "open": open_total,
+        "by_framework_type": by_framework_type,
+        "by_status": by_status,
+        "by_level": by_level,
+        "by_framework": by_framework,
+    }
+
+
 @router.get("/{risk_id}")
 def get_risk(
     risk_id: int,
@@ -318,6 +413,15 @@ def get_risk(
 # -------------------------------------------------
 # Basic CRUD
 # -------------------------------------------------
+
+# -------------------------------------------------
+# RISK SUMMARY
+# Enterprise aggregation; independent from pagination.
+# Framework ownership is derived from Standard.type.
+# -------------------------------------------------
+
+
+
 
 @router.get("")
 def list_risks(

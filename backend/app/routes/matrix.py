@@ -28,6 +28,7 @@ from app.models.controls import Control
 from app.models.risks import Risk
 from app.models.evidences import Evidence
 from app.services.framework.framework_adoption_service import FrameworkAdoptionService
+from app.services.maturity_capability_service import MaturityCapabilityService
 
 # Intelligence-aware models
 from app.models.gap_items import GapItem
@@ -239,9 +240,15 @@ def get_matrix(
 ):
     tenant_id = getattr(user, "tenant_id", None)
 
-    # Resolve version only for CONTROL_BASED matrices.
-    # MATURITY_BASED matrices (e.g. ISO15504) are
-    # version-independent and use process areas/practices.
+    if not tenant_id:
+        raise HTTPException(status_code=400, detail="tenant_id missing")
+
+    # Resolve the canonical version from the tenant's ACTIVE framework
+    # adoption whenever the caller supplies only standard_id.
+    #
+    # This applies to both CONTROL_BASED and MATURITY_BASED frameworks.
+    # Maturity models such as PAM/CMF are version-bound through
+    # framework_models.standard_version_id.
     if standard_version_id is None and standard_id is not None:
         standard = (
             db.query(Standard)
@@ -255,24 +262,18 @@ def get_matrix(
                 detail="Standard not found",
             )
 
-        if _normalize(standard.type) != "MATURITY_BASED":
-            try:
-                standard_version_id = FrameworkAdoptionService(
-                    db
-                ).resolve_active_version(
-                    tenant_id=tenant_id,
-                    standard_id=standard_id,
-                ).id
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=409,
-                    detail=str(exc),
-                )
-
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id missing")
-    if not tenant_id:
-        raise HTTPException(status_code=400, detail="tenant_id missing")
+        try:
+            standard_version_id = FrameworkAdoptionService(
+                db
+            ).resolve_active_version(
+                tenant_id=tenant_id,
+                standard_id=standard_id,
+            ).id
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=str(exc),
+            )
 
     # -------------------------------------------------
     # RESOLVE CURRENT MATRIX INSTANCE
@@ -527,56 +528,104 @@ def get_matrix(
 
     if std_type == "MATURITY_BASED":
 
-        rows = db.execute(
-            select(
-                Standard.code.label("standard_code"),
-                standard_process_areas.c.id.label(
-                    "process_area_id"
-                ),
-                standard_process_areas.c.code.label(
-                    "process_area_code"
-                ),
-                standard_process_areas.c.name.label(
-                    "process_area_title"
-                ),
-                standard_practices.c.id.label(
-                    "practice_id"
-                ),
-                standard_practices.c.code.label(
-                    "practice_code"
-                ),
-                standard_practices.c.title.label(
-                    "practice_title"
-                ),
-                standard_practices.c.level.label(
-                    "target_level"
-                ),
-                literal(0).label("achieved_level"),
-                literal(0).label("evidence_count"),
+        if standard_version_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="standard_version_id missing for maturity matrix",
             )
-            .select_from(standard_practices)
-            .join(
-                standard_process_areas,
-                standard_practices.c.process_area_id
-                == standard_process_areas.c.id,
+
+        maturity_state = (
+            MaturityCapabilityService.get_standard_version_state(
+                db,
+                tenant_id=tenant_id,
+                standard_version_id=standard_version_id,
             )
-            .join(
-                Standard,
-                standard_practices.c.standard_id
-                == Standard.id,
+        )
+
+        if maturity_state is None:
+            return {
+                "mode": "maturity",
+                "assessment_id": None,
+                "assessment_status": None,
+                "in_scope_process_count": 0,
+                "measured_process_count": 0,
+                "calculated_process_count": 0,
+                "unmeasured_process_count": 0,
+                "rows": [],
+            }
+
+        maturity_rows = []
+
+        for process in maturity_state["processes"]:
+            maturity_rows.append(
+                {
+                    "standard_code": getattr(
+                        standard,
+                        "code",
+                        None,
+                    ),
+                    "process_area_id": None,
+                    "process_area_code": None,
+                    "process_area_title": None,
+                    "practice_id": process.get(
+                        "assessment_process_id"
+                    ),
+                    "practice_code": process.get(
+                        "process_code"
+                    ),
+                    "practice_title": process.get(
+                        "process_name"
+                    ),
+                    "target_level": process.get(
+                        "target_capability_level"
+                    ),
+                    "achieved_level": process.get(
+                        "achieved_capability_level"
+                    ),
+                    "evidence_count": 0,
+                    "measurement_status": process.get(
+                        "measurement_status"
+                    ),
+                    "capability_status": process.get(
+                        "capability_status"
+                    ),
+                    "capability_reason": process.get(
+                        "capability_reason"
+                    ),
+                    "measured": process.get(
+                        "measured",
+                        False,
+                    ),
+                }
             )
-            .where(
-                Standard.id == standard.id
-            )
-            .order_by(
-                standard_process_areas.c.code,
-                standard_practices.c.code,
-            )
-        ).all()
 
         return {
             "mode": "maturity",
-            "rows": _rows_to_dict(rows),
+            "assessment_id": maturity_state.get(
+                "assessment_id"
+            ),
+            "assessment_status": maturity_state.get(
+                "assessment_status"
+            ),
+            "in_scope_process_count": maturity_state.get(
+                "in_scope_process_count",
+                0,
+            ),
+            "measured_process_count": maturity_state.get(
+                "measured_process_count",
+                0,
+            ),
+            "calculated_process_count":
+                maturity_state.get(
+                    "capability_calculated_process_count",
+                    0,
+                ),
+            "unmeasured_process_count":
+                maturity_state.get(
+                    "unmeasured_process_count",
+                    0,
+                ),
+            "rows": maturity_rows,
         }
 
     # -------------------------------------------------
@@ -1937,79 +1986,170 @@ def get_matrix_kpi(
     )
 
     # -------------------------------------------------
-    # Determine matrix mode from the actual row payload.
+    # Determine framework mode from canonical Standard.type.
+    #
+    # MatrixRow payload is not authoritative for framework
+    # classification. MATURITY_BASED frameworks are evaluated
+    # through PAM/CMF and may have no legacy practice rows.
     # -------------------------------------------------
-    maturity_rows = [
-        r for r in rows
-        if isinstance(r.payload, dict)
-        and r.payload.get("practice_id") is not None
-    ]
+    standard = (
+        db.query(Standard)
+        .filter(Standard.id == instance.standard_id)
+        .one_or_none()
+    )
+
+    if standard is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Standard not found for matrix instance",
+        )
+
+    is_maturity = (
+        _normalize(standard.type) == "MATURITY_BASED"
+    )
 
     control_rows = [
         r for r in rows
         if getattr(r, "control_id", None) is not None
     ]
 
-    is_maturity = bool(maturity_rows) and not control_rows
-
     # =================================================
     # MATURITY-BASED MATRIX
     # =================================================
     if is_maturity:
+        resolved_standard_version_id = (
+            standard_version_id
+            or instance.standard_version_id
+        )
 
-        total = len(maturity_rows)
+        if resolved_standard_version_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="standard_version_id missing for maturity KPI",
+            )
+
+        try:
+            maturity_state = (
+                MaturityCapabilityService.get_standard_version_state(
+                    db,
+                    tenant_id=tenant_id,
+                    standard_version_id=resolved_standard_version_id,
+                )
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=str(exc),
+            )
+
+        if maturity_state is None:
+            return {
+                "mode": "maturity",
+                "matrix_instance_id": instance.id,
+                "standard_id": instance.standard_id,
+                "standard_version_id": resolved_standard_version_id,
+                "target_achievement_percentage": None,
+                "assessment_coverage_percentage": 0.0,
+                "compliance_percentage": None,
+                "controls": {
+                    "total": 0,
+                    "covered": 0,
+                    "partial": 0,
+                    "not_covered": 0,
+                },
+                "maturity": {
+                    "total": 0,
+                    "measured": 0,
+                    "calculated": 0,
+                    "unassessed": 0,
+                    "achieved": 0,
+                    "partial": 0,
+                    "not_achieved": 0,
+                },
+                "evidence": {
+                    "total": 0,
+                    "approved": 0,
+                    "pending": 0,
+                    "uploaded": 0,
+                    "rejected": 0,
+                    "draft": 0,
+                    "linked": 0,
+                },
+                "risk": {
+                    "critical": 0,
+                    "high": 0,
+                },
+            }
+
+        processes = maturity_state.get("processes") or []
+        adoption_scope = (
+            maturity_state.get("adoption_scope") or {}
+        )
+
+        total = int(
+            adoption_scope.get("total_processes") or 0
+        )
+        measured = int(
+            adoption_scope.get("measured_processes") or 0
+        )
+        calculated = int(
+            adoption_scope.get("calculated_processes") or 0
+        )
+        unassessed = int(
+            adoption_scope.get("unassessed_processes") or 0
+        )
 
         achieved = 0
         partial = 0
         not_achieved = 0
-        evidence_total = 0
 
-        for row in maturity_rows:
+        for process in processes:
+            if process.get("capability_status") != "CALCULATED":
+                continue
 
-            payload = row.payload or {}
+            target = process.get("target_capability_level")
+            achieved_level = process.get("achieved_capability_level")
 
-            target = payload.get("target_level")
-            achieved_level = payload.get("achieved_level")
-            evidence_count = payload.get(
-                "evidence_count",
-                0,
-            ) or 0
+            if target is None or achieved_level is None:
+                continue
 
-            evidence_total += int(evidence_count)
+            target_value = int(target)
+            achieved_value = int(achieved_level)
 
-            if (
-                achieved_level is not None
-                and target is not None
-                and float(achieved_level)
-                >= float(target)
-            ):
+            if achieved_value >= target_value:
                 achieved += 1
-
-            elif (
-                achieved_level is not None
-                and float(achieved_level) > 0
-            ):
+            elif achieved_value > 0:
                 partial += 1
-
             else:
                 not_achieved += 1
 
-        maturity_percentage = (
-            round(
-                (achieved / total) * 100,
-                1,
-            )
-            if total
-            else 0
+        target_achievement = (
+            round((achieved / calculated) * 100, 1)
+            if calculated > 0
+            else None
+        )
+
+        assessment_coverage = (
+            round((measured / total) * 100, 1)
+            if total > 0
+            else 0.0
         )
 
         return {
             "mode": "maturity",
             "matrix_instance_id": instance.id,
             "standard_id": instance.standard_id,
-            "standard_version_id": instance.standard_version_id,
+            "standard_version_id": resolved_standard_version_id,
+            "assessment_id": maturity_state.get("assessment_id"),
+            "assessment_status": maturity_state.get(
+                "assessment_status"
+            ),
+            "target_achievement_percentage": target_achievement,
+            "assessment_coverage_percentage": assessment_coverage,
 
-            "compliance_percentage": maturity_percentage,
+            # Compatibility only. In maturity mode this value means
+            # target achievement, not control compliance.
+            "compliance_percentage": target_achievement,
 
             "controls": {
                 "total": 0,
@@ -2017,24 +2157,24 @@ def get_matrix_kpi(
                 "partial": 0,
                 "not_covered": 0,
             },
-
             "maturity": {
                 "total": total,
+                "measured": measured,
+                "calculated": calculated,
+                "unassessed": unassessed,
                 "achieved": achieved,
                 "partial": partial,
                 "not_achieved": not_achieved,
             },
-
             "evidence": {
-                "total": evidence_total,
+                "total": 0,
                 "approved": 0,
                 "pending": 0,
                 "uploaded": 0,
                 "rejected": 0,
                 "draft": 0,
-                "linked": evidence_total,
+                "linked": 0,
             },
-
             "risk": {
                 "critical": 0,
                 "high": 0,

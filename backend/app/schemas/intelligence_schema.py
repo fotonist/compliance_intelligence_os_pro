@@ -53,6 +53,28 @@ class IntelligenceSummary(BaseModel):
     uncovered_risks: int = 0
     coverage_percent: float = 0.0
 
+    # Evidence analytics eligibility boundary
+    evidence_eligible_risks: int = 0
+    evidence_unavailable_risks: int = 0
+
+    # -----------------------------------------------------
+    # Framework-aware canonical risk universe
+    # -----------------------------------------------------
+
+    resolved_risks: int = 0
+    unresolved_risks: int = 0
+    control_based_risks: int = 0
+    maturity_based_risks: int = 0
+
+    # Analytics eligibility boundary
+    analytics_eligible_risks: int = 0
+    analytics_unavailable_risks: int = 0
+    analytics_coverage_percent: float = 0.0
+
+    # Forecast coverage within the eligible analytics universe
+    forecast_eligible_risks: int = 0
+    forecast_model_coverage_percent: float = 0.0
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -118,6 +140,37 @@ class IntelligenceTopRisk(BaseModel):
 
     process_ids: List[int] = Field(default_factory=list)
     process_names: List[str] = Field(default_factory=list)
+
+    # -----------------------------------------------------
+    # Framework provenance
+    # -----------------------------------------------------
+
+    framework_resolved: bool = False
+    framework_consistency_status: Optional[str] = None
+    framework_reason: Optional[str] = None
+
+    standard_id: Optional[int] = None
+    standard_code: Optional[str] = None
+    standard_title: Optional[str] = None
+
+    standard_version_id: Optional[int] = None
+    standard_version_code: Optional[str] = None
+
+    adoption_id: Optional[int] = None
+    framework_type: Optional[str] = None
+    target_type: Optional[str] = None
+
+    # -----------------------------------------------------
+    # Maturity target context
+    # -----------------------------------------------------
+
+    base_practice_id: Optional[int] = None
+    base_practice_code: Optional[str] = None
+    base_practice_title: Optional[str] = None
+
+    reference_process_id: Optional[int] = None
+    reference_process_code: Optional[str] = None
+    reference_process_name: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -200,6 +253,83 @@ class IntelligenceExecutiveAlert(BaseModel):
 
     process_names: List[str] = Field(default_factory=list)
 
+    # -----------------------------------------------------
+    # Framework provenance
+    # -----------------------------------------------------
+
+    framework_resolved: bool = False
+    framework_consistency_status: Optional[str] = None
+    framework_reason: Optional[str] = None
+
+    standard_id: Optional[int] = None
+    standard_code: Optional[str] = None
+    standard_title: Optional[str] = None
+
+    standard_version_id: Optional[int] = None
+    standard_version_code: Optional[str] = None
+
+    adoption_id: Optional[int] = None
+    framework_type: Optional[str] = None
+    target_type: Optional[str] = None
+
+    # -----------------------------------------------------
+    # Maturity target context
+    # -----------------------------------------------------
+
+    base_practice_id: Optional[int] = None
+    base_practice_code: Optional[str] = None
+    base_practice_title: Optional[str] = None
+
+    reference_process_id: Optional[int] = None
+    reference_process_code: Optional[str] = None
+    reference_process_name: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =========================================================
+# MATURITY RISK
+# =========================================================
+
+class IntelligenceMaturityRisk(BaseModel):
+    risk_id: int
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+    likelihood: Optional[int] = None
+    impact: Optional[int] = None
+    current_score: Optional[int] = None
+    risk_level: Optional[str] = None
+    status: Optional[str] = None
+
+    treatment: Optional[str] = None
+    action: Optional[str] = None
+
+    framework_resolved: bool = True
+    framework_consistency_status: Optional[str] = None
+    framework_reason: Optional[str] = None
+
+    standard_id: Optional[int] = None
+    standard_code: Optional[str] = None
+    standard_title: Optional[str] = None
+
+    standard_version_id: Optional[int] = None
+    standard_version_code: Optional[str] = None
+    adoption_id: Optional[int] = None
+
+    framework_type: str = "MATURITY_BASED"
+    target_type: Optional[str] = None
+
+    risk_version_id: Optional[int] = None
+
+    base_practice_id: Optional[int] = None
+    base_practice_code: Optional[str] = None
+    base_practice_title: Optional[str] = None
+
+    reference_process_id: Optional[int] = None
+    reference_process_code: Optional[str] = None
+    reference_process_name: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -211,6 +341,9 @@ class IntelligenceOverviewResponse(BaseModel):
     summary: IntelligenceSummary
 
     top_risks: List[IntelligenceTopRisk]
+    maturity_risks: List[IntelligenceMaturityRisk] = Field(
+        default_factory=list
+    )
     top_controls: List[IntelligenceTopControl]
     executive_alerts: List[IntelligenceExecutiveAlert]
 
