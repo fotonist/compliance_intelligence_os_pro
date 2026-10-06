@@ -73,10 +73,13 @@ def require_permission(permission_code: str) -> Callable:
         if "admin.full" in perms:
             return user
 
-        # Preserve the existing compatibility behavior for users whose
-        # permission set has not yet been populated.
+        # Authorization is fail-closed. An authenticated user with no
+        # resolved permissions must not bypass route-level authorization.
         if not perms:
-            return user
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {permission_code}",
+            )
 
         required = _required_permissions(permission_code)
         if not required.intersection(perms):

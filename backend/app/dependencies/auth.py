@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import SECRET_KEY, ALGORITHM
 from app.models.user import User
 from app.models.permission import Permission
+from app.models.role import Role
 from app.models.role_permission import RolePermission
 from app.models.user_role import UserRole
 
@@ -58,6 +59,21 @@ def get_current_user(
             detail="User not found",
         )
 
+    # Authentication is evaluated against current account state on
+    # every request. Existing JWTs must not bypass administrative
+    # deactivation or account locking.
+    if user.is_active is not True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+        )
+
+    if user.is_locked is True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is locked",
+        )
+
     token_tenant_id = payload.get("tenant_id")
     if token_tenant_id is not None and int(token_tenant_id) != int(user.tenant_id):
         raise HTTPException(
@@ -76,9 +92,22 @@ def resolve_user_permissions(db: Session, user_id: int) -> Set[str]:
     """
     rows = (
         db.query(Permission.code)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .join(UserRole, UserRole.role_id == RolePermission.role_id)
-        .filter(UserRole.user_id == user_id)
+        .join(
+            RolePermission,
+            RolePermission.permission_id == Permission.id,
+        )
+        .join(
+            Role,
+            Role.id == RolePermission.role_id,
+        )
+        .join(
+            UserRole,
+            UserRole.role_id == Role.id,
+        )
+        .filter(
+            UserRole.user_id == user_id,
+            Role.is_active.is_(True),
+        )
         .all()
     )
 

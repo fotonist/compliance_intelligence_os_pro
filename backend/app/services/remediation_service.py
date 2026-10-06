@@ -22,7 +22,7 @@ class RemediationService:
     """
 
     COMPLETED_FINDING_STATUSES = {"CLOSED"}
-    COMPLETED_ACTION_STATUSES = {"CLOSED"}
+    COMPLETED_ACTION_STATUSES = {"COMPLETED"}
     COMPLETED_TASK_STATUSES = {"DONE", "CANCELLED"}
 
     REVIEW_FINDING_STATUSES = {
@@ -43,24 +43,37 @@ class RemediationService:
         return datetime.now(timezone.utc)
 
     @staticmethod
+    def _due_sort_key(due_date) -> datetime:
+        if due_date is None:
+            return datetime.max.replace(tzinfo=timezone.utc)
+
+        if isinstance(due_date, datetime):
+            if due_date.tzinfo is None:
+                return due_date.replace(tzinfo=timezone.utc)
+
+            return due_date.astimezone(timezone.utc)
+
+        return datetime.combine(
+            due_date,
+            datetime.max.time(),
+            tzinfo=timezone.utc,
+        )
+
+    @staticmethod
     def _due_flags(due_date: Optional[datetime]) -> tuple[bool, bool]:
         if due_date is None:
             return False, False
 
         current = RemediationService._now()
+        normalized_due = RemediationService._due_sort_key(
+            due_date
+        )
 
-        if isinstance(due_date, datetime):
-            if due_date.tzinfo is None:
-                due_date = due_date.replace(tzinfo=timezone.utc)
-        else:
-            due_date = datetime.combine(
-                due_date,
-                datetime.min.time(),
-                tzinfo=timezone.utc,
-            )
-
-        overdue = due_date < current
-        due_soon = not overdue and due_date <= current + timedelta(days=7)
+        overdue = normalized_due < current
+        due_soon = (
+            not overdue
+            and normalized_due <= current + timedelta(days=7)
+        )
 
         return overdue, due_soon
 
@@ -435,8 +448,8 @@ class RemediationService:
                 not item["due_soon"],
                 -(item["priority_score"] or 0),
                 item["due_date"] is None,
-                item["due_date"] or datetime.max.replace(
-                    tzinfo=timezone.utc
+                RemediationService._due_sort_key(
+                    item["due_date"]
                 ),
                 -item["source_id"],
             )

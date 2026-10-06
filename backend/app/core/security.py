@@ -127,6 +127,21 @@ def get_current_user(
             detail="User not found",
         )
 
+    # Authentication is evaluated against current account state on
+    # every request. Existing JWTs must not bypass administrative
+    # deactivation or account locking.
+    if user.is_active is not True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is inactive",
+        )
+
+    if user.is_locked is True:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is locked",
+        )
+
     token_tenant_id = payload.get("tenant_id")
     if token_tenant_id is None or int(token_tenant_id) != int(user.tenant_id):
         raise HTTPException(

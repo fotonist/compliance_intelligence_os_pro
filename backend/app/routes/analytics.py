@@ -24,7 +24,6 @@ router = APIRouter(
 # CONTROL DETAIL
 # ==========================================================
 
-@router.get("/control-health/{control_id}")
 def get_control_detail(
     control_id: int,
     db: Session = Depends(get_db),

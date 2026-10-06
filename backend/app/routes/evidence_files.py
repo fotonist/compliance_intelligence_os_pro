@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, timedelta
@@ -17,36 +18,112 @@ from app.models.process import Process
 from app.core.security import get_current_user
 from app.core.config import settings
 
+from app.core.evidence_storage import (
+    control_archive_directory,
+    control_staging_directory,
+    resolve_control_file_path,
+    to_backend_relative,
+)
+
 router = APIRouter(prefix="/evidences", tags=["Evidence Files"])
 
-STAGING_ROOT = os.path.join("uploads", "evidences", "_staging")
-ARCHIVE_ROOT = os.path.join("uploads", "evidences", "_archive")
 
+def _standard_archive_dir(
+    evidence: Evidence,
+    version: int,
+) -> str:
+    standard = getattr(
+        evidence,
+        "standard",
+        None,
+    )
 
-def _standard_archive_dir(evidence: Evidence) -> str:
-    standard = getattr(evidence, "standard", None)
-    standard_version = getattr(evidence, "standard_version", None)
+    standard_version = getattr(
+        evidence,
+        "standard_version",
+        None,
+    )
+
     if not standard or not standard_version:
         raise HTTPException(
             status_code=409,
-            detail="Evidence is not linked to a standard version; it cannot enter the audit archive.",
+            detail=(
+                "Evidence is not linked to a standard "
+                "version; it cannot enter the audit archive."
+            ),
         )
 
-    standard_code = str(getattr(standard, "code", standard.id)).strip().replace("/", "_")
-    version_code = str(getattr(standard_version, "version_code", standard_version.id)).strip().replace("/", "_")
+    standard_code = str(
+        getattr(
+            standard,
+            "code",
+            standard.id,
+        )
+    )
 
-    return os.path.join(
-        ARCHIVE_ROOT,
-        str(evidence.tenant_id),
-        standard_code,
-        version_code,
-        "evidence",
-        str(evidence.id),
+    version_code = str(
+        getattr(
+            standard_version,
+            "version_code",
+            standard_version.id,
+        )
+    )
+
+    return str(
+        control_archive_directory(
+            evidence.tenant_id,
+            standard_code,
+            version_code,
+            evidence.id,
+            version,
+        )
     )
 
 
-def _staging_dir(evidence: Evidence) -> str:
-    return os.path.join(STAGING_ROOT, str(evidence.tenant_id), str(evidence.id))
+
+def _staging_dir(
+    evidence: Evidence,
+) -> str:
+    return str(
+        control_staging_directory(
+            evidence.tenant_id,
+            evidence.id,
+        )
+    )
+
+def _project_evidence_status(
+    db: Session,
+    evidence: Evidence,
+) -> str:
+    statuses = [
+        str(status or "").strip().lower()
+        for (status,) in (
+            db.query(EvidenceFile.status)
+            .filter(
+                EvidenceFile.evidence_id == evidence.id,
+                EvidenceFile.tenant_id == evidence.tenant_id,
+            )
+            .all()
+        )
+    ]
+
+    if not statuses:
+        projected = "draft"
+    elif "rejected" in statuses:
+        projected = "rejected"
+    elif all(status == "approved" for status in statuses):
+        projected = "approved"
+    elif "waiting_approval" in statuses:
+        projected = "waiting_approval"
+    elif "uploaded" in statuses:
+        projected = "uploaded"
+    else:
+        projected = "draft"
+
+    evidence.status = projected
+    evidence.updated_at = datetime.utcnow()
+
+    return projected
 
 
 @router.get("/review/queue")
@@ -179,18 +256,87 @@ def get_review_queue(
     }
 
 
+
+def _get_tenant_evidence_or_404(
+    db: Session,
+    *,
+    evidence_id: int,
+    tenant_id: int,
+) -> Evidence:
+    evidence = (
+        db.query(Evidence)
+        .filter(
+            Evidence.id == evidence_id,
+            Evidence.tenant_id == tenant_id,
+            Evidence.is_deleted.is_(False),
+        )
+        .first()
+    )
+
+    if evidence is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence not found",
+        )
+
+    return evidence
+
+
+def _get_tenant_file_or_404(
+    db: Session,
+    *,
+    file_id: int,
+    tenant_id: int,
+) -> tuple[EvidenceFile, Evidence]:
+    row = (
+        db.query(EvidenceFile, Evidence)
+        .join(
+            Evidence,
+            Evidence.id == EvidenceFile.evidence_id,
+        )
+        .filter(
+            EvidenceFile.id == file_id,
+            EvidenceFile.tenant_id == tenant_id,
+            Evidence.tenant_id == tenant_id,
+            Evidence.is_deleted.is_(False),
+        )
+        .first()
+    )
+
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="File not found",
+        )
+
+    file, evidence = row
+    return file, evidence
+
+
+
 @router.get("/{evidence_id}/files")
 def get_evidence_files(
     evidence_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    evidence = _get_tenant_evidence_or_404(
+        db,
+        evidence_id=evidence_id,
+        tenant_id=user.tenant_id,
+    )
+
     return (
         db.query(EvidenceFile)
-        .filter(EvidenceFile.evidence_id == evidence_id)
+        .filter(
+            EvidenceFile.evidence_id == evidence.id,
+            EvidenceFile.tenant_id == user.tenant_id,
+        )
         .order_by(EvidenceFile.version.desc())
         .all()
     )
+
+
 
 
 @router.post("/{evidence_id}/files")
@@ -200,22 +346,31 @@ def upload_files(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    evidence = db.query(Evidence).filter(Evidence.id == evidence_id).first()
-    if not evidence:
-        raise HTTPException(status_code=404, detail="Evidence not found")
+    evidence = _get_tenant_evidence_or_404(
+        db,
+        evidence_id=evidence_id,
+        tenant_id=user.tenant_id,
+    )
 
     if not files:
-        raise HTTPException(status_code=400, detail="At least one file is required")
+        raise HTTPException(
+            status_code=400,
+            detail="At least one file is required",
+        )
 
     base_path = _staging_dir(evidence)
     os.makedirs(base_path, exist_ok=True)
 
     max_version = (
         db.query(EvidenceFile.version)
-        .filter(EvidenceFile.evidence_id == evidence_id)
+        .filter(
+            EvidenceFile.evidence_id == evidence.id,
+            EvidenceFile.tenant_id == user.tenant_id,
+        )
         .order_by(EvidenceFile.version.desc())
         .first()
     )
+
     current_version = max_version[0] if max_version else 0
     created_files = []
 
@@ -223,48 +378,60 @@ def upload_files(
         current_version += 1
         file_id = uuid.uuid4().hex
         ext = os.path.splitext(uploaded.filename or "")[1]
-        file_path = os.path.join(base_path, f"{file_id}{ext}")
+        file_path = os.path.join(
+            base_path,
+            f"{file_id}{ext}",
+        )
 
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(uploaded.file, buffer)
+            shutil.copyfileobj(
+                uploaded.file,
+                buffer,
+            )
 
         ef = EvidenceFile(
-            tenant_id=getattr(user, "tenant_id", None) or evidence.tenant_id,
-            evidence_id=evidence_id,
+            tenant_id=user.tenant_id,
+            evidence_id=evidence.id,
             version=current_version,
             uploaded_by=user.id,
             uploaded_at=datetime.utcnow(),
             file_name=uploaded.filename or "unnamed-file",
-            file_path=file_path,
+            file_path=to_backend_relative(file_path),
             mime_type=uploaded.content_type,
             file_size=os.path.getsize(file_path),
             status="uploaded",
         )
+
         db.add(ef)
         created_files.append(ef)
 
-    evidence.status = "uploaded"
-    evidence.updated_at = datetime.utcnow()
+    db.flush()
+    _project_evidence_status(db, evidence)
 
     try:
         db.commit()
-    except Exception as e:
+    except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc),
+        )
 
     return {
-        "evidence_id": evidence_id,
+        "evidence_id": evidence.id,
         "files": [
             {
-                "id": f.id,
-                "file_name": f.file_name,
-                "version": f.version,
-                "status": f.status,
+                "id": item.id,
+                "file_name": item.file_name,
+                "version": item.version,
+                "status": item.status,
             }
-            for f in created_files
+            for item in created_files
         ],
         "storage_state": "staging",
     }
+
+
 
 
 @router.post("/files/{file_id}/submit")
@@ -273,20 +440,33 @@ def submit_file(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    f = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
-    if not f:
-        raise HTTPException(status_code=404, detail="File not found")
+    f, evidence = _get_tenant_file_or_404(
+        db,
+        file_id=file_id,
+        tenant_id=user.tenant_id,
+    )
+
     if f.status not in ["uploaded", "rejected"]:
-        raise HTTPException(status_code=409, detail=f"File cannot be submitted from status '{f.status}'")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "File cannot be submitted from status "
+                f"'{f.status}'"
+            ),
+        )
 
     old_status = f.status
-
     submitted_at = datetime.utcnow()
 
     f.status = "waiting_approval"
     f.submitted_by = user.id
     f.submitted_at = submitted_at
-    f.review_due_at = submitted_at + timedelta(days=settings.EVIDENCE_REVIEW_SLA_DAYS)
+    f.review_due_at = (
+        submitted_at
+        + timedelta(
+            days=settings.EVIDENCE_REVIEW_SLA_DAYS
+        )
+    )
 
     db.add(
         EvidenceFileHistory(
@@ -298,9 +478,16 @@ def submit_file(
         )
     )
 
+    db.flush()
+    _project_evidence_status(db, evidence)
     db.commit()
 
-    return {"success": True, "status": f.status}
+    return {
+        "success": True,
+        "status": f.status,
+    }
+
+
 
 
 @router.post("/files/{file_id}/approve")
@@ -309,43 +496,77 @@ def approve_file(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    f = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
-    if not f:
-        raise HTTPException(status_code=404, detail="File not found")
+    f, evidence = _get_tenant_file_or_404(
+        db,
+        file_id=file_id,
+        tenant_id=user.tenant_id,
+    )
+
     if f.status != "waiting_approval":
-        raise HTTPException(status_code=409, detail="Only files waiting for approval can be approved")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only files waiting for approval "
+                "can be approved"
+            ),
+        )
+
     if f.submitted_by and f.submitted_by == user.id:
-        raise HTTPException(status_code=403, detail="The submitter cannot approve the same evidence file")
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "The submitter cannot approve "
+                "the same evidence file"
+            ),
+        )
 
-    evidence = db.query(Evidence).filter(Evidence.id == f.evidence_id).first()
-    if not evidence:
-        raise HTTPException(status_code=404, detail="Evidence not found")
+    archive_version_dir = _standard_archive_dir(
+        evidence,
+        f.version,
+    )
 
-    archive_root = _standard_archive_dir(evidence)
-    archive_version_dir = os.path.join(archive_root, f"v{f.version}")
-    os.makedirs(archive_version_dir, exist_ok=True)
+    source_path = None
 
-    source_path = f.file_path
+    if f.file_path:
+        try:
+            source_path = str(
+                resolve_control_file_path(
+                    f.file_path
+                )
+            )
+        except ValueError:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Evidence file path is outside "
+                    "the protected control storage root"
+                ),
+            )
+
     if not source_path or not os.path.exists(source_path):
-        raise HTTPException(status_code=404, detail="Staged evidence file is missing")
+        raise HTTPException(
+            status_code=404,
+            detail="Staged evidence file is missing",
+        )
 
     archive_path = os.path.join(
         archive_version_dir,
         os.path.basename(source_path),
     )
-    shutil.move(source_path, archive_path)
+
+    shutil.move(
+        source_path,
+        archive_path,
+    )
 
     old_status = f.status
 
-    f.file_path = archive_path
-    f.archive_path = archive_path
+    f.file_path = to_backend_relative(archive_path)
+    f.archive_path = to_backend_relative(archive_path)
     f.archived_at = datetime.utcnow()
-
     f.status = "approved"
     f.approved_by = user.id
     f.approved_at = datetime.utcnow()
-
-    evidence.updated_at = datetime.utcnow()
 
     db.add(
         EvidenceFileHistory(
@@ -357,6 +578,8 @@ def approve_file(
         )
     )
 
+    db.flush()
+    _project_evidence_status(db, evidence)
     db.commit()
 
     return {
@@ -367,22 +590,36 @@ def approve_file(
     }
 
 
+
+
 @router.post("/files/{file_id}/reject")
 def reject_file(
     file_id: int,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    f = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
-    if not f:
-        raise HTTPException(status_code=404, detail="File not found")
+    f, evidence = _get_tenant_file_or_404(
+        db,
+        file_id=file_id,
+        tenant_id=user.tenant_id,
+    )
+
     if f.status != "waiting_approval":
-        raise HTTPException(status_code=409, detail="Only files waiting for approval can be rejected")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only files waiting for approval "
+                "can be rejected"
+            ),
+        )
 
     if f.submitted_by and f.submitted_by == user.id:
         raise HTTPException(
             status_code=403,
-            detail="The submitter cannot reject the same evidence file",
+            detail=(
+                "The submitter cannot reject "
+                "the same evidence file"
+            ),
         )
 
     old_status = f.status
@@ -401,9 +638,16 @@ def reject_file(
         )
     )
 
+    db.flush()
+    _project_evidence_status(db, evidence)
     db.commit()
 
-    return {"success": True, "status": f.status}
+    return {
+        "success": True,
+        "status": f.status,
+    }
+
+
 
 
 @router.post("/files/{file_id}/rollback")
@@ -412,12 +656,20 @@ def rollback_file(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    f = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
-    if not f:
-        raise HTTPException(status_code=404, detail="File not found")
+    f, evidence = _get_tenant_file_or_404(
+        db,
+        file_id=file_id,
+        tenant_id=user.tenant_id,
+    )
 
     if f.status == "approved":
-        raise HTTPException(status_code=409, detail="Approved evidence versions are immutable; upload a new version instead")
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Approved evidence versions are immutable; "
+                "upload a new version instead"
+            ),
+        )
 
     old_status = f.status
 
@@ -437,39 +689,59 @@ def rollback_file(
         )
     )
 
+    db.flush()
+    _project_evidence_status(db, evidence)
     db.commit()
 
-    return {"success": True, "status": f.status}
+    return {
+        "success": True,
+        "status": f.status,
+    }
 
 
-def _delete_evidence_file(file_id: int, db: Session):
-    file = db.query(EvidenceFile).filter(EvidenceFile.id == file_id).first()
-    if not file:
-        raise HTTPException(status_code=404, detail="File not found")
 
-    if file.status not in ["uploaded", "draft", "rejected"]:
+
+def _delete_evidence_file(
+    file_id: int,
+    db: Session,
+    *,
+    tenant_id: int,
+):
+    file, evidence = _get_tenant_file_or_404(
+        db,
+        file_id=file_id,
+        tenant_id=tenant_id,
+    )
+
+    if file.status not in [
+        "uploaded",
+        "draft",
+        "rejected",
+    ]:
         raise HTTPException(
             status_code=400,
-            detail=f"Cannot delete a file with status '{file.status}'",
+            detail=(
+                "Cannot delete a file with status "
+                f"'{file.status}'"
+            ),
         )
 
-    evidence = db.query(Evidence).filter(Evidence.id == file.evidence_id).first()
     db.query(RiskEvidenceLink).filter(
-        RiskEvidenceLink.evidence_file_id == file.id
-    ).delete(synchronize_session=False)
+        RiskEvidenceLink.evidence_file_id == file.id,
+        RiskEvidenceLink.tenant_id == tenant_id,
+    ).delete(
+        synchronize_session=False
+    )
 
     file_path = file.file_path
-    evidence_id = file.evidence_id
-    db.delete(file)
 
-    remaining_files = (
-        db.query(EvidenceFile.id)
-        .filter(EvidenceFile.evidence_id == evidence_id)
-        .filter(EvidenceFile.id != file.id)
-        .first()
+    db.delete(file)
+    db.flush()
+
+    _project_evidence_status(
+        db,
+        evidence,
     )
-    if evidence is not None and remaining_files is None:
-        evidence.status = "draft"
 
     db.commit()
 
@@ -479,7 +751,12 @@ def _delete_evidence_file(file_id: int, db: Session):
         except OSError:
             pass
 
-    return {"success": True, "deleted_file_id": file_id}
+    return {
+        "success": True,
+        "deleted_file_id": file_id,
+    }
+
+
 
 
 @router.delete("/files/{file_id}")
@@ -488,7 +765,13 @@ def delete_evidence_file(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    return _delete_evidence_file(file_id, db)
+    return _delete_evidence_file(
+        file_id,
+        db,
+        tenant_id=user.tenant_id,
+    )
+
+
 
 
 @router.post("/files/{file_id}/delete")
@@ -497,7 +780,13 @@ def delete_evidence_file_legacy(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    return _delete_evidence_file(file_id, db)
+    return _delete_evidence_file(
+        file_id,
+        db,
+        tenant_id=user.tenant_id,
+    )
+
+
 
 
 
@@ -513,22 +802,17 @@ def get_file_history(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    file = (
-        db.query(EvidenceFile)
-        .filter(EvidenceFile.id == file_id)
-        .first()
+    file, _ = _get_tenant_file_or_404(
+        db,
+        file_id=file_id,
+        tenant_id=user.tenant_id,
     )
-
-    if not file:
-        raise HTTPException(
-            status_code=404,
-            detail="File not found"
-        )
 
     history = (
         db.query(EvidenceFileHistory)
         .filter(
-            EvidenceFileHistory.evidence_file_id == file_id
+            EvidenceFileHistory.evidence_file_id
+            == file.id
         )
         .order_by(
             EvidenceFileHistory.created_at.desc()
@@ -548,3 +832,58 @@ def get_file_history(
         }
         for h in history
     ]
+
+# F03_CONTROL_PROTECTED_DOWNLOAD
+
+@router.get(
+    "/{evidence_id}/files/{file_id}/download"
+)
+def download_evidence_file(
+    evidence_id: int,
+    file_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    file_row, evidence = (
+        _get_tenant_file_or_404(
+            db,
+            file_id=file_id,
+            tenant_id=user.tenant_id,
+        )
+    )
+
+    if (
+        file_row.evidence_id
+        != evidence_id
+    ):
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence file not found",
+        )
+
+    try:
+        physical_path = (
+            resolve_control_file_path(
+                file_row.file_path
+            )
+        )
+    except ValueError:
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence file not found",
+        )
+
+    if not physical_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="Evidence file not found",
+        )
+
+    return FileResponse(
+        path=str(physical_path),
+        media_type=(
+            file_row.mime_type
+            or "application/octet-stream"
+        ),
+        filename=file_row.file_name,
+    )

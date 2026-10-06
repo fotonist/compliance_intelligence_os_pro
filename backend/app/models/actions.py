@@ -9,7 +9,12 @@ class Action(Base):
     __tablename__ = "actions"
 
     id = Column(Integer, primary_key=True, index=True)
-
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     requirement_id = Column(
         Integer,
         ForeignKey("requirements.id", ondelete="CASCADE"),

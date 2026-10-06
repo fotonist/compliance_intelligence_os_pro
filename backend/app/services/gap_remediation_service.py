@@ -1,4 +1,5 @@
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 
@@ -15,6 +16,10 @@ class GapRemediationService:
         "READY_TO_CLOSE",
     )
 
+
+    ACTIVE_UNIQUE_INDEX = (
+        "ux_compliance_tasks_active_control_gap_remediation"
+    )
     @classmethod
     def start_control_gap(
         cls,
@@ -170,8 +175,51 @@ class GapRemediationService:
             source_id=control_id,
         )
 
-        db.add(task)
-        db.flush()
+        # The database partial unique index is authoritative for
+        # concurrent creation. The lookup above remains a fast
+        # idempotency path.
+        try:
+            with db.begin_nested():
+                db.add(task)
+                db.flush()
+
+        except IntegrityError as exc:
+            constraint_name = getattr(
+                getattr(exc.orig, "diag", None),
+                "constraint_name",
+                None,
+            )
+
+            if constraint_name != cls.ACTIVE_UNIQUE_INDEX:
+                raise
+
+            existing = (
+                db.query(ComplianceTask)
+                .filter(
+                    ComplianceTask.tenant_id == tenant_id,
+                    ComplianceTask.task_type == "REMEDIATION",
+                    ComplianceTask.source_type == "CONTROL_GAP",
+                    ComplianceTask.source_id == control_id,
+                    ComplianceTask.control_id == control_id,
+                    ComplianceTask.status.in_(cls.ACTIVE_STATUSES),
+                )
+                .order_by(ComplianceTask.id.desc())
+                .first()
+            )
+
+            if existing is None:
+                raise RuntimeError(
+                    "Concurrent remediation conflict occurred but "
+                    "the canonical task could not be resolved."
+                ) from exc
+
+            return {
+                "created": False,
+                "task_id": existing.id,
+                "status": existing.status,
+                "action": "VIEW_REMEDIATION",
+                "process_id": existing.process_id,
+            }
 
         return {
             "created": True,

@@ -300,6 +300,10 @@ class GapIntelligenceService:
             standard_version_id=standard_version_id,
         )
 
+        # An active maturity adoption may legitimately exist before its
+        # first assessment.  That is an unmeasured state, not an error.
+        state = state or {}
+
         adoption_scope = state.get("adoption_scope") or {}
         assessment_processes = state.get("processes") or []
 
@@ -395,7 +399,9 @@ class GapIntelligenceService:
                 target_met_items.append(calculated_item)
 
         total = int(
-            adoption_scope.get("total_processes") or 0
+            adoption_scope.get("total_processes")
+            if adoption_scope.get("total_processes") is not None
+            else len(adoption_rows)
         )
         measured = int(
             adoption_scope.get("measured_processes") or 0
@@ -408,10 +414,9 @@ class GapIntelligenceService:
             "assessment_coverage": {
                 "total_processes": total,
                 "measured_processes": measured,
-                "unassessed_processes": int(
-                    adoption_scope.get(
-                        "unassessed_processes"
-                    ) or 0
+                "unassessed_processes": max(
+                    total - measured,
+                    0,
                 ),
                 "assessment_coverage_percentage": round(
                     float(

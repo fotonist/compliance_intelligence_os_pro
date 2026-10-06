@@ -199,8 +199,6 @@ def get_gap_trend_fixed(
     ]
 
 
-@router.get("/api/intelligence/control-health")
-@router.get("/company/intelligence/control-health")
 def get_control_health_fixed(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission("risk.intelligence.view")),

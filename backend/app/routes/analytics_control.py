@@ -148,14 +148,5 @@ def get_control_detail(
     return dict(result)
 
 
-# analytics.py also contains a legacy detail handler for the same route.
-# Remove that legacy route from the imported router so this implementation is
-# the sole handler for /analytics/control-health/{control_id}.
-from app.routes.analytics import router as legacy_analytics_router
-legacy_analytics_router.routes[:] = [
-    route
-    for route in legacy_analytics_router.routes
-    if getattr(route, "path", None) != "/control-health/{control_id}"
-]
 
 # Control Analytics release marker: canonical coverage view + tenant-scoped risk joins.

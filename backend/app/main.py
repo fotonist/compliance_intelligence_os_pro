@@ -1,7 +1,6 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.database import engine, SessionLocal
@@ -148,10 +147,6 @@ application.add_middleware(
     allow_headers=["*"],
 )
 
-UPLOAD_ROOT = "uploads"
-if not os.path.exists(UPLOAD_ROOT):
-    os.makedirs(UPLOAD_ROOT)
-application.mount("/uploads", StaticFiles(directory=UPLOAD_ROOT), name="uploads")
 
 @application.on_event("startup")
 def startup():
@@ -179,6 +174,7 @@ application.include_router(data_explorer_router)
 application.include_router(company_home_router)
 application.include_router(control_assessments_router)
 application.include_router(evidence_files_router)
+application.include_router(evidence_files_router, prefix="/company")
 application.include_router(user_router)
 application.include_router(company_tasks_router)
 application.include_router(remediation_router)

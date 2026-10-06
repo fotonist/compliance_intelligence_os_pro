@@ -12,7 +12,7 @@ class MaturityEvidence(Base):
 
     session_id = Column(
         Integer,
-        ForeignKey("maturity_assessment_sessions.id", ondelete="CASCADE"),
+        ForeignKey("maturity_workspace_sessions.id", ondelete="CASCADE"),
         nullable=False,
     )
 

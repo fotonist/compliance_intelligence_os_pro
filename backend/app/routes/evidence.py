@@ -1,3 +1,5 @@
+from app.models.maturity_practice_evaluation import MaturityPracticeEvaluation
+from app.models.practice_evidence_link import PracticeEvidenceLink
 # C:\Projects\compliance_app\backend\app\routes\evidence.py
 
 from typing import List
@@ -25,16 +27,7 @@ from app.models.requirements import Requirement
 from app.models.clauses import Clause
 from app.models.standards import Standard
 
-# Optional / guarded imports for maturity-side link routes
-try:
-    from app.models.maturity_practice_evaluations import MaturityPracticeEvaluation
-except Exception:
-    MaturityPracticeEvaluation = None
 
-try:
-    from app.models.practice_evidence_link import PracticeEvidenceLink
-except Exception:
-    PracticeEvidenceLink = None
 
 
 router = APIRouter(
@@ -285,12 +278,6 @@ def link_evidence_to_maturity_practice(
     payload: dict,
     db: Session = Depends(get_db),
 ):
-    if MaturityPracticeEvaluation is None or PracticeEvidenceLink is None:
-        raise HTTPException(
-            status_code=501,
-            detail="Maturity evidence linking is not available in this environment",
-        )
-
     evaluation = db.get(MaturityPracticeEvaluation, evaluation_id)
     if not evaluation:
         raise HTTPException(status_code=404, detail="Practice evaluation not found")
@@ -698,7 +685,6 @@ def get_evidence_detail_alias(
 # =====================================================
 # GET EVIDENCE FILES
 # =====================================================
-@router.get("/{evidence_id}/files")
 def get_evidence_files(
     evidence_id: int,
     db: Session = Depends(get_db),
@@ -729,7 +715,6 @@ def get_evidence_files(
 # =====================================================
 # UPLOAD FILES
 # =====================================================
-@router.post("/{evidence_id}/files")
 def upload_evidence_files(
     evidence_id: int,
     files: List[UploadFile] = File(...),
@@ -785,7 +770,6 @@ def upload_evidence_files(
 # =====================================================
 # FILE LIFECYCLE
 # =====================================================
-@router.post("/files/{file_id}/submit")
 def submit_file(
     file_id: int,
     db: Session = Depends(get_db),
@@ -802,7 +786,6 @@ def submit_file(
     return {"success": True}
 
 
-@router.post("/files/{file_id}/approve")
 def approve_file(
     file_id: int,
     db: Session = Depends(get_db),
@@ -836,7 +819,6 @@ def approve_file(
 
     return {"success": True}
 
-@router.post("/files/{file_id}/reject")
 def reject_file(
     file_id: int,
     db: Session = Depends(get_db),
@@ -870,7 +852,6 @@ def reject_file(
 
     return {"success": True}
 
-@router.post("/files/{file_id}/rollback")
 def rollback_file(
     file_id: int,
     db: Session = Depends(get_db),
@@ -1330,7 +1311,6 @@ def delete_evidence(
 # -------------------------------------------------------------------
 # APPROVE EVIDENCE (LATEST FILE)
 # -------------------------------------------------------------------
-@router.post("/{evidence_id}/approve")
 def approve_evidence(
     evidence_id: int,
     db: Session = Depends(get_db),
@@ -1388,7 +1368,6 @@ def approve_evidence(
 # -------------------------------------------------------------------
 # REJECT EVIDENCE (LATEST FILE)
 # -------------------------------------------------------------------
-@router.post("/{evidence_id}/reject")
 def reject_evidence(
     evidence_id: int,
     payload: RejectEvidenceRequest,

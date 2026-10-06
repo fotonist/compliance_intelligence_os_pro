@@ -136,11 +136,6 @@ class MaturityCapabilityService:
                 )
             )
 
-            if target_level is not None:
-                capability_query = capability_query.filter(
-                    PamCapabilityLevel.level <= target_level
-                )
-
             capability_levels = (
                 capability_query
                 .order_by(
@@ -554,19 +549,11 @@ class MaturityCapabilityService:
         *,
         target_level: int | None,
     ) -> dict[str, Any]:
-        if target_level is None:
-            return {
-                "status": "NOT_CALCULATED",
-                "achieved_level": None,
-                "reason": "TARGET_LEVEL_NOT_DEFINED",
-            }
-
-        if target_level <= 0:
-            return {
-                "status": "CALCULATED",
-                "achieved_level": 0,
-                "reason": "TARGET_LEVEL_ZERO",
-            }
+        # Target is a comparison goal. It must not constrain
+        # the measured capability result.
+        #
+        # Retain the parameter for API compatibility.
+        _ = target_level
 
         by_level: dict[int, list[dict[str, Any]]] = {}
 
@@ -576,71 +563,159 @@ class MaturityCapabilityService:
             if level is None:
                 continue
 
-            by_level.setdefault(int(level), []).append(pa)
+            numeric_level = int(level)
+
+            if numeric_level <= 0:
+                continue
+
+            by_level.setdefault(
+                numeric_level,
+                [],
+            ).append(pa)
+
+        if not by_level:
+            return {
+                "status": "NOT_CALCULATED",
+                "achieved_level": None,
+                "reason": "NO_CAPABILITY_ATTRIBUTES",
+            }
 
         achieved_level = 0
+        max_level = max(by_level)
 
-        for level in range(1, int(target_level) + 1):
-            attributes = by_level.get(level, [])
+        for candidate_level in range(
+            1,
+            max_level + 1,
+        ):
+            attributes = by_level.get(
+                candidate_level,
+                [],
+            )
 
+            # Capability levels must be contiguous.
             if not attributes:
-                return {
-                    "status": "NOT_CALCULATED",
-                    "achieved_level": None,
-                    "reason":
-                        f"EXPECTED_PA_MISSING_FOR_CL{level}",
-                }
+                break
 
             ratings: list[str] = []
 
             for pa in attributes:
-                effective = pa.get("effective_evaluation")
+                effective = pa.get(
+                    "effective_evaluation"
+                )
 
                 if effective is None:
+                    if achieved_level > 0:
+                        return {
+                            "status": "CALCULATED",
+                            "achieved_level":
+                                achieved_level,
+                            "reason":
+                                "NEXT_LEVEL_NOT_MEASURED",
+                        }
+
                     return {
                         "status": "NOT_CALCULATED",
                         "achieved_level": None,
                         "reason":
-                            f"PA_NOT_MEASURED:{pa.get('process_attribute_code')}",
+                            "PA_NOT_MEASURED:"
+                            f"{pa.get('process_attribute_code')}",
                     }
 
                 if not pa.get("authoritative"):
+                    if achieved_level > 0:
+                        return {
+                            "status": "CALCULATED",
+                            "achieved_level":
+                                achieved_level,
+                            "reason":
+                                "NEXT_LEVEL_NOT_FINAL",
+                        }
+
                     return {
                         "status": "NOT_FINAL",
                         "achieved_level": None,
                         "reason":
-                            f"PA_NOT_AUTHORITATIVE:{pa.get('process_attribute_code')}",
+                            "PA_NOT_AUTHORITATIVE:"
+                            f"{pa.get('process_attribute_code')}",
                     }
 
                 rating = str(
                     effective.get("rating") or ""
                 ).strip().upper()
 
-                if rating not in {"N", "P", "L", "F"}:
+                if rating not in {
+                    "N",
+                    "P",
+                    "L",
+                    "F",
+                }:
                     return {
                         "status": "NOT_CALCULATED",
                         "achieved_level": None,
                         "reason":
-                            f"INVALID_RATING:{pa.get('process_attribute_code')}",
+                            "INVALID_RATING:"
+                            f"{pa.get('process_attribute_code')}",
                     }
 
                 ratings.append(rating)
 
-            if level < int(target_level):
-                level_passed = all(
-                    rating == "F"
-                    for rating in ratings
-                )
-            else:
-                level_passed = all(
-                    rating in {"L", "F"}
-                    for rating in ratings
-                )
-
-            if not level_passed:
+            # Candidate level itself must be L or F.
+            if not all(
+                rating in {"L", "F"}
+                for rating in ratings
+            ):
                 break
 
-            achieved_level = level
+            # For CL2+, every lower level must be F.
+            lower_levels_fully_achieved = True
+
+            for lower_level in range(
+                1,
+                candidate_level,
+            ):
+                lower_attributes = by_level.get(
+                    lower_level,
+                    [],
+                )
+
+                if not lower_attributes:
+                    lower_levels_fully_achieved = False
+                    break
+
+                for lower_pa in lower_attributes:
+                    lower_effective = lower_pa.get(
+                        "effective_evaluation"
+                    )
+
+                    if (
+                        lower_effective is None
+                        or not lower_pa.get(
+                            "authoritative"
+                        )
+                    ):
+                        lower_levels_fully_achieved = False
+                        break
+
+                    lower_rating = str(
+                        lower_effective.get(
+                            "rating"
+                        ) or ""
+                    ).strip().upper()
+
+                    if lower_rating != "F":
+                        lower_levels_fully_achieved = False
+                        break
+
+                if not lower_levels_fully_achieved:
+                    break
+
+            if (
+                candidate_level > 1
+                and not lower_levels_fully_achieved
+            ):
+                break
+
+            achieved_level = candidate_level
 
         return {
             "status": "CALCULATED",
