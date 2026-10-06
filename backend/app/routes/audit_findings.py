@@ -229,7 +229,6 @@ def create_finding(payload: dict, db: Session = Depends(get_db), user: User = De
         _event(record, db, user, "OWNER_ASSIGNED", initial_status, initial_status)
     if manager:
         _event(record, db, user, "PROCESS_MANAGER_ASSIGNED", initial_status, initial_status)
-    db.commit()
     db.refresh(record)
 
     recipient_id = record.assigned_owner_id or record.process_manager_id
@@ -251,8 +250,10 @@ def create_finding(payload: dict, db: Session = Depends(get_db), user: User = De
                 },
             ),
             recipient_user_id=recipient_id,
+            idempotency_key=f"finding-created:{record.id}:{recipient_id}:{record.status}",
         )
 
+    db.commit()
     return _serialize(record)
 
 
@@ -311,7 +312,6 @@ def assign_owner(finding_id: int, payload: dict, db: Session = Depends(get_db), 
     _event(record, db, user, "OWNER_ASSIGNED", old_status, record.status, payload.get("comment"))
     if manager:
         _event(record, db, user, "PROCESS_MANAGER_ASSIGNED", record.status, record.status, payload.get("manager_comment"))
-    db.commit()
     db.refresh(record)
 
     if record.assigned_owner_id is not None:
@@ -332,8 +332,10 @@ def assign_owner(finding_id: int, payload: dict, db: Session = Depends(get_db), 
                 },
             ),
             recipient_user_id=record.assigned_owner_id,
+            idempotency_key=f"finding-assigned:{record.id}:{record.assigned_owner_id}:{record.status}",
         )
 
+    db.commit()
     return _serialize(record)
 
 
@@ -384,7 +386,6 @@ def owner_submit(finding_id: int, payload: dict, db: Session = Depends(get_db), 
     record.manager_review_comment = None
     record.updated_at = datetime.utcnow()
     _event(record, db, user, "OWNER_SUBMITTED_FOR_REVIEW", old_status, record.status, payload.get("comment"))
-    db.commit()
     db.refresh(record)
 
     if record.process_manager_id is not None:
@@ -405,8 +406,10 @@ def owner_submit(finding_id: int, payload: dict, db: Session = Depends(get_db), 
                 },
             ),
             recipient_user_id=record.process_manager_id,
+            idempotency_key=f"finding-submitted-review:{record.id}:{record.process_manager_id}:{record.status}",
         )
 
+    db.commit()
     return _serialize(record)
 
 
@@ -426,7 +429,6 @@ def manager_approve(finding_id: int, payload: dict, db: Session = Depends(get_db
     record.manager_reviewed_at = datetime.utcnow()
     record.updated_at = datetime.utcnow()
     _event(record, db, user, "PLAN_APPROVED", old_status, record.status, record.manager_review_comment)
-    db.commit()
     db.refresh(record)
 
     if record.assigned_owner_id is not None:
@@ -447,8 +449,10 @@ def manager_approve(finding_id: int, payload: dict, db: Session = Depends(get_db
                 },
             ),
             recipient_user_id=record.assigned_owner_id,
+            idempotency_key=f"finding-plan-approved:{record.id}:{record.assigned_owner_id}:{record.status}",
         )
 
+    db.commit()
     return _serialize(record)
 
 
@@ -471,7 +475,6 @@ def manager_revision(finding_id: int, payload: dict, db: Session = Depends(get_d
     record.manager_reviewed_at = datetime.utcnow()
     record.updated_at = datetime.utcnow()
     _event(record, db, user, "REVISION_REQUIRED", old_status, record.status, comment)
-    db.commit()
     db.refresh(record)
 
     if record.assigned_owner_id is not None:
@@ -492,8 +495,10 @@ def manager_revision(finding_id: int, payload: dict, db: Session = Depends(get_d
                 },
             ),
             recipient_user_id=record.assigned_owner_id,
+            idempotency_key=f"finding-revision-required:{record.id}:{record.assigned_owner_id}:{record.status}",
         )
 
+    db.commit()
     return _serialize(record)
 
 
@@ -516,7 +521,6 @@ def implementation_complete(finding_id: int, payload: dict, db: Session = Depend
     record.verification_status = "PENDING"
     record.updated_at = datetime.utcnow()
     _event(record, db, user, "IMPLEMENTATION_COMPLETED", old_status, record.status, payload.get("comment"))
-    db.commit()
     db.refresh(record)
 
     if record.process_manager_id is not None:
@@ -537,8 +541,10 @@ def implementation_complete(finding_id: int, payload: dict, db: Session = Depend
                 },
             ),
             recipient_user_id=record.process_manager_id,
+            idempotency_key=f"finding-implementation-completed:{record.id}:{record.process_manager_id}:{record.status}",
         )
 
+    db.commit()
     return _serialize(record)
 
 
@@ -573,7 +579,6 @@ def verify_finding(finding_id: int, payload: dict, db: Session = Depends(get_db)
         record.status = "VERIFICATION_FAILED"
         action = "VERIFICATION_FAILED"
     _event(record, db, user, action, old_status, record.status, comment)
-    db.commit()
     db.refresh(record)
 
     if record.assigned_owner_id is not None:
@@ -605,7 +610,9 @@ def verify_finding(finding_id: int, payload: dict, db: Session = Depends(get_db)
                 },
             ),
             recipient_user_id=record.assigned_owner_id,
+            idempotency_key=f"finding-verification-result:{record.id}:{record.assigned_owner_id}:{record.status}",
         )
 
+    db.commit()
     return _serialize(record)
 

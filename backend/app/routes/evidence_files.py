@@ -9,6 +9,10 @@ import uuid
 
 from app.db.session import get_db
 from app.models.evidence_files import EvidenceFile
+from app.models.user import User
+from app.models.user_role import UserRole
+from app.models.role_permission import RolePermission
+from app.models.permission import Permission
 from app.models.evidence_file_history import EvidenceFileHistory
 from app.models.evidences import Evidence
 from app.models.risk_evidence_link import RiskEvidenceLink
@@ -27,6 +31,51 @@ from app.core.evidence_storage import (
 
 router = APIRouter(prefix="/evidences", tags=["Evidence Files"])
 
+
+def _resolve_evidence_reviewers(
+    db: Session,
+    *,
+    tenant_id: int,
+    exclude_user_id: int | None = None,
+) -> list[int]:
+    query = (
+        db.query(User.id)
+        .join(
+            UserRole,
+            UserRole.user_id == User.id,
+        )
+        .join(
+            RolePermission,
+            RolePermission.role_id == UserRole.role_id,
+        )
+        .join(
+            Permission,
+            Permission.id == RolePermission.permission_id,
+        )
+        .filter(
+            User.tenant_id == tenant_id,
+            User.is_active.is_(True),
+            User.is_locked.is_(False),
+            Permission.code == "evidence.approve",
+        )
+        .distinct()
+    )
+
+    if exclude_user_id is not None:
+        query = query.filter(
+            User.id != exclude_user_id
+        )
+
+    return [
+        int(row[0])
+        for row in query.order_by(User.id.asc()).all()
+    ]
+from app.services.notification_service import NotificationManager
+from app.services.notification_events import (
+    NotificationCategory,
+    NotificationEvent,
+    NotificationEventType,
+)
 
 def _standard_archive_dir(
     evidence: Evidence,
@@ -480,6 +529,41 @@ def submit_file(
 
     db.flush()
     _project_evidence_status(db, evidence)
+
+    reviewer_ids = _resolve_evidence_reviewers(
+        db,
+        tenant_id=f.tenant_id,
+        exclude_user_id=user.id,
+    )
+
+    for reviewer_user_id in reviewer_ids:
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=(
+                    NotificationEventType
+                    .EVIDENCE_SUBMITTED_FOR_REVIEW
+                ),
+                category=NotificationCategory.EVIDENCE,
+                tenant_id=f.tenant_id,
+                actor_user_id=user.id,
+                entity_type="EVIDENCE_FILE",
+                entity_id=f.id,
+                title="Evidence submitted for review",
+                message=(
+                    f"Evidence file version {f.version} "
+                    "requires review."
+                ),
+                payload={
+                    "severity": "INFO",
+                },
+            ),
+            recipient_user_id=reviewer_user_id,
+            idempotency_key=(
+                f"evidence-review-submitted:{f.id}:"
+                f"{reviewer_user_id}:{f.version}"
+            ),
+        )
     db.commit()
 
     return {
@@ -580,6 +664,38 @@ def approve_file(
 
     db.flush()
     _project_evidence_status(db, evidence)
+
+    recipient_user_id = f.submitted_by or f.uploaded_by
+
+    if (
+        recipient_user_id is not None
+        and recipient_user_id != user.id
+    ):
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.EVIDENCE_APPROVED,
+                category=NotificationCategory.EVIDENCE,
+                tenant_id=f.tenant_id,
+                actor_user_id=user.id,
+                entity_type="EVIDENCE_FILE",
+                entity_id=f.id,
+                title="Evidence approved",
+                message=(
+                    f"Evidence file version {f.version} "
+                    "has been approved."
+                ),
+                payload={
+                    "severity": "INFO",
+                },
+            ),
+            recipient_user_id=recipient_user_id,
+            idempotency_key=(
+                f"evidence-approved:{f.id}:"
+                f"{recipient_user_id}:{f.version}"
+            ),
+        )
+
     db.commit()
 
     return {
@@ -640,6 +756,38 @@ def reject_file(
 
     db.flush()
     _project_evidence_status(db, evidence)
+
+    recipient_user_id = f.submitted_by or f.uploaded_by
+
+    if (
+        recipient_user_id is not None
+        and recipient_user_id != user.id
+    ):
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.EVIDENCE_REJECTED,
+                category=NotificationCategory.EVIDENCE,
+                tenant_id=f.tenant_id,
+                actor_user_id=user.id,
+                entity_type="EVIDENCE_FILE",
+                entity_id=f.id,
+                title="Evidence rejected",
+                message=(
+                    f"Evidence file version {f.version} "
+                    "has been rejected."
+                ),
+                payload={
+                    "severity": "HIGH",
+                },
+            ),
+            recipient_user_id=recipient_user_id,
+            idempotency_key=(
+                f"evidence-rejected:{f.id}:"
+                f"{recipient_user_id}:{f.version}"
+            ),
+        )
+
     db.commit()
 
     return {
@@ -672,6 +820,8 @@ def rollback_file(
         )
 
     old_status = f.status
+    previous_submitter_id = f.submitted_by
+    previous_uploader_id = f.uploaded_by
 
     f.status = "uploaded"
     f.approved_by = None
@@ -691,6 +841,42 @@ def rollback_file(
 
     db.flush()
     _project_evidence_status(db, evidence)
+
+    recipient_user_id = (
+        previous_submitter_id
+        or previous_uploader_id
+    )
+
+    if (
+        recipient_user_id is not None
+        and recipient_user_id != user.id
+    ):
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.EVIDENCE_ROLLED_BACK,
+                category=NotificationCategory.EVIDENCE,
+                tenant_id=f.tenant_id,
+                actor_user_id=user.id,
+                entity_type="EVIDENCE_FILE",
+                entity_id=f.id,
+                title="Evidence rolled back",
+                message=(
+                    f"Evidence file version {f.version} "
+                    "has been rolled back."
+                ),
+                payload={
+                    "severity": "MEDIUM",
+                },
+            ),
+            recipient_user_id=recipient_user_id,
+            idempotency_key=(
+                f"evidence-rollback:{f.id}:"
+                f"{recipient_user_id}:"
+                f"{f.version}:{old_status}"
+            ),
+        )
+
     db.commit()
 
     return {

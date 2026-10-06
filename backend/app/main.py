@@ -117,6 +117,7 @@ import app.models.requirements
 
 from app.seed.risk_assessment_seed import seed_risk_assessment_questions
 from app.seed.iso15504_2006 import seed_iso15504_2006
+from app.core.scheduler import start_scheduler
 
 # ==============================
 # APP INIT
@@ -157,6 +158,7 @@ def startup():
         seed_iso15504_2006(db)
     finally:
         db.close()
+    start_scheduler()
 
 # ==============================
 # ROUTER INCLUDES
@@ -275,6 +277,3 @@ import app.models.governance_meeting_agenda_item as _model_governance_meeting_ag
 import app.models.governance_meeting_decision as _model_governance_meeting_decision
 import app.models.governance_meeting_action as _model_governance_meeting_action
 import app.models.governance_meeting_history as _model_governance_meeting_history
-
-
-

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -151,7 +151,28 @@ class NotificationManager:
         recipient_user_id: int,
         *,
         channels: Sequence[str] | None = None,
+        idempotency_key: str | None = None,
     ) -> Notification:
+        normalized_key = (
+            str(idempotency_key).strip()
+            if idempotency_key is not None
+            else None
+        )
+
+        if normalized_key:
+            existing = (
+                db.query(Notification)
+                .filter(
+                    Notification.tenant_id == event.tenant_id,
+                    Notification.recipient_user_id == recipient_user_id,
+                    Notification.idempotency_key == normalized_key,
+                )
+                .first()
+            )
+
+            if existing is not None:
+                return existing
+
         notification = Notification(
             tenant_id=event.tenant_id,
             recipient_user_id=recipient_user_id,
@@ -162,6 +183,7 @@ class NotificationManager:
             entity_type=event.entity_type,
             entity_id=event.entity_id,
             action_url=event.payload.get("action_url"),
+            idempotency_key=normalized_key,
             is_read=False,
         )
 
@@ -191,8 +213,7 @@ class NotificationManager:
 
             db.add(delivery)
 
-        db.commit()
-        db.refresh(notification)
+        db.flush()
 
         return notification
     @staticmethod

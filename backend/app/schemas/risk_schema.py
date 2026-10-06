@@ -40,6 +40,7 @@ class RiskOut(BaseModel):
     evidence_count: int = 0
 
     # Optional owner information
+    owner_user_id: Optional[int] = None
     owner: Optional[str] = None
 
     # Timestamps

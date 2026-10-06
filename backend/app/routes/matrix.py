@@ -2124,8 +2124,8 @@ def get_matrix_kpi(
                 not_achieved += 1
 
         target_achievement = (
-            round((achieved / calculated) * 100, 1)
-            if calculated > 0
+            round((achieved / total) * 100, 1)
+            if total > 0
             else None
         )
 

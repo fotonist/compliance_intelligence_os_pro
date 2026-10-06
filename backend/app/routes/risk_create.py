@@ -8,8 +8,15 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.dependencies.auth import get_current_user
 from app.services.risk_scoring_service import RiskScoringService
+from app.models.user import User
 from app.services.process_risk_link_service import ProcessRiskLinkService
 from app.services.risk_creation_service import RiskCreationService
+from app.services.notification_service import NotificationManager
+from app.services.notification_events import (
+    NotificationCategory,
+    NotificationEvent,
+    NotificationEventType,
+)
 
 
 router = APIRouter(prefix="/risks", tags=["Risks"])
@@ -24,6 +31,7 @@ class RiskCreateIn(BaseModel):
     source_type: Optional[str] = "STANDARD"
     source_id: Optional[int] = None
     action: Optional[str] = "assessment"
+    owner_user_id: Optional[int] = None
 
 
 class RiskUpdateIn(BaseModel):
@@ -38,6 +46,34 @@ class RiskUpdateIn(BaseModel):
     source_type: Optional[str] = None
     source_id: Optional[int] = None
     change_reason: Optional[str] = None
+    owner_user_id: Optional[int] = None
+
+
+def validate_risk_owner(
+    db: Session,
+    tenant_id: int,
+    owner_user_id: Optional[int],
+) -> Optional[int]:
+    if owner_user_id is None:
+        return None
+
+    owner = (
+        db.query(User)
+        .filter(
+            User.id == owner_user_id,
+            User.tenant_id == tenant_id,
+            User.is_active.is_(True),
+        )
+        .first()
+    )
+
+    if owner is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Active risk owner not found in tenant",
+        )
+
+    return int(owner.id)
 
 
 def calculate_risk_level(score: int) -> str:
@@ -162,6 +198,12 @@ def create_risk(
 ):
     tenant_id = current_user.tenant_id
 
+    owner_user_id = validate_risk_owner(
+        db,
+        tenant_id,
+        payload.owner_user_id,
+    )
+
     try:
         result = RiskCreationService.create(
             db,
@@ -175,7 +217,34 @@ def create_risk(
             source_id=payload.source_id,
             process_id=payload.process_id,
             base_practice_id=None,
+            owner_user_id=owner_user_id,
         )
+
+        if (
+            owner_user_id is not None
+            and owner_user_id != current_user.id
+        ):
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.RISK_ASSIGNED,
+                    category=NotificationCategory.RISK,
+                    tenant_id=tenant_id,
+                    actor_user_id=current_user.id,
+                    entity_type="RISK",
+                    entity_id=result.risk_id,
+                    title="Risk assigned",
+                    message=f"Risk assigned to you: {payload.title}",
+                    payload={
+                        "severity": "MEDIUM",
+                        "action_url": (
+                            f"/risks?risk_id={result.risk_id}"
+                        ),
+                    },
+                ),
+                recipient_user_id=owner_user_id,
+                idempotency_key=f"risk-assigned:{result.risk_id}:{owner_user_id}:create",
+            )
 
         db.commit()
 
@@ -196,6 +265,7 @@ def create_risk(
         "risk_level": result.risk_level,
         "status": result.status,
         "process_id": result.process_id,
+        "owner_user_id": result.owner_user_id,
     }
 
 
@@ -254,6 +324,15 @@ def update_risk(
     status = payload.status if payload.status is not None else current["status"]
     action = payload.action if payload.action is not None else current["action"]
 
+    owner_user_id = current["owner_user_id"]
+
+    if "owner_user_id" in payload.model_fields_set:
+        owner_user_id = validate_risk_owner(
+            db,
+            tenant_id,
+            payload.owner_user_id,
+        )
+
     standard_id = current["standard_id"]
     requirement_id = current["requirement_id"]
     control_id = current["control_id"]
@@ -298,6 +377,7 @@ def update_risk(
                     status = :status,
                     treatment = :treatment,
                     action = :action,
+                    owner_user_id = :owner_user_id,
                     prev_impact = impact,
                     prev_likelihood = likelihood,
                     previous_score = score,
@@ -322,6 +402,7 @@ def update_risk(
                 "status": status,
                 "treatment": treatment,
                 "action": action,
+                "owner_user_id": owner_user_id,
             },
         )
 
@@ -503,6 +584,38 @@ def update_risk(
                 "changed_by": current_user.id,
             },
         )
+
+        previous_owner_user_id = current["owner_user_id"]
+
+        if (
+            owner_user_id is not None
+            and owner_user_id != previous_owner_user_id
+            and owner_user_id != current_user.id
+        ):
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.RISK_ASSIGNED,
+                    category=NotificationCategory.RISK,
+                    tenant_id=tenant_id,
+                    actor_user_id=current_user.id,
+                    entity_type="RISK",
+                    entity_id=risk_id,
+                    title="Risk assigned",
+                    message=f"Risk assigned to you: {title}",
+                    payload={
+                        "severity": "MEDIUM",
+                        "action_url": (
+                            f"/risks?risk_id={risk_id}"
+                        ),
+                    },
+                ),
+                recipient_user_id=owner_user_id,
+                idempotency_key=(
+                    f"risk-assigned:{risk_id}:"
+                    f"{owner_user_id}:{new_version}"
+                ),
+            )
 
         db.commit()
     except Exception as exc:

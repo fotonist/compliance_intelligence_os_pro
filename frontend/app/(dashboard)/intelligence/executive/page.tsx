@@ -915,24 +915,44 @@ export default function ExecutiveIntelligencePage() {
                 label="Risk"
                 health={riskHealth}
                 exposure={riskExposure}
+
+                primaryMetricLabel="Open risks"
+                primaryMetricValue={enterpriseOpenRisks}
+                secondaryMetricLabel="Critical / High"
+                secondaryMetricValue={`${criticalRisks} / ${highRisks}`}
               />
 
               <Component
                 label="Coverage"
                 health={coverageHealth}
                 exposure={coverageExposure}
+
+                primaryMetricLabel="Covered controls"
+                primaryMetricValue={`${canonicalCoveredControls} / ${canonicalTotalControls}`}
+                secondaryMetricLabel="Not covered"
+                secondaryMetricValue={canonicalNotCoveredControls}
               />
 
               <Component
                 label="Evidence"
                 health={evidenceHealth}
                 exposure={evidenceExposure}
+
+                primaryMetricLabel="Uploaded"
+                primaryMetricValue={`${enterpriseEvidenceUploaded} / ${enterpriseEvidenceTotal}`}
+                secondaryMetricLabel="Draft"
+                secondaryMetricValue={enterpriseEvidenceDraft}
               />
 
               <Component
                 label="Task Pressure"
                 health={taskHealth}
                 exposure={taskExposure}
+
+                primaryMetricLabel="Active"
+                primaryMetricValue={`${remediationActive} / ${remediationTotal}`}
+                secondaryMetricLabel="Overdue"
+                secondaryMetricValue={remediationOverdue}
               />
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1528,7 +1548,7 @@ export default function ExecutiveIntelligencePage() {
             ) : null}
           </Panel>
 
-          
+
 
         </section>
 
@@ -1595,10 +1615,18 @@ function Component({
   label,
   health,
   exposure,
+  primaryMetricLabel,
+  primaryMetricValue,
+  secondaryMetricLabel,
+  secondaryMetricValue,
 }: {
   label: string;
   health: number;
   exposure: number;
+  primaryMetricLabel: string;
+  primaryMetricValue: string | number;
+  secondaryMetricLabel: string;
+  secondaryMetricValue: string | number;
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1616,6 +1644,26 @@ function Component({
 
       <div className="mt-1 text-[11px] text-slate-400">
         Exposure {exposure.toFixed(1)}
+      </div>
+
+      <div className="mt-3 border-t border-slate-200 pt-3">
+        <div className="flex items-center justify-between gap-3 text-[11px]">
+          <span className="text-slate-500">
+            {primaryMetricLabel}
+          </span>
+          <span className="font-semibold text-slate-700">
+            {primaryMetricValue}
+          </span>
+        </div>
+
+        <div className="mt-2 flex items-center justify-between gap-3 text-[11px]">
+          <span className="text-slate-500">
+            {secondaryMetricLabel}
+          </span>
+          <span className="font-semibold text-slate-700">
+            {secondaryMetricValue}
+          </span>
+        </div>
       </div>
     </div>
   );

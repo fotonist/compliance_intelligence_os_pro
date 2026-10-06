@@ -1,4 +1,4 @@
-﻿from sqlalchemy import (
+from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
@@ -76,6 +76,11 @@ class Notification(Base):
         nullable=True,
     )
 
+    idempotency_key = Column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
     is_read = Column(
         Boolean,
         nullable=False,

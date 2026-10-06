@@ -43,6 +43,12 @@ TASK_STATUS_TRANSITIONS = {
     "CANCELLED": set(),
 }
 
+from app.services.notification_service import NotificationManager
+from app.services.notification_events import (
+    NotificationCategory,
+    NotificationEvent,
+    NotificationEventType,
+)
 
 class TaskService:
     """
@@ -549,6 +555,32 @@ class TaskService:
 
         task.assignee_user_id = assignee.id
 
+        db.flush()
+
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.TASK_ASSIGNED,
+                category=NotificationCategory.TASK,
+                tenant_id=task.tenant_id,
+                actor_user_id=user.id,
+                entity_type="COMPLIANCE_TASK",
+                entity_id=task.id,
+                title="Task assigned",
+                message=f"Task assigned to you: {task.title}",
+                payload={
+                    "severity": "MEDIUM",
+                    "action_url": (
+                        f"/company/tasks?task_id={task.id}"
+                    ),
+                },
+            ),
+            recipient_user_id=assignee.id,
+            idempotency_key=(
+                f"task-assigned:{task.id}:{assignee.id}"
+            ),
+        )
+
         db.commit()
         db.refresh(task)
 
@@ -602,6 +634,48 @@ class TaskService:
 
         task.status = target
 
+        db.flush()
+
+        recipient_user_id = (
+            task.assignee_user_id
+            or task.created_by_user_id
+        )
+
+        if recipient_user_id is not None:
+            event_type = (
+                NotificationEventType.TASK_COMPLETED
+                if target in {"DONE", "COMPLETED"}
+                else NotificationEventType.TASK_STATUS_CHANGED
+            )
+
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=event_type,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="COMPLIANCE_TASK",
+                    entity_id=task.id,
+                    title="Task status changed",
+                    message=(
+                        f"Task status changed to {target}: "
+                        f"{task.title}"
+                    ),
+                    payload={
+                        "severity": "INFO",
+                        "action_url": (
+                            f"/company/tasks?task_id={task.id}"
+                        ),
+                    },
+                ),
+                recipient_user_id=recipient_user_id,
+                idempotency_key=(
+                    f"task-status:{task.id}:"
+                    f"{recipient_user_id}:{target}"
+                ),
+            )
+
         db.commit()
         db.refresh(task)
 
@@ -644,6 +718,39 @@ class TaskService:
             )
 
         task.status = "CANCELLED"
+
+        db.flush()
+
+        recipient_user_id = (
+            task.assignee_user_id
+            or task.created_by_user_id
+        )
+
+        if recipient_user_id is not None:
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.TASK_CANCELLED,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="COMPLIANCE_TASK",
+                    entity_id=task.id,
+                    title="Task cancelled",
+                    message=f"Task cancelled: {task.title}",
+                    payload={
+                        "severity": "INFO",
+                        "action_url": (
+                            f"/company/tasks?task_id={task.id}"
+                        ),
+                    },
+                ),
+                recipient_user_id=recipient_user_id,
+                idempotency_key=(
+                    f"task-cancelled:{task.id}:"
+                    f"{recipient_user_id}"
+                ),
+            )
 
         db.commit()
         db.refresh(task)
@@ -692,6 +799,39 @@ class TaskService:
         )
 
         task.status = "DONE"
+
+        db.flush()
+
+        recipient_user_id = (
+            task.assignee_user_id
+            or task.created_by_user_id
+        )
+
+        if recipient_user_id is not None:
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=NotificationEventType.TASK_COMPLETED,
+                    category=NotificationCategory.TASK,
+                    tenant_id=task.tenant_id,
+                    actor_user_id=user.id,
+                    entity_type="COMPLIANCE_TASK",
+                    entity_id=task.id,
+                    title="Task completed",
+                    message=f"Task completed: {task.title}",
+                    payload={
+                        "severity": "INFO",
+                        "action_url": (
+                            f"/company/tasks?task_id={task.id}"
+                        ),
+                    },
+                ),
+                recipient_user_id=recipient_user_id,
+                idempotency_key=(
+                    f"task-completed:{task.id}:"
+                    f"{recipient_user_id}"
+                ),
+            )
 
         db.commit()
         db.refresh(task)

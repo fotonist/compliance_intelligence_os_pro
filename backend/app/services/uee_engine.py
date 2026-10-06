@@ -202,8 +202,8 @@ class UEEEngine:
                     not_achieved += 1
 
             target_achievement = (
-                round((achieved / calculated) * 100.0, 1)
-                if calculated > 0
+                round((achieved / total) * 100.0, 1)
+                if total > 0
                 else None
             )
 
@@ -240,10 +240,10 @@ class UEEEngine:
 
         aggregate_target_achievement = (
             round(
-                (achieved_processes / calculated_processes) * 100.0,
+                (achieved_processes / total_processes) * 100.0,
                 1,
             )
-            if calculated_processes > 0
+            if total_processes > 0
             else None
         )
 

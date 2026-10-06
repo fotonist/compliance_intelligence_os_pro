@@ -469,9 +469,9 @@ class MaturityCapabilityService:
 
         target_achievement = (
             achieved_process_count
-            / calculated_process_count
+            / adoption_process_count
             * 100.0
-            if calculated_process_count
+            if adoption_process_count
             else None
         )
 

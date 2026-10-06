@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from typing import Any, Dict, Optional, List
@@ -11,6 +11,12 @@ from app.dependencies.auth import get_current_user
 from app.db.session import get_db
 from app.services.risk_scoring_service import RiskScoringService
 from app.services.process_risk_link_service import ProcessRiskLinkService
+from app.services.notification_service import NotificationManager
+from app.services.notification_events import (
+    NotificationCategory,
+    NotificationEvent,
+    NotificationEventType,
+)
 
 router = APIRouter(prefix="/risks", tags=["Risks"])
 
@@ -134,10 +140,14 @@ def assess_risk(
     new_score = scoring.score
     new_risk_level = scoring.risk_level
 
+    old_score = risk.score
+    old_risk_level = getattr(risk, "risk_level", None)
+    owner_user_id = getattr(risk, "owner_user_id", None)
+
     # -------------------------------------------------
     # HISTORY
     # -------------------------------------------------
-    db.execute(
+    assessment_history_id = db.execute(
         text(
             """
             INSERT INTO risk_history (
@@ -178,6 +188,7 @@ def assess_risk(
                 :changed_by,
                 NOW()
             )
+            RETURNING id
             """
         ),
         {
@@ -198,7 +209,7 @@ def assess_risk(
             "action_new": action,
             "changed_by": getattr(current_user, "id", None),
         },
-    )
+    ).scalar_one()
 
     # -------------------------------------------------
     # UPDATE RISK — TENANT SCOPED
@@ -241,6 +252,137 @@ def assess_risk(
         tenant_id=tenant_id,
         risk_id=risk_id,
     )
+
+    if (
+        owner_user_id is not None
+        and owner_user_id != current_user.id
+    ):
+        NotificationManager.emit(
+            db,
+            NotificationEvent(
+                event_type=NotificationEventType.RISK_ASSESSED,
+                category=NotificationCategory.RISK,
+                tenant_id=tenant_id,
+                actor_user_id=current_user.id,
+                entity_type="RISK",
+                entity_id=risk_id,
+                title="Risk assessed",
+                message=(
+                    f"Risk #{risk_id} was assessed. "
+                    f"Current score: {new_score} "
+                    f"({new_risk_level})."
+                ),
+                payload={
+                    "severity": "MEDIUM",
+                    "action_url": (
+                        f"/risks?risk_id={risk_id}"
+                    ),
+                },
+            ),
+            recipient_user_id=owner_user_id,
+            idempotency_key=(
+                f"risk-assessed:{risk_id}:{owner_user_id}:"
+                f"{assessment_history_id}"
+            ),
+        )
+
+        if (
+            old_score != new_score
+            or old_risk_level != new_risk_level
+        ):
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=(
+                        NotificationEventType.RISK_SCORE_CHANGED
+                    ),
+                    category=NotificationCategory.RISK,
+                    tenant_id=tenant_id,
+                    actor_user_id=current_user.id,
+                    entity_type="RISK",
+                    entity_id=risk_id,
+                    title="Risk score changed",
+                    message=(
+                        f"Risk #{risk_id} changed from "
+                        f"{old_score} ({old_risk_level}) to "
+                        f"{new_score} ({new_risk_level})."
+                    ),
+                    payload={
+                        "severity": (
+                            "HIGH"
+                            if new_risk_level in {
+                                "HIGH",
+                                "CRITICAL",
+                            }
+                            else "MEDIUM"
+                        ),
+                        "action_url": (
+                            f"/risks?risk_id={risk_id}"
+                        ),
+                    },
+                ),
+                recipient_user_id=owner_user_id,
+                idempotency_key=(
+                    f"risk-score-changed:{risk_id}:"
+                    f"{owner_user_id}:"
+                    f"{assessment_history_id}"
+                ),
+            )
+
+        risk_rank = {
+            "VERY_LOW": 1,
+            "LOW": 2,
+            "MEDIUM": 3,
+            "HIGH": 4,
+            "CRITICAL": 5,
+        }
+
+        old_rank = risk_rank.get(
+            str(old_risk_level or "").upper(),
+            0,
+        )
+        new_rank = risk_rank.get(
+            str(new_risk_level or "").upper(),
+            0,
+        )
+
+        if new_rank > old_rank:
+            NotificationManager.emit(
+                db,
+                NotificationEvent(
+                    event_type=(
+                        NotificationEventType.RISK_ESCALATED
+                    ),
+                    category=NotificationCategory.RISK,
+                    tenant_id=tenant_id,
+                    actor_user_id=current_user.id,
+                    entity_type="RISK",
+                    entity_id=risk_id,
+                    title="Risk escalated",
+                    message=(
+                        f"Risk #{risk_id} escalated from "
+                        f"{old_risk_level} to "
+                        f"{new_risk_level}."
+                    ),
+                    payload={
+                        "severity": (
+                            "CRITICAL"
+                            if str(new_risk_level).upper()
+                            == "CRITICAL"
+                            else "HIGH"
+                        ),
+                        "action_url": (
+                            f"/risks?risk_id={risk_id}"
+                        ),
+                    },
+                ),
+                recipient_user_id=owner_user_id,
+                idempotency_key=(
+                    f"risk-escalated:{risk_id}:"
+                    f"{owner_user_id}:"
+                    f"{assessment_history_id}"
+                ),
+            )
 
     db.commit()
 

@@ -17,6 +17,7 @@ class RiskCreationResult:
     risk_level: str
     status: str
     process_id: Optional[int]
+    owner_user_id: Optional[int]
 
 
 class RiskCreationService:
@@ -136,6 +137,7 @@ class RiskCreationService:
         source_id: Optional[int] = None,
         process_id: Optional[int] = None,
         base_practice_id: Optional[int] = None,
+        owner_user_id: Optional[int] = None,
     ) -> RiskCreationResult:
         if process_id is not None:
             process_exists = db.execute(
@@ -216,6 +218,7 @@ class RiskCreationService:
                 """
                 INSERT INTO risks (
                     tenant_id,
+                    owner_user_id,
                     title,
                     description,
                     impact,
@@ -233,6 +236,7 @@ class RiskCreationService:
                 )
                 VALUES (
                     :tenant_id,
+                    :owner_user_id,
                     :title,
                     :description,
                     :impact,
@@ -253,6 +257,7 @@ class RiskCreationService:
             ),
             {
                 "tenant_id": tenant_id,
+                "owner_user_id": owner_user_id,
                 "title": title,
                 "description": description,
                 "impact": impact,
@@ -381,4 +386,5 @@ class RiskCreationService:
             risk_level=scoring.risk_level,
             status="OPEN",
             process_id=process_id,
+            owner_user_id=owner_user_id,
         )

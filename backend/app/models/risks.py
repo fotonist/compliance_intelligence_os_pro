@@ -23,6 +23,13 @@ class Risk(Base, TenantMixin):
     )
 
     # 🔑 RELATIONS
+    owner_user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     control_id = Column(
         Integer,
         ForeignKey("controls.id", ondelete="SET NULL"),
@@ -37,6 +44,11 @@ class Risk(Base, TenantMixin):
         Integer,
         ForeignKey("requirements.id", ondelete="SET NULL"),
         nullable=True,
+    )
+
+    owner_user = relationship(
+        "User",
+        foreign_keys=[owner_user_id],
     )
 
     control = relationship("Control", back_populates="risks")
